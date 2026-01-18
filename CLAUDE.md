@@ -415,3 +415,13 @@ What goes wrong if key decisions are forgotten:
 | Testing strategy | Adding mocks to core | Slow tests, false confidence |
 
 **The cost of forgetting increases with time. Document decisions immediately.**
+
+---
+
+## Commit Message Guidelines
+
+- Use conventional commit format: `type: description`
+- Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+- **DO NOT** add Co-Authored-By lines or AI attribution to commits
+- **DO NOT** sign commits with Claude/Opus or any AI identity
+- Keep commit messages concise and focused on the "what" and "why"
