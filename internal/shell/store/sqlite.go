@@ -101,24 +101,25 @@ func (s *SQLiteStore) Close() error {
 
 // templateRow represents a template row in the database.
 type templateRow struct {
-	ID              string  `db:"id"`
-	Name            string  `db:"name"`
-	Slug            string  `db:"slug"`
-	Description     string  `db:"description"`
-	Version         string  `db:"version"`
-	ComposeSpec     string  `db:"compose_spec"`
-	Variables       *string `db:"variables"`
-	ConfigFiles     *string `db:"config_files"`
-	ResourcesCPU    float64 `db:"resources_cpu_cores"`
-	ResourcesMemory int64   `db:"resources_memory_mb"`
-	ResourcesDisk   int64   `db:"resources_disk_mb"`
-	PriceMonthly    int64   `db:"price_monthly_cents"`
-	Category        string  `db:"category"`
-	Tags            *string `db:"tags"`
-	Published       bool    `db:"published"`
-	CreatorID       string  `db:"creator_id"`
-	CreatedAt       string  `db:"created_at"`
-	UpdatedAt       string  `db:"updated_at"`
+	ID                   string  `db:"id"`
+	Name                 string  `db:"name"`
+	Slug                 string  `db:"slug"`
+	Description          string  `db:"description"`
+	Version              string  `db:"version"`
+	ComposeSpec          string  `db:"compose_spec"`
+	Variables            *string `db:"variables"`
+	ConfigFiles          *string `db:"config_files"`
+	ResourcesCPU         float64 `db:"resources_cpu_cores"`
+	ResourcesMemory      int64   `db:"resources_memory_mb"`
+	ResourcesDisk        int64   `db:"resources_disk_mb"`
+	PriceMonthly         int64   `db:"price_monthly_cents"`
+	Category             string  `db:"category"`
+	Tags                 *string `db:"tags"`
+	RequiredCapabilities *string `db:"required_capabilities"`
+	Published            bool    `db:"published"`
+	CreatorID            string  `db:"creator_id"`
+	CreatedAt            string  `db:"created_at"`
+	UpdatedAt            string  `db:"updated_at"`
 }
 
 func (s *SQLiteStore) CreateTemplate(ctx context.Context, template *domain.Template) error {
@@ -308,6 +309,46 @@ func (s *txSQLiteStore) MarkEventsReported(ctx context.Context, ids []string, re
 	return markEventsReported(ctx, s.tx, ids, reportedAt)
 }
 
+func (s *txSQLiteStore) CreateNode(ctx context.Context, node *domain.Node) error {
+	return createNode(ctx, s.tx, node)
+}
+
+func (s *txSQLiteStore) GetNode(ctx context.Context, id string) (*domain.Node, error) {
+	return getNode(ctx, s.tx, id)
+}
+
+func (s *txSQLiteStore) UpdateNode(ctx context.Context, node *domain.Node) error {
+	return updateNode(ctx, s.tx, node)
+}
+
+func (s *txSQLiteStore) DeleteNode(ctx context.Context, id string) error {
+	return deleteNode(ctx, s.tx, id)
+}
+
+func (s *txSQLiteStore) ListNodesByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.Node, error) {
+	return listNodesByCreator(ctx, s.tx, creatorID, opts)
+}
+
+func (s *txSQLiteStore) ListOnlineNodes(ctx context.Context) ([]domain.Node, error) {
+	return listOnlineNodes(ctx, s.tx)
+}
+
+func (s *txSQLiteStore) CreateSSHKey(ctx context.Context, key *domain.SSHKey) error {
+	return createSSHKey(ctx, s.tx, key)
+}
+
+func (s *txSQLiteStore) GetSSHKey(ctx context.Context, id string) (*domain.SSHKey, error) {
+	return getSSHKey(ctx, s.tx, id)
+}
+
+func (s *txSQLiteStore) DeleteSSHKey(ctx context.Context, id string) error {
+	return deleteSSHKey(ctx, s.tx, id)
+}
+
+func (s *txSQLiteStore) ListSSHKeysByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.SSHKey, error) {
+	return listSSHKeysByCreator(ctx, s.tx, creatorID, opts)
+}
+
 // =============================================================================
 // Shared Implementation Functions
 // =============================================================================
@@ -326,39 +367,44 @@ func createTemplate(ctx context.Context, exec executor, template *domain.Templat
 	if err != nil {
 		return NewStoreError("CreateTemplate", "template", template.ID, "failed to serialize tags", ErrInvalidData)
 	}
+	requiredCapabilitiesJSON, err := json.Marshal(template.RequiredCapabilities)
+	if err != nil {
+		return NewStoreError("CreateTemplate", "template", template.ID, "failed to serialize required_capabilities", ErrInvalidData)
+	}
 
 	query := `
 		INSERT INTO templates (
 			id, name, slug, description, version, compose_spec, variables, config_files,
 			resources_cpu_cores, resources_memory_mb, resources_disk_mb,
-			price_monthly_cents, category, tags, published, creator_id,
+			price_monthly_cents, category, tags, required_capabilities, published, creator_id,
 			created_at, updated_at
 		) VALUES (
 			:id, :name, :slug, :description, :version, :compose_spec, :variables, :config_files,
 			:resources_cpu_cores, :resources_memory_mb, :resources_disk_mb,
-			:price_monthly_cents, :category, :tags, :published, :creator_id,
+			:price_monthly_cents, :category, :tags, :required_capabilities, :published, :creator_id,
 			:created_at, :updated_at
 		)`
 
 	row := map[string]any{
-		"id":                   template.ID,
-		"name":                 template.Name,
-		"slug":                 template.Slug,
-		"description":          template.Description,
-		"version":              template.Version,
-		"compose_spec":         template.ComposeSpec,
-		"variables":            string(variablesJSON),
-		"config_files":         string(configFilesJSON),
-		"resources_cpu_cores":  template.ResourceRequirements.CPUCores,
-		"resources_memory_mb":  template.ResourceRequirements.MemoryMB,
-		"resources_disk_mb":    template.ResourceRequirements.DiskMB,
-		"price_monthly_cents":  template.PriceMonthly,
-		"category":             template.Category,
-		"tags":                 string(tagsJSON),
-		"published":            template.Published,
-		"creator_id":           template.CreatorID,
-		"created_at":           template.CreatedAt.Format(time.RFC3339),
-		"updated_at":           template.UpdatedAt.Format(time.RFC3339),
+		"id":                    template.ID,
+		"name":                  template.Name,
+		"slug":                  template.Slug,
+		"description":           template.Description,
+		"version":               template.Version,
+		"compose_spec":          template.ComposeSpec,
+		"variables":             string(variablesJSON),
+		"config_files":          string(configFilesJSON),
+		"resources_cpu_cores":   template.ResourceRequirements.CPUCores,
+		"resources_memory_mb":   template.ResourceRequirements.MemoryMB,
+		"resources_disk_mb":     template.ResourceRequirements.DiskMB,
+		"price_monthly_cents":   template.PriceMonthly,
+		"category":              template.Category,
+		"tags":                  string(tagsJSON),
+		"required_capabilities": string(requiredCapabilitiesJSON),
+		"published":             template.Published,
+		"creator_id":            template.CreatorID,
+		"created_at":            template.CreatedAt.Format(time.RFC3339),
+		"updated_at":            template.UpdatedAt.Format(time.RFC3339),
 	}
 
 	_, err = exec.NamedExecContext(ctx, query, row)
@@ -419,6 +465,10 @@ func updateTemplate(ctx context.Context, exec executor, template *domain.Templat
 	if err != nil {
 		return NewStoreError("UpdateTemplate", "template", template.ID, "failed to serialize tags", ErrInvalidData)
 	}
+	requiredCapabilitiesJSON, err := json.Marshal(template.RequiredCapabilities)
+	if err != nil {
+		return NewStoreError("UpdateTemplate", "template", template.ID, "failed to serialize required_capabilities", ErrInvalidData)
+	}
 
 	query := `
 		UPDATE templates SET
@@ -435,29 +485,31 @@ func updateTemplate(ctx context.Context, exec executor, template *domain.Templat
 			price_monthly_cents = :price_monthly_cents,
 			category = :category,
 			tags = :tags,
+			required_capabilities = :required_capabilities,
 			published = :published,
 			creator_id = :creator_id,
 			updated_at = :updated_at
 		WHERE id = :id`
 
 	row := map[string]any{
-		"id":                   template.ID,
-		"name":                 template.Name,
-		"slug":                 template.Slug,
-		"description":          template.Description,
-		"version":              template.Version,
-		"compose_spec":         template.ComposeSpec,
-		"variables":            string(variablesJSON),
-		"config_files":         string(configFilesJSON),
-		"resources_cpu_cores":  template.ResourceRequirements.CPUCores,
-		"resources_memory_mb":  template.ResourceRequirements.MemoryMB,
-		"resources_disk_mb":    template.ResourceRequirements.DiskMB,
-		"price_monthly_cents":  template.PriceMonthly,
-		"category":             template.Category,
-		"tags":                 string(tagsJSON),
-		"published":            template.Published,
-		"creator_id":           template.CreatorID,
-		"updated_at":           template.UpdatedAt.Format(time.RFC3339),
+		"id":                    template.ID,
+		"name":                  template.Name,
+		"slug":                  template.Slug,
+		"description":           template.Description,
+		"version":               template.Version,
+		"compose_spec":          template.ComposeSpec,
+		"variables":             string(variablesJSON),
+		"config_files":          string(configFilesJSON),
+		"resources_cpu_cores":   template.ResourceRequirements.CPUCores,
+		"resources_memory_mb":   template.ResourceRequirements.MemoryMB,
+		"resources_disk_mb":     template.ResourceRequirements.DiskMB,
+		"price_monthly_cents":   template.PriceMonthly,
+		"category":              template.Category,
+		"tags":                  string(tagsJSON),
+		"required_capabilities": string(requiredCapabilitiesJSON),
+		"published":             template.Published,
+		"creator_id":            template.CreatorID,
+		"updated_at":            template.UpdatedAt.Format(time.RFC3339),
 	}
 
 	result, err := exec.NamedExecContext(ctx, query, row)
@@ -789,6 +841,13 @@ func rowToTemplate(row *templateRow) (*domain.Template, error) {
 		}
 	}
 
+	var requiredCapabilities []string
+	if row.RequiredCapabilities != nil && *row.RequiredCapabilities != "" && *row.RequiredCapabilities != "null" {
+		if err := json.Unmarshal([]byte(*row.RequiredCapabilities), &requiredCapabilities); err != nil {
+			return nil, NewStoreError("rowToTemplate", "template", row.ID, "failed to parse required_capabilities", ErrInvalidData)
+		}
+	}
+
 	return &domain.Template{
 		ID:          row.ID,
 		Name:        row.Name,
@@ -803,13 +862,14 @@ func rowToTemplate(row *templateRow) (*domain.Template, error) {
 			MemoryMB: row.ResourcesMemory,
 			DiskMB:   row.ResourcesDisk,
 		},
-		PriceMonthly: row.PriceMonthly,
-		Category:     row.Category,
-		Tags:         tags,
-		Published:    row.Published,
-		CreatorID:    row.CreatorID,
-		CreatedAt:    createdAt,
-		UpdatedAt:    updatedAt,
+		PriceMonthly:         row.PriceMonthly,
+		Category:             row.Category,
+		Tags:                 tags,
+		RequiredCapabilities: requiredCapabilities,
+		Published:            row.Published,
+		CreatorID:            row.CreatorID,
+		CreatedAt:            createdAt,
+		UpdatedAt:            updatedAt,
 	}, nil
 }
 
@@ -1149,4 +1209,481 @@ func rowToContainerEvent(row *containerEventRow) (*domain.ContainerEvent, error)
 		Timestamp:    timestamp,
 		CreatedAt:    createdAt,
 	}, nil
+}
+
+// =============================================================================
+// Node Operations
+// =============================================================================
+
+// nodeRow represents a node row in the database.
+type nodeRow struct {
+	ID                   string  `db:"id"`
+	Name                 string  `db:"name"`
+	CreatorID            string  `db:"creator_id"`
+	SSHHost              string  `db:"ssh_host"`
+	SSHPort              int     `db:"ssh_port"`
+	SSHUser              string  `db:"ssh_user"`
+	SSHKeyID             *string `db:"ssh_key_id"`
+	DockerSocket         string  `db:"docker_socket"`
+	Status               string  `db:"status"`
+	Capabilities         string  `db:"capabilities"`
+	CapacityCPUCores     float64 `db:"capacity_cpu_cores"`
+	CapacityMemoryMB     int64   `db:"capacity_memory_mb"`
+	CapacityDiskMB       int64   `db:"capacity_disk_mb"`
+	CapacityCPUUsed      float64 `db:"capacity_cpu_used"`
+	CapacityMemoryUsedMB int64   `db:"capacity_memory_used_mb"`
+	CapacityDiskUsedMB   int64   `db:"capacity_disk_used_mb"`
+	Location             string  `db:"location"`
+	LastHealthCheck      *string `db:"last_health_check"`
+	ErrorMessage         string  `db:"error_message"`
+	CreatedAt            string  `db:"created_at"`
+	UpdatedAt            string  `db:"updated_at"`
+}
+
+// CreateNode creates a new node in the database.
+func (s *SQLiteStore) CreateNode(ctx context.Context, node *domain.Node) error {
+	return createNode(ctx, s.db, node)
+}
+
+func createNode(ctx context.Context, exec executor, node *domain.Node) error {
+	capabilities, err := json.Marshal(node.Capabilities)
+	if err != nil {
+		return NewStoreError("CreateNode", "node", node.ID, "failed to marshal capabilities", err)
+	}
+
+	var lastHealthCheck *string
+	if node.LastHealthCheck != nil {
+		hc := node.LastHealthCheck.Format(time.RFC3339)
+		lastHealthCheck = &hc
+	}
+
+	query := `
+		INSERT INTO nodes (
+			id, name, creator_id, ssh_host, ssh_port, ssh_user, ssh_key_id,
+			docker_socket, status, capabilities,
+			capacity_cpu_cores, capacity_memory_mb, capacity_disk_mb,
+			capacity_cpu_used, capacity_memory_used_mb, capacity_disk_used_mb,
+			location, last_health_check, error_message, created_at, updated_at
+		) VALUES (
+			:id, :name, :creator_id, :ssh_host, :ssh_port, :ssh_user, :ssh_key_id,
+			:docker_socket, :status, :capabilities,
+			:capacity_cpu_cores, :capacity_memory_mb, :capacity_disk_mb,
+			:capacity_cpu_used, :capacity_memory_used_mb, :capacity_disk_used_mb,
+			:location, :last_health_check, :error_message, :created_at, :updated_at
+		)`
+
+	var sshKeyID *string
+	if node.SSHKeyID != "" {
+		sshKeyID = &node.SSHKeyID
+	}
+
+	row := nodeRow{
+		ID:                   node.ID,
+		Name:                 node.Name,
+		CreatorID:            node.CreatorID,
+		SSHHost:              node.SSHHost,
+		SSHPort:              node.SSHPort,
+		SSHUser:              node.SSHUser,
+		SSHKeyID:             sshKeyID,
+		DockerSocket:         node.DockerSocket,
+		Status:               string(node.Status),
+		Capabilities:         string(capabilities),
+		CapacityCPUCores:     node.Capacity.CPUCores,
+		CapacityMemoryMB:     node.Capacity.MemoryMB,
+		CapacityDiskMB:       node.Capacity.DiskMB,
+		CapacityCPUUsed:      node.Capacity.CPUUsed,
+		CapacityMemoryUsedMB: node.Capacity.MemoryUsedMB,
+		CapacityDiskUsedMB:   node.Capacity.DiskUsedMB,
+		Location:             node.Location,
+		LastHealthCheck:      lastHealthCheck,
+		ErrorMessage:         node.ErrorMessage,
+		CreatedAt:            node.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:            node.UpdatedAt.Format(time.RFC3339),
+	}
+
+	_, err = exec.NamedExecContext(ctx, query, row)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed: nodes.id") {
+			return NewStoreError("CreateNode", "node", node.ID, "node with this ID already exists", ErrDuplicateID)
+		}
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return NewStoreError("CreateNode", "node", node.ID, "node with this name already exists for creator", ErrDuplicateKey)
+		}
+		return NewStoreError("CreateNode", "node", node.ID, err.Error(), err)
+	}
+
+	return nil
+}
+
+// GetNode retrieves a node by ID.
+func (s *SQLiteStore) GetNode(ctx context.Context, id string) (*domain.Node, error) {
+	return getNode(ctx, s.db, id)
+}
+
+func getNode(ctx context.Context, exec executor, id string) (*domain.Node, error) {
+	var row nodeRow
+	query := `
+		SELECT id, name, creator_id, ssh_host, ssh_port, ssh_user, ssh_key_id,
+			docker_socket, status, capabilities,
+			capacity_cpu_cores, capacity_memory_mb, capacity_disk_mb,
+			capacity_cpu_used, capacity_memory_used_mb, capacity_disk_used_mb,
+			location, last_health_check, error_message, created_at, updated_at
+		FROM nodes WHERE id = ?`
+
+	if err := exec.GetContext(ctx, &row, query, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, NewStoreError("GetNode", "node", id, "node not found", ErrNotFound)
+		}
+		return nil, NewStoreError("GetNode", "node", id, err.Error(), err)
+	}
+
+	return rowToNode(&row)
+}
+
+// UpdateNode updates an existing node.
+func (s *SQLiteStore) UpdateNode(ctx context.Context, node *domain.Node) error {
+	return updateNode(ctx, s.db, node)
+}
+
+func updateNode(ctx context.Context, exec executor, node *domain.Node) error {
+	capabilities, err := json.Marshal(node.Capabilities)
+	if err != nil {
+		return NewStoreError("UpdateNode", "node", node.ID, "failed to marshal capabilities", err)
+	}
+
+	var lastHealthCheck *string
+	if node.LastHealthCheck != nil {
+		hc := node.LastHealthCheck.Format(time.RFC3339)
+		lastHealthCheck = &hc
+	}
+
+	query := `
+		UPDATE nodes SET
+			name = :name,
+			ssh_host = :ssh_host,
+			ssh_port = :ssh_port,
+			ssh_user = :ssh_user,
+			ssh_key_id = :ssh_key_id,
+			docker_socket = :docker_socket,
+			status = :status,
+			capabilities = :capabilities,
+			capacity_cpu_cores = :capacity_cpu_cores,
+			capacity_memory_mb = :capacity_memory_mb,
+			capacity_disk_mb = :capacity_disk_mb,
+			capacity_cpu_used = :capacity_cpu_used,
+			capacity_memory_used_mb = :capacity_memory_used_mb,
+			capacity_disk_used_mb = :capacity_disk_used_mb,
+			location = :location,
+			last_health_check = :last_health_check,
+			error_message = :error_message,
+			updated_at = :updated_at
+		WHERE id = :id`
+
+	var sshKeyID *string
+	if node.SSHKeyID != "" {
+		sshKeyID = &node.SSHKeyID
+	}
+
+	row := nodeRow{
+		ID:                   node.ID,
+		Name:                 node.Name,
+		CreatorID:            node.CreatorID,
+		SSHHost:              node.SSHHost,
+		SSHPort:              node.SSHPort,
+		SSHUser:              node.SSHUser,
+		SSHKeyID:             sshKeyID,
+		DockerSocket:         node.DockerSocket,
+		Status:               string(node.Status),
+		Capabilities:         string(capabilities),
+		CapacityCPUCores:     node.Capacity.CPUCores,
+		CapacityMemoryMB:     node.Capacity.MemoryMB,
+		CapacityDiskMB:       node.Capacity.DiskMB,
+		CapacityCPUUsed:      node.Capacity.CPUUsed,
+		CapacityMemoryUsedMB: node.Capacity.MemoryUsedMB,
+		CapacityDiskUsedMB:   node.Capacity.DiskUsedMB,
+		Location:             node.Location,
+		LastHealthCheck:      lastHealthCheck,
+		ErrorMessage:         node.ErrorMessage,
+		CreatedAt:            node.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:            node.UpdatedAt.Format(time.RFC3339),
+	}
+
+	result, err := exec.NamedExecContext(ctx, query, row)
+	if err != nil {
+		return NewStoreError("UpdateNode", "node", node.ID, err.Error(), err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return NewStoreError("UpdateNode", "node", node.ID, "node not found", ErrNotFound)
+	}
+
+	return nil
+}
+
+// DeleteNode deletes a node by ID.
+func (s *SQLiteStore) DeleteNode(ctx context.Context, id string) error {
+	return deleteNode(ctx, s.db, id)
+}
+
+func deleteNode(ctx context.Context, exec executor, id string) error {
+	query := `DELETE FROM nodes WHERE id = ?`
+
+	result, err := exec.ExecContext(ctx, query, id)
+	if err != nil {
+		return NewStoreError("DeleteNode", "node", id, err.Error(), err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return NewStoreError("DeleteNode", "node", id, "node not found", ErrNotFound)
+	}
+
+	return nil
+}
+
+// ListNodesByCreator lists all nodes for a creator.
+func (s *SQLiteStore) ListNodesByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.Node, error) {
+	return listNodesByCreator(ctx, s.db, creatorID, opts)
+}
+
+func listNodesByCreator(ctx context.Context, exec executor, creatorID string, opts ListOptions) ([]domain.Node, error) {
+	opts = opts.Normalize()
+
+	query := `
+		SELECT id, name, creator_id, ssh_host, ssh_port, ssh_user, ssh_key_id,
+			docker_socket, status, capabilities,
+			capacity_cpu_cores, capacity_memory_mb, capacity_disk_mb,
+			capacity_cpu_used, capacity_memory_used_mb, capacity_disk_used_mb,
+			location, last_health_check, error_message, created_at, updated_at
+		FROM nodes
+		WHERE creator_id = ?
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?`
+
+	var rows []nodeRow
+	if err := exec.SelectContext(ctx, &rows, query, creatorID, opts.Limit, opts.Offset); err != nil {
+		return nil, NewStoreError("ListNodesByCreator", "node", creatorID, err.Error(), err)
+	}
+
+	nodes := make([]domain.Node, 0, len(rows))
+	for _, row := range rows {
+		node, err := rowToNode(&row)
+		if err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, *node)
+	}
+
+	return nodes, nil
+}
+
+// ListOnlineNodes returns all online nodes (for scheduling).
+func (s *SQLiteStore) ListOnlineNodes(ctx context.Context) ([]domain.Node, error) {
+	return listOnlineNodes(ctx, s.db)
+}
+
+func listOnlineNodes(ctx context.Context, exec executor) ([]domain.Node, error) {
+	query := `
+		SELECT id, name, creator_id, ssh_host, ssh_port, ssh_user, ssh_key_id,
+			docker_socket, status, capabilities,
+			capacity_cpu_cores, capacity_memory_mb, capacity_disk_mb,
+			capacity_cpu_used, capacity_memory_used_mb, capacity_disk_used_mb,
+			location, last_health_check, error_message, created_at, updated_at
+		FROM nodes
+		WHERE status = 'online'
+		ORDER BY created_at ASC`
+
+	var rows []nodeRow
+	if err := exec.SelectContext(ctx, &rows, query); err != nil {
+		return nil, NewStoreError("ListOnlineNodes", "node", "", err.Error(), err)
+	}
+
+	nodes := make([]domain.Node, 0, len(rows))
+	for _, row := range rows {
+		node, err := rowToNode(&row)
+		if err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, *node)
+	}
+
+	return nodes, nil
+}
+
+// rowToNode converts a database row to a domain.Node.
+func rowToNode(row *nodeRow) (*domain.Node, error) {
+	var capabilities []string
+	if err := json.Unmarshal([]byte(row.Capabilities), &capabilities); err != nil {
+		return nil, NewStoreError("rowToNode", "node", row.ID, "failed to unmarshal capabilities", err)
+	}
+
+	createdAt, _ := time.Parse(time.RFC3339, row.CreatedAt)
+	updatedAt, _ := time.Parse(time.RFC3339, row.UpdatedAt)
+
+	var lastHealthCheck *time.Time
+	if row.LastHealthCheck != nil && *row.LastHealthCheck != "" {
+		hc, _ := time.Parse(time.RFC3339, *row.LastHealthCheck)
+		lastHealthCheck = &hc
+	}
+
+	sshKeyID := ""
+	if row.SSHKeyID != nil {
+		sshKeyID = *row.SSHKeyID
+	}
+
+	return &domain.Node{
+		ID:           row.ID,
+		Name:         row.Name,
+		CreatorID:    row.CreatorID,
+		SSHHost:      row.SSHHost,
+		SSHPort:      row.SSHPort,
+		SSHUser:      row.SSHUser,
+		SSHKeyID:     sshKeyID,
+		DockerSocket: row.DockerSocket,
+		Status:       domain.NodeStatus(row.Status),
+		Capabilities: capabilities,
+		Capacity: domain.NodeCapacity{
+			CPUCores:     row.CapacityCPUCores,
+			MemoryMB:     row.CapacityMemoryMB,
+			DiskMB:       row.CapacityDiskMB,
+			CPUUsed:      row.CapacityCPUUsed,
+			MemoryUsedMB: row.CapacityMemoryUsedMB,
+			DiskUsedMB:   row.CapacityDiskUsedMB,
+		},
+		Location:        row.Location,
+		LastHealthCheck: lastHealthCheck,
+		ErrorMessage:    row.ErrorMessage,
+		CreatedAt:       createdAt,
+		UpdatedAt:       updatedAt,
+	}, nil
+}
+
+// =============================================================================
+// SSH Key Operations
+// =============================================================================
+
+// sshKeyRow represents an SSH key row in the database.
+type sshKeyRow struct {
+	ID                  string `db:"id"`
+	CreatorID           string `db:"creator_id"`
+	Name                string `db:"name"`
+	PrivateKeyEncrypted []byte `db:"private_key_encrypted"`
+	Fingerprint         string `db:"fingerprint"`
+	CreatedAt           string `db:"created_at"`
+}
+
+// CreateSSHKey creates a new SSH key in the database.
+func (s *SQLiteStore) CreateSSHKey(ctx context.Context, key *domain.SSHKey) error {
+	return createSSHKey(ctx, s.db, key)
+}
+
+func createSSHKey(ctx context.Context, exec executor, key *domain.SSHKey) error {
+	query := `
+		INSERT INTO ssh_keys (id, creator_id, name, private_key_encrypted, fingerprint, created_at)
+		VALUES (:id, :creator_id, :name, :private_key_encrypted, :fingerprint, :created_at)`
+
+	row := sshKeyRow{
+		ID:                  key.ID,
+		CreatorID:           key.CreatorID,
+		Name:                key.Name,
+		PrivateKeyEncrypted: key.PrivateKeyEncrypted,
+		Fingerprint:         key.Fingerprint,
+		CreatedAt:           key.CreatedAt.Format(time.RFC3339),
+	}
+
+	_, err := exec.NamedExecContext(ctx, query, row)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return NewStoreError("CreateSSHKey", "ssh_key", key.ID, "SSH key with this name already exists for creator", ErrDuplicateKey)
+		}
+		return NewStoreError("CreateSSHKey", "ssh_key", key.ID, err.Error(), err)
+	}
+
+	return nil
+}
+
+// GetSSHKey retrieves an SSH key by ID.
+func (s *SQLiteStore) GetSSHKey(ctx context.Context, id string) (*domain.SSHKey, error) {
+	return getSSHKey(ctx, s.db, id)
+}
+
+func getSSHKey(ctx context.Context, exec executor, id string) (*domain.SSHKey, error) {
+	var row sshKeyRow
+	query := `SELECT id, creator_id, name, private_key_encrypted, fingerprint, created_at FROM ssh_keys WHERE id = ?`
+
+	if err := exec.GetContext(ctx, &row, query, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, NewStoreError("GetSSHKey", "ssh_key", id, "SSH key not found", ErrNotFound)
+		}
+		return nil, NewStoreError("GetSSHKey", "ssh_key", id, err.Error(), err)
+	}
+
+	createdAt, _ := time.Parse(time.RFC3339, row.CreatedAt)
+
+	return &domain.SSHKey{
+		ID:                  row.ID,
+		CreatorID:           row.CreatorID,
+		Name:                row.Name,
+		PrivateKeyEncrypted: row.PrivateKeyEncrypted,
+		Fingerprint:         row.Fingerprint,
+		CreatedAt:           createdAt,
+	}, nil
+}
+
+// DeleteSSHKey deletes an SSH key by ID.
+func (s *SQLiteStore) DeleteSSHKey(ctx context.Context, id string) error {
+	return deleteSSHKey(ctx, s.db, id)
+}
+
+func deleteSSHKey(ctx context.Context, exec executor, id string) error {
+	query := `DELETE FROM ssh_keys WHERE id = ?`
+
+	result, err := exec.ExecContext(ctx, query, id)
+	if err != nil {
+		return NewStoreError("DeleteSSHKey", "ssh_key", id, err.Error(), err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return NewStoreError("DeleteSSHKey", "ssh_key", id, "SSH key not found", ErrNotFound)
+	}
+
+	return nil
+}
+
+// ListSSHKeysByCreator lists all SSH keys for a creator.
+func (s *SQLiteStore) ListSSHKeysByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.SSHKey, error) {
+	return listSSHKeysByCreator(ctx, s.db, creatorID, opts)
+}
+
+func listSSHKeysByCreator(ctx context.Context, exec executor, creatorID string, opts ListOptions) ([]domain.SSHKey, error) {
+	opts = opts.Normalize()
+
+	query := `
+		SELECT id, creator_id, name, private_key_encrypted, fingerprint, created_at
+		FROM ssh_keys
+		WHERE creator_id = ?
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?`
+
+	var rows []sshKeyRow
+	if err := exec.SelectContext(ctx, &rows, query, creatorID, opts.Limit, opts.Offset); err != nil {
+		return nil, NewStoreError("ListSSHKeysByCreator", "ssh_key", creatorID, err.Error(), err)
+	}
+
+	keys := make([]domain.SSHKey, 0, len(rows))
+	for _, row := range rows {
+		createdAt, _ := time.Parse(time.RFC3339, row.CreatedAt)
+		keys = append(keys, domain.SSHKey{
+			ID:                  row.ID,
+			CreatorID:           row.CreatorID,
+			Name:                row.Name,
+			PrivateKeyEncrypted: row.PrivateKeyEncrypted,
+			Fingerprint:         row.Fingerprint,
+			CreatedAt:           createdAt,
+		})
+	}
+
+	return keys, nil
 }

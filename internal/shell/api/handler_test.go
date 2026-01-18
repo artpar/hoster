@@ -211,6 +211,48 @@ func (s *stubStore) GetContainerEvents(ctx context.Context, deploymentID string,
 	return []domain.ContainerEvent{}, nil // Stub - return empty for tests
 }
 
+// Node operations (Creator Worker Nodes)
+func (s *stubStore) CreateNode(ctx context.Context, node *domain.Node) error {
+	return nil // Stub - no-op for tests
+}
+
+func (s *stubStore) GetNode(ctx context.Context, id string) (*domain.Node, error) {
+	return nil, store.ErrNotFound // Stub - not found for tests
+}
+
+func (s *stubStore) UpdateNode(ctx context.Context, node *domain.Node) error {
+	return nil // Stub - no-op for tests
+}
+
+func (s *stubStore) DeleteNode(ctx context.Context, id string) error {
+	return nil // Stub - no-op for tests
+}
+
+func (s *stubStore) ListNodesByCreator(ctx context.Context, creatorID string, opts store.ListOptions) ([]domain.Node, error) {
+	return nil, nil // Stub - empty for tests
+}
+
+func (s *stubStore) ListOnlineNodes(ctx context.Context) ([]domain.Node, error) {
+	return nil, nil // Stub - empty for tests
+}
+
+// SSH Key operations
+func (s *stubStore) CreateSSHKey(ctx context.Context, key *domain.SSHKey) error {
+	return nil // Stub - no-op for tests
+}
+
+func (s *stubStore) GetSSHKey(ctx context.Context, id string) (*domain.SSHKey, error) {
+	return nil, store.ErrNotFound // Stub - not found for tests
+}
+
+func (s *stubStore) DeleteSSHKey(ctx context.Context, id string) error {
+	return nil // Stub - no-op for tests
+}
+
+func (s *stubStore) ListSSHKeysByCreator(ctx context.Context, creatorID string, opts store.ListOptions) ([]domain.SSHKey, error) {
+	return nil, nil // Stub - empty for tests
+}
+
 // stubDocker implements docker.Client for testing.
 type stubDocker struct {
 	pingErr    error

@@ -56,6 +56,10 @@ type PlanLimits struct {
 
 	// MaxDiskMB is the maximum total disk space in MB across all deployments
 	MaxDiskMB int64 `json:"max_disk_mb"`
+
+	// AllowedCapabilities lists node capability tags the plan permits
+	// e.g., ["standard"] for basic plans, ["standard","gpu","high-memory"] for premium
+	AllowedCapabilities []string `json:"allowed_capabilities"`
 }
 
 // =============================================================================

@@ -131,6 +131,7 @@ type Template struct {
 	Variables            []Variable   `json:"variables,omitempty"`
 	ConfigFiles          []ConfigFile `json:"config_files,omitempty"`
 	ResourceRequirements Resources    `json:"resource_requirements"`
+	RequiredCapabilities []string     `json:"required_capabilities,omitempty"` // Node capabilities required (e.g., ["gpu"])
 	PriceMonthly         int64        `json:"price_monthly_cents"`
 	Category             string       `json:"category,omitempty"`
 	Tags                 []string     `json:"tags,omitempty"`

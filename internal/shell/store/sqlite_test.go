@@ -1477,3 +1477,379 @@ func TestWithTx_ContextCancelled(t *testing.T) {
 // - WithTx: tx.Commit failure (requires unusual DB state)
 // - JSON marshal errors for valid Go types (map, slice) never fail
 // These are defensive error paths that protect against edge cases.
+
+// =============================================================================
+// Node Tests
+// =============================================================================
+
+func createTestNode(t *testing.T, store Store, creatorID string) *domain.Node {
+	t.Helper()
+	// Generate unique name using timestamp
+	uniqueName := "test-node-" + time.Now().Format("150405.000000000")
+	node, err := domain.NewNode(creatorID, uniqueName, "192.168.1.100", "root", 22, []string{"standard"})
+	require.NoError(t, err)
+	node.Capabilities = []string{"standard", "gpu"}
+	node.Capacity = domain.NodeCapacity{
+		CPUCores:     8,
+		MemoryMB:     16384,
+		DiskMB:       100000,
+		CPUUsed:      2,
+		MemoryUsedMB: 4096,
+		DiskUsedMB:   20000,
+	}
+	err = store.CreateNode(context.Background(), node)
+	require.NoError(t, err)
+	return node
+}
+
+func TestCreateNode_Success(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	node, err := domain.NewNode("creator-123", "my-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
+	require.NoError(t, err)
+	node.Capabilities = []string{"standard", "ssd"}
+
+	err = store.CreateNode(ctx, node)
+	require.NoError(t, err)
+
+	// Verify it was stored
+	retrieved, err := store.GetNode(ctx, node.ID)
+	require.NoError(t, err)
+	assert.Equal(t, node.ID, retrieved.ID)
+	assert.Equal(t, "my-node", retrieved.Name)
+	assert.Equal(t, "creator-123", retrieved.CreatorID)
+	assert.Equal(t, "10.0.0.1", retrieved.SSHHost)
+	assert.Equal(t, 22, retrieved.SSHPort)
+	assert.Equal(t, "ubuntu", retrieved.SSHUser)
+	assert.Equal(t, []string{"standard", "ssd"}, retrieved.Capabilities)
+	assert.Equal(t, domain.NodeStatusOffline, retrieved.Status)
+}
+
+func TestCreateNode_DuplicateID(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	node1, _ := domain.NewNode("creator-123", "node-1", "10.0.0.1", "ubuntu", 22, []string{"standard"})
+	err := store.CreateNode(ctx, node1)
+	require.NoError(t, err)
+
+	// Try to create with same ID
+	node2, _ := domain.NewNode("creator-123", "node-2", "10.0.0.2", "ubuntu", 22, []string{"standard"})
+	node2.ID = node1.ID
+	err = store.CreateNode(ctx, node2)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrDuplicateID))
+}
+
+func TestCreateNode_DuplicateNameSameCreator(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	node1, _ := domain.NewNode("creator-123", "my-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
+	err := store.CreateNode(ctx, node1)
+	require.NoError(t, err)
+
+	// Try to create with same name for same creator
+	node2, _ := domain.NewNode("creator-123", "my-node", "10.0.0.2", "ubuntu", 22, []string{"standard"})
+	err = store.CreateNode(ctx, node2)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrDuplicateKey))
+}
+
+func TestCreateNode_SameNameDifferentCreator(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	node1, _ := domain.NewNode("creator-123", "my-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
+	err := store.CreateNode(ctx, node1)
+	require.NoError(t, err)
+
+	// Different creator should be able to use same name
+	node2, _ := domain.NewNode("creator-456", "my-node", "10.0.0.2", "ubuntu", 22, []string{"standard"})
+	err = store.CreateNode(ctx, node2)
+	require.NoError(t, err)
+}
+
+func TestGetNode_NotFound(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	_, err := store.GetNode(ctx, "nonexistent-id")
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNotFound))
+}
+
+func TestUpdateNode_Success(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+	node := createTestNode(t, store, "creator-123")
+
+	// Update node
+	node.Status = domain.NodeStatusOnline
+	node.Capabilities = []string{"standard", "gpu", "high-memory"}
+	node.Capacity.CPUUsed = 4
+	node.Capacity.MemoryUsedMB = 8192
+
+	err := store.UpdateNode(ctx, node)
+	require.NoError(t, err)
+
+	// Verify update
+	retrieved, err := store.GetNode(ctx, node.ID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.NodeStatusOnline, retrieved.Status)
+	assert.Equal(t, []string{"standard", "gpu", "high-memory"}, retrieved.Capabilities)
+	assert.Equal(t, float64(4), retrieved.Capacity.CPUUsed)
+	assert.Equal(t, int64(8192), retrieved.Capacity.MemoryUsedMB)
+}
+
+func TestUpdateNode_NotFound(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	node, _ := domain.NewNode("creator-123", "ghost-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
+	err := store.UpdateNode(ctx, node)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNotFound))
+}
+
+func TestDeleteNode_Success(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+	node := createTestNode(t, store, "creator-123")
+
+	err := store.DeleteNode(ctx, node.ID)
+	require.NoError(t, err)
+
+	// Verify deleted
+	_, err = store.GetNode(ctx, node.ID)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNotFound))
+}
+
+func TestDeleteNode_NotFound(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	err := store.DeleteNode(ctx, "nonexistent-id")
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNotFound))
+}
+
+func TestListNodesByCreator_Success(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	// Create nodes for different creators
+	createTestNode(t, store, "creator-a")
+	createTestNode(t, store, "creator-a")
+	createTestNode(t, store, "creator-b")
+
+	// List nodes for creator-a
+	nodes, err := store.ListNodesByCreator(ctx, "creator-a", DefaultListOptions())
+	require.NoError(t, err)
+	assert.Len(t, nodes, 2)
+	for _, n := range nodes {
+		assert.Equal(t, "creator-a", n.CreatorID)
+	}
+
+	// List nodes for creator-b
+	nodes, err = store.ListNodesByCreator(ctx, "creator-b", DefaultListOptions())
+	require.NoError(t, err)
+	assert.Len(t, nodes, 1)
+}
+
+func TestListOnlineNodes_Success(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	// Create nodes with different statuses
+	node1 := createTestNode(t, store, "creator-a")
+	node1.Status = domain.NodeStatusOnline
+	store.UpdateNode(ctx, node1)
+
+	node2 := createTestNode(t, store, "creator-b")
+	node2.Status = domain.NodeStatusOnline
+	store.UpdateNode(ctx, node2)
+
+	createTestNode(t, store, "creator-c") // offline by default
+
+	// List online nodes
+	nodes, err := store.ListOnlineNodes(ctx)
+	require.NoError(t, err)
+	assert.Len(t, nodes, 2)
+	for _, n := range nodes {
+		assert.Equal(t, domain.NodeStatusOnline, n.Status)
+	}
+}
+
+// =============================================================================
+// SSH Key Tests
+// =============================================================================
+
+func createTestSSHKey(t *testing.T, store Store, creatorID, name string) *domain.SSHKey {
+	t.Helper()
+	// Use UUID-like unique ID to avoid collisions
+	uniqueID := "key-" + creatorID + "-" + name + "-" + time.Now().Format("150405.000000000")
+	key := &domain.SSHKey{
+		ID:                  uniqueID,
+		CreatorID:           creatorID,
+		Name:                name,
+		PrivateKeyEncrypted: []byte("encrypted-key-data"),
+		Fingerprint:         "SHA256:abc123xyz",
+		CreatedAt:           time.Now(),
+	}
+	err := store.CreateSSHKey(context.Background(), key)
+	require.NoError(t, err)
+	return key
+}
+
+func TestCreateSSHKey_Success(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	key := &domain.SSHKey{
+		ID:                  "key-123",
+		CreatorID:           "creator-456",
+		Name:                "my-ssh-key",
+		PrivateKeyEncrypted: []byte("encrypted-private-key"),
+		Fingerprint:         "SHA256:fingerprint123",
+		CreatedAt:           time.Now(),
+	}
+
+	err := store.CreateSSHKey(ctx, key)
+	require.NoError(t, err)
+
+	// Verify retrieval
+	retrieved, err := store.GetSSHKey(ctx, key.ID)
+	require.NoError(t, err)
+	assert.Equal(t, key.ID, retrieved.ID)
+	assert.Equal(t, "my-ssh-key", retrieved.Name)
+	assert.Equal(t, "creator-456", retrieved.CreatorID)
+	assert.Equal(t, "SHA256:fingerprint123", retrieved.Fingerprint)
+	assert.Equal(t, []byte("encrypted-private-key"), retrieved.PrivateKeyEncrypted)
+}
+
+func TestCreateSSHKey_DuplicateNameSameCreator(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	createTestSSHKey(t, store, "creator-123", "my-key")
+
+	// Try to create with same name for same creator
+	key2 := &domain.SSHKey{
+		ID:                  "key-different",
+		CreatorID:           "creator-123",
+		Name:                "my-key",
+		PrivateKeyEncrypted: []byte("data"),
+		Fingerprint:         "SHA256:xyz",
+		CreatedAt:           time.Now(),
+	}
+	err := store.CreateSSHKey(ctx, key2)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrDuplicateKey))
+}
+
+func TestGetSSHKey_NotFound(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	_, err := store.GetSSHKey(ctx, "nonexistent-id")
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNotFound))
+}
+
+func TestDeleteSSHKey_Success(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+	key := createTestSSHKey(t, store, "creator-123", "my-key")
+
+	err := store.DeleteSSHKey(ctx, key.ID)
+	require.NoError(t, err)
+
+	// Verify deleted
+	_, err = store.GetSSHKey(ctx, key.ID)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNotFound))
+}
+
+func TestDeleteSSHKey_NotFound(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	err := store.DeleteSSHKey(ctx, "nonexistent-id")
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNotFound))
+}
+
+func TestListSSHKeysByCreator_Success(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	// Create keys for different creators
+	createTestSSHKey(t, store, "creator-a", "key1")
+	createTestSSHKey(t, store, "creator-a", "key2")
+	createTestSSHKey(t, store, "creator-b", "key1")
+
+	// List keys for creator-a
+	keys, err := store.ListSSHKeysByCreator(ctx, "creator-a", DefaultListOptions())
+	require.NoError(t, err)
+	assert.Len(t, keys, 2)
+	for _, k := range keys {
+		assert.Equal(t, "creator-a", k.CreatorID)
+	}
+}
+
+func TestNode_WithSSHKey(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	// Create SSH key first
+	key := createTestSSHKey(t, store, "creator-123", "deploy-key")
+
+	// Create node with SSH key reference
+	node, _ := domain.NewNode("creator-123", "my-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
+	node.SSHKeyID = key.ID
+	err := store.CreateNode(ctx, node)
+	require.NoError(t, err)
+
+	// Retrieve and verify
+	retrieved, err := store.GetNode(ctx, node.ID)
+	require.NoError(t, err)
+	assert.Equal(t, key.ID, retrieved.SSHKeyID)
+}
+
+func TestNode_CapabilitiesSerialization(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	node, _ := domain.NewNode("creator-123", "my-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
+	node.Capabilities = []string{"gpu", "high-memory", "ssd", "standard"}
+
+	err := store.CreateNode(ctx, node)
+	require.NoError(t, err)
+
+	retrieved, err := store.GetNode(ctx, node.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"gpu", "high-memory", "ssd", "standard"}, retrieved.Capabilities)
+}
+
+func TestNode_LastHealthCheck(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	node := createTestNode(t, store, "creator-123")
+
+	// Set last health check
+	now := time.Now().Truncate(time.Second)
+	node.LastHealthCheck = &now
+	node.Status = domain.NodeStatusOnline
+
+	err := store.UpdateNode(ctx, node)
+	require.NoError(t, err)
+
+	retrieved, err := store.GetNode(ctx, node.ID)
+	require.NoError(t, err)
+	require.NotNil(t, retrieved.LastHealthCheck)
+	assert.Equal(t, now.UTC().Truncate(time.Second), retrieved.LastHealthCheck.UTC().Truncate(time.Second))
+}

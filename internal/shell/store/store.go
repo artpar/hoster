@@ -39,6 +39,20 @@ type Store interface {
 	CreateContainerEvent(ctx context.Context, event *domain.ContainerEvent) error
 	GetContainerEvents(ctx context.Context, deploymentID string, limit int, eventType *string) ([]domain.ContainerEvent, error)
 
+	// Node operations (Creator Worker Nodes)
+	CreateNode(ctx context.Context, node *domain.Node) error
+	GetNode(ctx context.Context, id string) (*domain.Node, error)
+	UpdateNode(ctx context.Context, node *domain.Node) error
+	DeleteNode(ctx context.Context, id string) error
+	ListNodesByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.Node, error)
+	ListOnlineNodes(ctx context.Context) ([]domain.Node, error)
+
+	// SSH Key operations
+	CreateSSHKey(ctx context.Context, key *domain.SSHKey) error
+	GetSSHKey(ctx context.Context, id string) (*domain.SSHKey, error)
+	DeleteSSHKey(ctx context.Context, id string) error
+	ListSSHKeysByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.SSHKey, error)
+
 	// Transaction support
 	WithTx(ctx context.Context, fn func(Store) error) error
 

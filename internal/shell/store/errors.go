@@ -20,6 +20,9 @@ var (
 	// ErrDuplicateSlug is returned when creating a template with an existing slug.
 	ErrDuplicateSlug = errors.New("template with this slug already exists")
 
+	// ErrDuplicateKey is returned when a unique constraint is violated.
+	ErrDuplicateKey = errors.New("duplicate key constraint violated")
+
 	// ErrForeignKey is returned when a foreign key constraint is violated.
 	ErrForeignKey = errors.New("foreign key constraint violated")
 
