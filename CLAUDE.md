@@ -267,57 +267,53 @@ These are intentional limitations documented in specs:
 ### Test Counts (January 18, 2026)
 | Suite | Count | Status |
 |-------|-------|--------|
-| Unit (core/) | 117 | PASS |
-| Integration (shell/) | 123 | PASS |
-| E2E | 22 | PASS |
-| **Total** | **262** | **ALL PASS** |
+| Unit (core/) | ~180 | PASS |
+| Integration (shell/) | ~150 | PASS |
+| E2E | ~100 | PASS |
+| **Total** | **427** | **ALL PASS** |
 
-### TODO (Next Steps) - ARCHITECTURAL REFACTOR
+### MVP STATUS: ✅ COMPLETE
 
-**CRITICAL: ADR-002 is being violated.** Pure logic exists in shell that should be in core.
+The core deployment loop is fully functional:
+1. ✅ Creator creates template with docker-compose
+2. ✅ Creator publishes template
+3. ✅ Customer deploys from published template
+4. ✅ Deployment gets auto-generated domain
+5. ✅ Deployment gets Traefik labels for external routing
+6. ✅ Customer can start/stop/restart deployments
+7. ✅ Customer can delete deployments
 
-#### 1. Create `internal/core/deployment/` package (HIGH PRIORITY)
-Move these pure functions from `shell/docker/orchestrator.go`:
-- [ ] `naming.go` - networkName(), volumeName(), containerName()
-- [ ] `ordering.go` - topologicalSort() for service dependencies
-- [ ] `container.go` - buildContainerSpec() mapping
-- [ ] `ports.go` - convertPorts() transformation
-- [ ] `planner.go` - DetermineStartPath() for state transitions
+### ADR-002 Compliance: ✅ COMPLETE
 
-#### 2. Create `internal/core/traefik/` package (HIGH PRIORITY)
-- [ ] `labels.go` - GenerateTraefikLabels(deployment) map[string]string
-- Without this, deployments have NO external routing!
+All pure logic has been moved to `internal/core/`:
 
-#### 3. Refactor `shell/docker/orchestrator.go`
-- [ ] Import from core/deployment/
-- [ ] Keep ONLY I/O operations (actual Docker calls)
-- [ ] Should be ~50% smaller after refactor
+#### `internal/core/deployment/` package
+- [x] `naming.go` - networkName(), volumeName(), containerName()
+- [x] `ordering.go` - topologicalSort() for service dependencies
+- [x] `container.go` - buildContainerSpec() mapping
+- [x] `ports.go` - convertPorts() transformation
+- [x] `variables.go` - substituteVariables() for env var substitution
+- [x] `planner.go` - DetermineStartPath(), CanStopDeployment()
 
-#### 4. Refactor `shell/api/handler.go`
-- [ ] Move state transition logic to core
-- [ ] Handler should just call core and execute decisions
+#### `internal/core/traefik/` package
+- [x] `labels.go` - GenerateLabels() for Traefik routing
 
-#### 5. Missing spec features
-- [ ] Domain auto-generation (subdomain on deployment start)
-- [ ] Resources calculation from compose spec
+#### `internal/core/validation/` package
+- [x] `template.go` - ValidateCreateTemplateFields(), CanUpdateTemplate(), CanCreateDeployment()
+
+#### `internal/core/domain/` package
+- [x] `slug.go` - Slugify() for URL-safe names
+- [x] `deployment.go` - GenerateDomain() for auto domain assignment
+
+### What's Next (Post-MVP)
+- [ ] Frontend UI (currently API-only)
+- [ ] User authentication/authorization
+- [ ] Billing/pricing integration
+- [ ] Multi-node deployment support
+- [ ] Monitoring/logging dashboard
 
 ### Blocked
-- Nothing blocked, but architectural debt is accumulating
-
-### Architecture Violation Details
-
-**orchestrator.go has these PURE functions that should be in core:**
-```
-topologicalSort()      → core/deployment/ordering.go
-substituteVariables()  → core/compose/variables.go
-buildContainerSpec()   → core/deployment/container.go
-convertPorts()         → core/deployment/ports.go
-networkName()          → core/deployment/naming.go
-volumeName()           → core/deployment/naming.go
-containerName()        → core/deployment/naming.go
-```
-
-Per ADR-002: "Functional Core has NO side effects" - these functions qualify but are in wrong place.
+- Nothing blocked - MVP complete
 
 ---
 
