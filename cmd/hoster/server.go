@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/artpar/hoster/internal/shell/api"
+	"github.com/artpar/hoster/internal/shell/billing"
 	"github.com/artpar/hoster/internal/shell/docker"
 	"github.com/artpar/hoster/internal/shell/store"
 )
@@ -32,11 +33,12 @@ const (
 
 // Server represents the Hoster application server.
 type Server struct {
-	config     *Config
-	httpServer *http.Server
-	store      store.Store
-	docker     docker.Client
-	logger     *slog.Logger
+	config          *Config
+	httpServer      *http.Server
+	store           store.Store
+	docker          docker.Client
+	billingReporter *billing.Reporter
+	logger          *slog.Logger
 }
 
 // NewServer creates a new server with the given config.
@@ -94,12 +96,39 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		WriteTimeout: cfg.Server.WriteTimeout,
 	}
 
+	// Create billing reporter (F009: Billing Integration)
+	var billingReporter *billing.Reporter
+	if cfg.Billing.Enabled {
+		var billingClient billing.Client
+		if cfg.Billing.APIGateURL != "" {
+			billingClient = billing.NewAPIGateClient(billing.APIGateConfig{
+				BaseURL: cfg.Billing.APIGateURL,
+				APIKey:  cfg.Billing.APIKey,
+			})
+			logger.Info("billing enabled", "apigate_url", cfg.Billing.APIGateURL)
+		} else {
+			billingClient = billing.NewNoOpClient()
+			logger.Warn("billing enabled but no APIGate URL configured, using no-op client")
+		}
+
+		billingReporter = billing.NewReporter(billing.ReporterConfig{
+			Store:     s,
+			Client:    billingClient,
+			Interval:  cfg.Billing.ReportInterval,
+			BatchSize: cfg.Billing.BatchSize,
+			Logger:    logger,
+		})
+	} else {
+		logger.Info("billing disabled")
+	}
+
 	return &Server{
-		config:     cfg,
-		httpServer: httpServer,
-		store:      s,
-		docker:     d,
-		logger:     logger,
+		config:          cfg,
+		httpServer:      httpServer,
+		store:           s,
+		docker:          d,
+		billingReporter: billingReporter,
+		logger:          logger,
 	}, nil
 }
 
@@ -108,6 +137,11 @@ func (s *Server) Start(ctx context.Context) error {
 	// Setup signal handling
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	// Start billing reporter in background (F009: Billing Integration)
+	if s.billingReporter != nil {
+		go s.billingReporter.Start(ctx)
+	}
 
 	// Start HTTP server in goroutine
 	errCh := make(chan error, 1)
@@ -147,6 +181,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// Shutdown HTTP server
 	if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
 		s.logger.Error("HTTP server shutdown error", "error", err)
+	}
+
+	// Stop billing reporter (F009: Billing Integration)
+	if s.billingReporter != nil {
+		s.billingReporter.Stop()
 	}
 
 	// Close Docker client

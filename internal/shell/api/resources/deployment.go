@@ -14,6 +14,7 @@ import (
 	coredeployment "github.com/artpar/hoster/internal/core/deployment"
 	"github.com/artpar/hoster/internal/core/domain"
 	"github.com/artpar/hoster/internal/core/validation"
+	"github.com/artpar/hoster/internal/shell/billing"
 	"github.com/artpar/hoster/internal/shell/docker"
 	"github.com/artpar/hoster/internal/shell/store"
 	"github.com/google/uuid"
@@ -361,6 +362,16 @@ func (r DeploymentResource) Create(obj interface{}, req api2go.Request) (api2go.
 		return &Response{Code: http.StatusInternalServerError}, err
 	}
 
+	// Record usage event for billing (F009: Billing Integration)
+	if err := billing.RecordEvent(ctx, r.Store, customerID, domain.EventDeploymentCreated,
+		domainDeployment.ID, "deployment", map[string]string{
+			"template_id": domainDeployment.TemplateID,
+			"name":        domainDeployment.Name,
+		}); err != nil {
+		r.Logger.Warn("failed to record deployment_created event", "error", err)
+		// Don't fail the request, just log the warning
+	}
+
 	return &Response{
 		Code: http.StatusCreated,
 		Res:  DeploymentFromDomain(domainDeployment),
@@ -404,6 +415,15 @@ func (r DeploymentResource) Delete(id string, req api2go.Request) (api2go.Respon
 	if err := r.Store.DeleteDeployment(ctx, id); err != nil {
 		r.Logger.Error("failed to delete deployment", "error", err)
 		return &Response{Code: http.StatusInternalServerError}, err
+	}
+
+	// Record usage event for billing (F009: Billing Integration)
+	if err := billing.RecordEvent(ctx, r.Store, deployment.CustomerID, domain.EventDeploymentDeleted,
+		deployment.ID, "deployment", map[string]string{
+			"template_id": deployment.TemplateID,
+			"name":        deployment.Name,
+		}); err != nil {
+		r.Logger.Warn("failed to record deployment_deleted event", "error", err)
 	}
 
 	r.Logger.Info("deployment deleted", "deployment_id", id)
@@ -523,6 +543,15 @@ func (r DeploymentResource) StartDeployment(id string, req *http.Request) (api2g
 		"containers", len(containers),
 	)
 
+	// Record usage event for billing (F009: Billing Integration)
+	if err := billing.RecordEvent(ctx, r.Store, deployment.CustomerID, domain.EventDeploymentStarted,
+		deployment.ID, "deployment", map[string]string{
+			"template_id": deployment.TemplateID,
+			"containers":  fmt.Sprintf("%d", len(containers)),
+		}); err != nil {
+		r.Logger.Warn("failed to record deployment_started event", "error", err)
+	}
+
 	return &Response{
 		Code: http.StatusOK,
 		Res:  DeploymentFromDomain(deployment),
@@ -602,6 +631,14 @@ func (r DeploymentResource) StopDeployment(id string, req *http.Request) (api2go
 	}
 
 	r.Logger.Info("deployment stopped", "deployment_id", deployment.ID)
+
+	// Record usage event for billing (F009: Billing Integration)
+	if err := billing.RecordEvent(ctx, r.Store, deployment.CustomerID, domain.EventDeploymentStopped,
+		deployment.ID, "deployment", map[string]string{
+			"template_id": deployment.TemplateID,
+		}); err != nil {
+		r.Logger.Warn("failed to record deployment_stopped event", "error", err)
+	}
 
 	return &Response{
 		Code: http.StatusOK,

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/artpar/hoster/internal/core/domain"
 )
@@ -28,6 +29,11 @@ type Store interface {
 	ListDeployments(ctx context.Context, opts ListOptions) ([]domain.Deployment, error)
 	ListDeploymentsByTemplate(ctx context.Context, templateID string, opts ListOptions) ([]domain.Deployment, error)
 	ListDeploymentsByCustomer(ctx context.Context, customerID string, opts ListOptions) ([]domain.Deployment, error)
+
+	// Usage event operations (F009: Billing Integration)
+	CreateUsageEvent(ctx context.Context, event *domain.MeterEvent) error
+	GetUnreportedEvents(ctx context.Context, limit int) ([]domain.MeterEvent, error)
+	MarkEventsReported(ctx context.Context, ids []string, reportedAt time.Time) error
 
 	// Transaction support
 	WithTx(ctx context.Context, fn func(Store) error) error

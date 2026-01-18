@@ -296,6 +296,18 @@ func (s *txSQLiteStore) Close() error {
 	return nil
 }
 
+func (s *txSQLiteStore) CreateUsageEvent(ctx context.Context, event *domain.MeterEvent) error {
+	return createUsageEvent(ctx, s.tx, event)
+}
+
+func (s *txSQLiteStore) GetUnreportedEvents(ctx context.Context, limit int) ([]domain.MeterEvent, error) {
+	return getUnreportedEvents(ctx, s.tx, limit)
+}
+
+func (s *txSQLiteStore) MarkEventsReported(ctx context.Context, ids []string, reportedAt time.Time) error {
+	return markEventsReported(ctx, s.tx, ids, reportedAt)
+}
+
 // =============================================================================
 // Shared Implementation Functions
 // =============================================================================
@@ -858,5 +870,164 @@ func rowToDeployment(row *deploymentRow) (*domain.Deployment, error) {
 		UpdatedAt:    updatedAt,
 		StartedAt:    startedAt,
 		StoppedAt:    stoppedAt,
+	}, nil
+}
+
+// =============================================================================
+// Usage Event Operations (F009: Billing Integration)
+// =============================================================================
+
+// usageEventRow represents a usage event row in the database.
+type usageEventRow struct {
+	ID           string  `db:"id"`
+	UserID       string  `db:"user_id"`
+	EventType    string  `db:"event_type"`
+	ResourceID   string  `db:"resource_id"`
+	ResourceType string  `db:"resource_type"`
+	Quantity     int64   `db:"quantity"`
+	Metadata     *string `db:"metadata"`
+	Timestamp    string  `db:"timestamp"`
+	ReportedAt   *string `db:"reported_at"`
+	CreatedAt    string  `db:"created_at"`
+}
+
+// CreateUsageEvent inserts a new usage event.
+func (s *SQLiteStore) CreateUsageEvent(ctx context.Context, event *domain.MeterEvent) error {
+	return createUsageEvent(ctx, s.db, event)
+}
+
+func createUsageEvent(ctx context.Context, exec executor, event *domain.MeterEvent) error {
+	var metadataJSON *string
+	if len(event.Metadata) > 0 {
+		data, err := json.Marshal(event.Metadata)
+		if err != nil {
+			return NewStoreError("CreateUsageEvent", "usage_event", event.ID, "failed to marshal metadata", ErrInvalidData)
+		}
+		s := string(data)
+		metadataJSON = &s
+	}
+
+	row := usageEventRow{
+		ID:           event.ID,
+		UserID:       event.UserID,
+		EventType:    string(event.EventType),
+		ResourceID:   event.ResourceID,
+		ResourceType: event.ResourceType,
+		Quantity:     event.Quantity,
+		Metadata:     metadataJSON,
+		Timestamp:    event.Timestamp.Format(time.RFC3339),
+		CreatedAt:    event.CreatedAt.Format(time.RFC3339),
+	}
+
+	query := `
+		INSERT INTO usage_events (id, user_id, event_type, resource_id, resource_type, quantity, metadata, timestamp, created_at)
+		VALUES (:id, :user_id, :event_type, :resource_id, :resource_type, :quantity, :metadata, :timestamp, :created_at)`
+
+	_, err := exec.NamedExecContext(ctx, query, row)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			return NewStoreError("CreateUsageEvent", "usage_event", event.ID, "event already exists", ErrDuplicateID)
+		}
+		return NewStoreError("CreateUsageEvent", "usage_event", event.ID, err.Error(), err)
+	}
+
+	return nil
+}
+
+// GetUnreportedEvents retrieves usage events that haven't been reported to APIGate.
+func (s *SQLiteStore) GetUnreportedEvents(ctx context.Context, limit int) ([]domain.MeterEvent, error) {
+	return getUnreportedEvents(ctx, s.db, limit)
+}
+
+func getUnreportedEvents(ctx context.Context, exec executor, limit int) ([]domain.MeterEvent, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	query := `
+		SELECT id, user_id, event_type, resource_id, resource_type, quantity, metadata, timestamp, reported_at, created_at
+		FROM usage_events
+		WHERE reported_at IS NULL
+		ORDER BY timestamp ASC
+		LIMIT ?`
+
+	var rows []usageEventRow
+	if err := exec.SelectContext(ctx, &rows, query, limit); err != nil {
+		return nil, NewStoreError("GetUnreportedEvents", "usage_event", "", err.Error(), err)
+	}
+
+	events := make([]domain.MeterEvent, 0, len(rows))
+	for _, row := range rows {
+		event, err := rowToUsageEvent(&row)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, *event)
+	}
+
+	return events, nil
+}
+
+// MarkEventsReported marks usage events as reported to APIGate.
+func (s *SQLiteStore) MarkEventsReported(ctx context.Context, ids []string, reportedAt time.Time) error {
+	return markEventsReported(ctx, s.db, ids, reportedAt)
+}
+
+func markEventsReported(ctx context.Context, exec executor, ids []string, reportedAt time.Time) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	// Build placeholder string for IN clause
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids)+1)
+	args[0] = reportedAt.Format(time.RFC3339)
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i+1] = id
+	}
+
+	query := fmt.Sprintf(`
+		UPDATE usage_events
+		SET reported_at = ?
+		WHERE id IN (%s)`, strings.Join(placeholders, ","))
+
+	_, err := exec.ExecContext(ctx, query, args...)
+	if err != nil {
+		return NewStoreError("MarkEventsReported", "usage_event", "", err.Error(), err)
+	}
+
+	return nil
+}
+
+// rowToUsageEvent converts a database row to a domain.MeterEvent.
+func rowToUsageEvent(row *usageEventRow) (*domain.MeterEvent, error) {
+	timestamp, _ := time.Parse(time.RFC3339, row.Timestamp)
+	createdAt, _ := time.Parse(time.RFC3339, row.CreatedAt)
+
+	var reportedAt *time.Time
+	if row.ReportedAt != nil && *row.ReportedAt != "" {
+		t, _ := time.Parse(time.RFC3339, *row.ReportedAt)
+		reportedAt = &t
+	}
+
+	var metadata map[string]string
+	if row.Metadata != nil && *row.Metadata != "" && *row.Metadata != "null" {
+		if err := json.Unmarshal([]byte(*row.Metadata), &metadata); err != nil {
+			return nil, NewStoreError("rowToUsageEvent", "usage_event", row.ID, "failed to parse metadata", ErrInvalidData)
+		}
+	}
+
+	return &domain.MeterEvent{
+		ID:           row.ID,
+		UserID:       row.UserID,
+		EventType:    domain.EventType(row.EventType),
+		ResourceID:   row.ResourceID,
+		ResourceType: row.ResourceType,
+		Quantity:     row.Quantity,
+		Metadata:     metadata,
+		Timestamp:    timestamp,
+		ReportedAt:   reportedAt,
+		CreatedAt:    createdAt,
 	}, nil
 }

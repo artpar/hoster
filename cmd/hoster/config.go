@@ -22,6 +22,7 @@ type Config struct {
 	Log      LogConfig      `mapstructure:"log"`
 	Domain   DomainConfig   `mapstructure:"domain"`
 	Auth     AuthConfig     `mapstructure:"auth"`
+	Billing  BillingConfig  `mapstructure:"billing"`
 }
 
 // ServerConfig holds HTTP server configuration.
@@ -77,6 +78,25 @@ type AuthConfig struct {
 	SharedSecret string `mapstructure:"shared_secret"`
 }
 
+// BillingConfig holds billing/metering configuration.
+// Following F009: Billing Integration
+type BillingConfig struct {
+	// Enabled determines if usage metering is enabled.
+	Enabled bool `mapstructure:"enabled"`
+
+	// APIGateURL is the base URL of the APIGate billing API.
+	APIGateURL string `mapstructure:"apigate_url"`
+
+	// APIKey is the API key for authenticating with APIGate.
+	APIKey string `mapstructure:"api_key"`
+
+	// ReportInterval is how often to batch and report usage events.
+	ReportInterval time.Duration `mapstructure:"report_interval"`
+
+	// BatchSize is the maximum number of events to report in a single batch.
+	BatchSize int `mapstructure:"batch_size"`
+}
+
 // =============================================================================
 // Config Loading
 // =============================================================================
@@ -100,6 +120,13 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("auth.mode", "none")          // Default to no auth for development
 	v.SetDefault("auth.require_auth", false)   // Don't require auth by default
 	v.SetDefault("auth.shared_secret", "")     // No secret validation by default
+
+	// Billing defaults (F009: Billing Integration)
+	v.SetDefault("billing.enabled", false)            // Disabled by default for development
+	v.SetDefault("billing.apigate_url", "http://localhost:8080")
+	v.SetDefault("billing.api_key", "")
+	v.SetDefault("billing.report_interval", "60s")
+	v.SetDefault("billing.batch_size", 100)
 
 	// Load from file if provided
 	if configPath != "" {

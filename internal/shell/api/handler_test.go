@@ -191,6 +191,18 @@ func (s *stubStore) Close() error {
 	return nil
 }
 
+func (s *stubStore) CreateUsageEvent(ctx context.Context, event *domain.MeterEvent) error {
+	return nil // Stub - no-op for tests
+}
+
+func (s *stubStore) GetUnreportedEvents(ctx context.Context, limit int) ([]domain.MeterEvent, error) {
+	return nil, nil // Stub - no-op for tests
+}
+
+func (s *stubStore) MarkEventsReported(ctx context.Context, ids []string, reportedAt time.Time) error {
+	return nil // Stub - no-op for tests
+}
+
 // stubDocker implements docker.Client for testing.
 type stubDocker struct {
 	pingErr    error
