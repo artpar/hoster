@@ -73,13 +73,19 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		}
 	}
 
-	// Create HTTP handler
-	handler := api.NewHandler(s, d, logger, cfg.Domain.BaseDomain, cfg.Domain.ConfigDir)
+	// Create HTTP handler using new JSON:API setup (ADR-003)
+	handler := api.SetupAPI(api.APIConfig{
+		Store:      s,
+		Docker:     d,
+		Logger:     logger,
+		BaseDomain: cfg.Domain.BaseDomain,
+		ConfigDir:  cfg.Domain.ConfigDir,
+	})
 
 	// Create HTTP server
 	httpServer := &http.Server{
 		Addr:         cfg.Server.Address(),
-		Handler:      handler.Routes(),
+		Handler:      handler,
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 	}
