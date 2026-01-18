@@ -1,0 +1,202 @@
+# Template
+
+## Overview
+
+A Template is a deployable package definition. It contains a Docker Compose specification, configurable variables, resource requirements, and pricing information. Templates are created by package creators and deployed as instances by customers.
+
+## Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | UUID | Yes (auto) | Unique identifier, generated on creation |
+| `name` | string | Yes | Human-readable name (3-100 chars, alphanumeric + spaces + hyphens) |
+| `slug` | string | Yes (auto) | URL-safe identifier derived from name |
+| `description` | string | No | Markdown description of what this template deploys |
+| `version` | string | Yes | Semantic version (e.g., "1.0.0") |
+| `compose_spec` | string | Yes | Docker Compose YAML content |
+| `variables` | []Variable | No | User-configurable variables |
+| `resource_requirements` | Resources | Yes (auto) | Computed from compose spec |
+| `price_monthly_cents` | int64 | Yes | Monthly price in cents (0 = free) |
+| `category` | string | No | Category for marketplace (e.g., "cms", "database") |
+| `tags` | []string | No | Tags for search/filtering |
+| `published` | bool | Yes | Whether visible in marketplace |
+| `creator_id` | UUID | Yes | Who created this template |
+| `created_at` | timestamp | Yes (auto) | When created |
+| `updated_at` | timestamp | Yes (auto) | When last modified |
+
+### Variable Type
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Variable name (used in compose spec as `${VAR_NAME}`) |
+| `label` | string | Yes | Human-readable label |
+| `description` | string | No | Help text |
+| `type` | enum | Yes | `string`, `number`, `boolean`, `password`, `select` |
+| `default` | string | No | Default value |
+| `required` | bool | Yes | Whether user must provide value |
+| `options` | []string | No | Valid options (for `select` type) |
+| `validation` | string | No | Regex pattern for validation |
+
+### Resources Type
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cpu_cores` | float64 | CPU cores required |
+| `memory_mb` | int64 | Memory in MB |
+| `disk_mb` | int64 | Disk space in MB |
+
+## Invariants
+
+1. **Name is required**: Must be 3-100 characters
+2. **Name format**: Only alphanumeric, spaces, and hyphens allowed
+3. **Slug is unique**: No two templates can have the same slug
+4. **Version is semver**: Must match `X.Y.Z` pattern
+5. **Compose spec is valid**: Must parse as valid Docker Compose
+6. **Price is non-negative**: Must be >= 0
+7. **Variables are unique**: No duplicate variable names
+8. **Published requires version**: Cannot publish without a version
+
+## Behaviors
+
+### Slug Generation
+- Derived from name: lowercase, spaces → hyphens, remove special chars
+- Example: "WordPress Blog" → "wordpress-blog"
+
+### Version Comparison
+- Follows semver ordering: 1.0.0 < 1.0.1 < 1.1.0 < 2.0.0
+
+### Resource Calculation
+- Extracted from compose spec services
+- Sum of all service resource limits
+- If not specified in compose, use defaults:
+  - CPU: 0.5 cores per service
+  - Memory: 256 MB per service
+  - Disk: 1024 MB per volume
+
+### Variable Substitution
+Variables are substituted in compose spec before deployment:
+```yaml
+# Template compose spec
+services:
+  db:
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+
+# After substitution with DB_PASSWORD=secret123
+services:
+  db:
+    environment:
+      MYSQL_ROOT_PASSWORD: secret123
+```
+
+## Validation Rules
+
+### Name Validation
+```go
+func ValidateName(name string) error
+// - Non-empty
+// - 3-100 characters
+// - Only alphanumeric, spaces, hyphens
+// Returns: ErrNameRequired, ErrNameTooShort, ErrNameTooLong, ErrNameInvalidChars
+```
+
+### Version Validation
+```go
+func ValidateVersion(version string) error
+// - Matches semver pattern: X.Y.Z
+// Returns: ErrVersionRequired, ErrVersionInvalidFormat
+```
+
+### Compose Spec Validation
+```go
+func ValidateComposeSpec(spec string) (*ParsedSpec, error)
+// - Valid YAML
+// - Valid Docker Compose structure
+// - At least one service defined
+// Returns: ErrComposeInvalidYAML, ErrComposeNoServices
+```
+
+### Variable Validation
+```go
+func ValidateVariables(vars []Variable) []error
+// - Unique names
+// - Valid types
+// - Options provided for select type
+// Returns: []error (multiple validation errors possible)
+```
+
+## State Transitions
+
+```
+[Draft] --publish--> [Published] --unpublish--> [Draft]
+                          |
+                          +--archive--> [Archived]
+```
+
+- **Draft**: Initial state, not visible in marketplace
+- **Published**: Visible in marketplace, can be deployed
+- **Archived**: Hidden, existing deployments continue to work
+
+## Not Supported
+
+1. **Template inheritance**: Templates cannot extend other templates
+   - *Reason*: Adds complexity, compose-go doesn't support it well
+   - *Workaround*: Copy and modify
+
+2. **Dynamic pricing**: Price is fixed per template
+   - *Reason*: Prototype simplicity
+   - *Future*: May add resource-based pricing
+
+3. **Private templates**: All published templates are public
+   - *Reason*: Prototype simplicity
+   - *Future*: May add visibility controls
+
+4. **Collaborative editing**: Single creator per template
+   - *Reason*: Prototype simplicity
+   - *Future*: May add team ownership
+
+## Examples
+
+### Valid Template
+```go
+Template{
+    ID:          "550e8400-e29b-41d4-a716-446655440000",
+    Name:        "WordPress with MySQL",
+    Slug:        "wordpress-with-mysql",
+    Version:     "1.0.0",
+    Description: "A WordPress blog with MySQL database",
+    ComposeSpec: `
+services:
+  wordpress:
+    image: wordpress:latest
+    ports:
+      - "80:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_PASSWORD: ${DB_PASSWORD}
+  db:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+`,
+    Variables: []Variable{
+        {Name: "DB_PASSWORD", Label: "Database Password", Type: "password", Required: true},
+    },
+    PriceMonthly: 999, // $9.99
+    Published:    true,
+}
+```
+
+### Invalid Template (validation errors)
+```go
+Template{
+    Name: "WP",        // ErrNameTooShort (< 3 chars)
+    Version: "1.0",    // ErrVersionInvalidFormat (not X.Y.Z)
+    ComposeSpec: "not yaml", // ErrComposeInvalidYAML
+}
+```
+
+## Tests
+
+- `internal/core/domain/template_test.go` - Template validation tests
+- `internal/core/compose/parser_test.go` - Compose parsing tests

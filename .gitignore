@@ -1,0 +1,33 @@
+# Binaries
+/hoster
+
+# Claude local data
+.claude/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of go coverage tool
+*.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+/data/
+
+# E2E test logs (captured container logs)
+tests/e2e/logs/

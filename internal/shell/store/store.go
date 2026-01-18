@@ -1,0 +1,69 @@
+package store
+
+import (
+	"context"
+
+	"github.com/artpar/hoster/internal/core/domain"
+)
+
+// =============================================================================
+// Store Interface
+// =============================================================================
+
+// Store defines the persistence interface for Hoster entities.
+type Store interface {
+	// Template operations
+	CreateTemplate(ctx context.Context, template *domain.Template) error
+	GetTemplate(ctx context.Context, id string) (*domain.Template, error)
+	GetTemplateBySlug(ctx context.Context, slug string) (*domain.Template, error)
+	UpdateTemplate(ctx context.Context, template *domain.Template) error
+	DeleteTemplate(ctx context.Context, id string) error
+	ListTemplates(ctx context.Context, opts ListOptions) ([]domain.Template, error)
+
+	// Deployment operations
+	CreateDeployment(ctx context.Context, deployment *domain.Deployment) error
+	GetDeployment(ctx context.Context, id string) (*domain.Deployment, error)
+	UpdateDeployment(ctx context.Context, deployment *domain.Deployment) error
+	DeleteDeployment(ctx context.Context, id string) error
+	ListDeployments(ctx context.Context, opts ListOptions) ([]domain.Deployment, error)
+	ListDeploymentsByTemplate(ctx context.Context, templateID string, opts ListOptions) ([]domain.Deployment, error)
+	ListDeploymentsByCustomer(ctx context.Context, customerID string, opts ListOptions) ([]domain.Deployment, error)
+
+	// Transaction support
+	WithTx(ctx context.Context, fn func(Store) error) error
+
+	// Lifecycle
+	Close() error
+}
+
+// =============================================================================
+// Options
+// =============================================================================
+
+// ListOptions defines pagination and filtering options.
+type ListOptions struct {
+	Limit  int
+	Offset int
+}
+
+// DefaultListOptions returns default list options.
+func DefaultListOptions() ListOptions {
+	return ListOptions{
+		Limit:  100,
+		Offset: 0,
+	}
+}
+
+// Normalize ensures list options have valid values.
+func (o ListOptions) Normalize() ListOptions {
+	if o.Limit <= 0 {
+		o.Limit = 100
+	}
+	if o.Limit > 1000 {
+		o.Limit = 1000
+	}
+	if o.Offset < 0 {
+		o.Offset = 0
+	}
+	return o
+}
