@@ -13,7 +13,6 @@ import (
 	"github.com/artpar/hoster/internal/core/compose"
 	coredeployment "github.com/artpar/hoster/internal/core/deployment"
 	"github.com/artpar/hoster/internal/core/domain"
-	"github.com/artpar/hoster/internal/core/traefik"
 )
 
 // =============================================================================
@@ -513,20 +512,6 @@ func (o *Orchestrator) buildContainerSpec(deployment *domain.Deployment, svc com
 	// Copy service labels
 	for k, v := range svc.Labels {
 		spec.Labels[k] = v
-	}
-
-	// Add Traefik labels if deployment has domains and service has ports
-	if len(deployment.Domains) > 0 && len(svc.Ports) > 0 {
-		traefikLabels := traefik.GenerateLabels(traefik.LabelParams{
-			DeploymentID: deployment.ID,
-			ServiceName:  svc.Name,
-			Hostname:     deployment.Domains[0].Hostname,
-			Port:         int(svc.Ports[0].Target),
-			EnableTLS:    deployment.Domains[0].SSLEnabled,
-		})
-		for k, v := range traefikLabels {
-			spec.Labels[k] = v
-		}
 	}
 
 	return spec
