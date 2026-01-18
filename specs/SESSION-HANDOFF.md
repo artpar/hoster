@@ -21,7 +21,7 @@
 - Phase 5 (Frontend Views) COMPLETE
 - Phase 5 Manual Testing COMPLETE (via Chrome DevTools MCP)
 - Phase 6 Integration bug fixes COMPLETE
-- **Creator Worker Nodes Feature - Phase 1 & 2 COMPLETE**
+- **Creator Worker Nodes Feature - Phase 1, 2 & 3 COMPLETE**
 
 **Frontend Build Status:**
 ```
@@ -40,85 +40,95 @@ dist/assets/index-*.js          364.07 kB (gzip: 109.41 kB)
 **Creator Worker Nodes Feature Progress:**
 - Phase 1 (Domain Model & Scheduler): COMPLETE
 - Phase 2 (Database Layer): COMPLETE
-- Phase 3 (SSH Docker Client): PENDING
+- Phase 3 (SSH Docker Client via Minion): COMPLETE
 - Phase 4 (Scheduler Integration): PENDING
 - Phase 5 (Node API Resource): PENDING
 - Phase 6 (Frontend Nodes Tab): PENDING
 - Phase 7 (Health Checker Worker): PENDING
 
-**Next Step: Creator Worker Nodes Phase 3**
-- Create SSH Docker client for remote node connections
-- Create node pool for managing Docker client connections
+**Next Step: Creator Worker Nodes Phase 4**
+- Integrate NodePool with orchestrator
+- Replace `NodeID = "local"` with scheduler in handler
+- Create scheduling service with I/O
 
 ---
 
 ## LAST SESSION SUMMARY (January 18, 2026)
 
-### What Was Accomplished: Creator Worker Nodes Feature - Phase 1 & 2
+### What Was Accomplished: Creator Worker Nodes Feature - Phase 3
 
-This session implemented the foundation for the Creator Worker Nodes feature, which allows creators to register their own VPS nodes via SSH credentials. Deployments will be scheduled to the best available node based on capacity, capabilities, and plan restrictions.
+This session implemented the SSH Docker Client via Minion pattern, which allows the hoster backend to control Docker on remote VPS nodes by deploying a small minion binary that provides direct Docker SDK access.
 
-**Phase 1 Completed - Domain Model & Scheduler (Pure Core):**
-
-| Component | File | Description |
-|-----------|------|-------------|
-| Node Spec | `specs/domain/node.md` | Entity specification for nodes |
-| Node Domain | `internal/core/domain/node.go` | Node type, validation, SSHKey type (51 tests) |
-| Scheduler | `internal/core/scheduler/scheduler.go` | Pure scheduling algorithm (26 tests) |
-| Crypto | `internal/core/crypto/encryption.go` | AES-256-GCM SSH key encryption (26 tests) |
-| Auth Extension | `internal/core/auth/context.go` | Added `AllowedCapabilities` to PlanLimits |
-| Template Extension | `internal/core/domain/template.go` | Added `RequiredCapabilities` field |
-
-**Phase 2 Completed - Database Layer:**
+**Phase 3 Completed - SSH Docker Client via Minion:**
 
 | Component | File | Description |
 |-----------|------|-------------|
-| Migration Up | `internal/shell/store/migrations/005_nodes.up.sql` | Creates nodes, ssh_keys tables |
-| Migration Down | `internal/shell/store/migrations/005_nodes.down.sql` | Rollback migration |
-| Store Interface | `internal/shell/store/store.go` | Added 10 new methods for nodes/SSH keys |
-| SQLite Impl | `internal/shell/store/sqlite.go` | Full CRUD for nodes + SSH keys |
-| Store Tests | `internal/shell/store/sqlite_test.go` | 20 new tests (all passing) |
-| Handler Stubs | `internal/shell/api/handler_test.go` | Added stub methods for Store interface |
+| Minion Protocol | `internal/core/minion/protocol.go` | Response envelope, error codes, specs (20 tests) |
+| Minion Binary | `cmd/hoster-minion/` | Standalone binary with 18 Docker commands |
+| SSH Client | `internal/shell/docker/ssh_client.go` | Implements Client interface via SSH minion execution |
+| Node Pool | `internal/shell/docker/node_pool.go` | Connection pool with lazy initialization |
+| Binary Embedding | `internal/shell/docker/minion_embed.go` | Embedded Linux amd64/arm64 binaries |
+
+**Minion Binary Commands (18 total):**
+- Container: create, start, stop, remove, inspect, list, logs, stats
+- Network: create, remove, connect, disconnect
+- Volume: create, remove
+- Image: pull, exists
+- Health: ping, version
 
 **Key Design Decisions:**
-- Capability-based node routing (tags like `gpu`, `ssd`, `high-memory`, `standard`)
-- Best-available scheduling algorithm (filters by status, capabilities, capacity; scores by resources)
-- SSH keys encrypted at rest with AES-256-GCM using platform master key
-- Nodes are per-creator (UNIQUE constraint on creator_id + name)
+- Minion pattern chosen over SSH tunneling for simplicity and robustness
+- JSON input/output over SSH exec for all commands
+- Minion binaries cross-compiled and embedded in hoster binary
+- Lazy client initialization in NodePool to reduce connection overhead
+- Auto-deployment of minion binary via EnsureMinion()
 
-**Test Results:**
-- 123 new tests added (51 node domain + 26 scheduler + 26 crypto + 20 store)
-- All new tests pass
-- 2 pre-existing auth middleware test failures (not related to this work)
+**Build Commands Added:**
+```bash
+make build          # Build hoster with embedded minion binaries
+make build-fast     # Build hoster without rebuilding minion (dev)
+make build-minion   # Build only the minion binaries (Linux amd64/arm64)
+```
 
 ### Files Created/Modified This Session:
 ```
-# New Files (Phase 1)
-specs/domain/node.md                           # Node entity specification
-internal/core/domain/node.go                   # Node domain model
-internal/core/domain/node_test.go              # Node validation tests (51)
-internal/core/scheduler/scheduler.go           # Scheduling algorithm
-internal/core/scheduler/scheduler_test.go      # Scheduler tests (26)
-internal/core/crypto/encryption.go             # SSH key encryption
-internal/core/crypto/encryption_test.go        # Crypto tests (26)
+# New Files (Phase 3 - Minion Protocol)
+internal/core/minion/protocol.go           # Response envelope, error codes, specs
+internal/core/minion/protocol_test.go      # 20 tests for protocol types
 
-# New Files (Phase 2)
-internal/shell/store/migrations/005_nodes.up.sql
-internal/shell/store/migrations/005_nodes.down.sql
+# New Files (Phase 3 - Minion Binary)
+cmd/hoster-minion/main.go                  # Entry point, version info
+cmd/hoster-minion/commands.go              # Command dispatcher
+cmd/hoster-minion/container.go             # Container commands (7)
+cmd/hoster-minion/network.go               # Network commands (4)
+cmd/hoster-minion/volume.go                # Volume commands (2)
+cmd/hoster-minion/image.go                 # Image commands (2)
+cmd/hoster-minion/health.go                # Ping command
+
+# New Files (Phase 3 - SSH Client)
+internal/shell/docker/ssh_client.go        # SSHDockerClient implementing Client
+internal/shell/docker/node_pool.go         # Connection pool with lazy init
+internal/shell/docker/minion_embed.go      # Embedded minion binaries
+internal/shell/docker/binaries/.gitkeep    # Placeholder for built binaries
 
 # Modified Files
-internal/core/auth/context.go                  # Added AllowedCapabilities
-internal/core/domain/template.go               # Added RequiredCapabilities
-internal/shell/store/store.go                  # Added node/SSH key interface methods
-internal/shell/store/sqlite.go                 # Added node/SSH key CRUD
-internal/shell/store/sqlite_test.go            # Added 20 node/SSH key tests
-internal/shell/api/handler_test.go             # Added stub methods
-internal/shell/store/errors.go                 # Added ErrDuplicateKey
-specs/SESSION-HANDOFF.md                       # This file
+Makefile                                   # Added build-minion, build-fast targets
+.gitignore                                 # Added minion binaries exclusion
 ```
 
 ### Plan File Location:
-The detailed implementation plan is at: `/Users/artpar/.claude/plans/compressed-sprouting-moonbeam.md`
+The detailed implementation plan is at: `/Users/artpar/.claude/plans/wondrous-forging-donut.md`
+
+### Architecture Overview:
+```
+Hoster Backend                           Remote Node
+┌────────────────┐                      ┌────────────────┐
+│ NodePool       │     SSH exec/JSON    │ ~/.hoster/     │
+│ └─SSHDockerClient├──────────────────────│ minion        │
+│   (implements  │                      │ (Docker SDK)  │
+│    Client)     │                      └────────────────┘
+└────────────────┘
+```
 
 ### Testing Environment Notes:
 - Backend runs on port 9090: `HOSTER_SERVER_PORT=9090 HOSTER_AUTH_MODE=none ./bin/hoster`
@@ -129,7 +139,7 @@ The detailed implementation plan is at: `/Users/artpar/.claude/plans/compressed-
 
 ## Creator Worker Nodes - Next Tasks
 
-### Completed (Phase 1 & 2):
+### Completed (Phase 1, 2 & 3):
 - [x] `specs/domain/node.md` - Node entity specification
 - [x] `internal/core/domain/node.go` - Node domain model (51 tests)
 - [x] `internal/core/scheduler/scheduler.go` - Pure scheduling algorithm (26 tests)
@@ -139,13 +149,14 @@ The detailed implementation plan is at: `/Users/artpar/.claude/plans/compressed-
 - [x] Database migration 005_nodes (up/down)
 - [x] Store interface + SQLite implementation for nodes/SSH keys (20 tests)
 - [x] Handler test stubs for new Store interface
+- [x] `internal/core/minion/protocol.go` - Minion protocol types (20 tests)
+- [x] `cmd/hoster-minion/` - Minion binary with 18 commands
+- [x] `internal/shell/docker/ssh_client.go` - SSHDockerClient implementing Client
+- [x] `internal/shell/docker/node_pool.go` - Connection pool with lazy init
+- [x] `internal/shell/docker/minion_embed.go` - Embedded minion binaries
+- [x] Makefile updates for minion build
 
-### Phase 3 - SSH Docker Client (NEXT):
-- [ ] `internal/shell/docker/ssh_client.go` - Docker client over SSH tunnel
-- [ ] `internal/shell/docker/ssh_client_test.go` - Integration tests
-- [ ] `internal/shell/docker/node_pool.go` - Pool of Docker clients by node
-
-### Phase 4 - Scheduler Integration:
+### Phase 4 - Scheduler Integration (NEXT):
 - [ ] Modify `internal/shell/docker/orchestrator.go` - Accept NodePool
 - [ ] Modify `internal/shell/api/handler.go` - Replace `NodeID = "local"` with scheduler
 - [ ] `internal/shell/scheduler/service.go` - Scheduling service with I/O
@@ -168,6 +179,7 @@ The detailed implementation plan is at: `/Users/artpar/.claude/plans/compressed-
 ```bash
 # Backend
 make test      # All backend tests pass (2 pre-existing auth failures expected)
+make build     # Build with embedded minion binaries
 HOSTER_SERVER_PORT=9090 HOSTER_AUTH_MODE=none make run  # Start backend on :9090
 
 # Frontend
@@ -224,6 +236,7 @@ specs/domain/template.md    - Template entity + JSON:API definition
 specs/domain/deployment.md  - Deployment entity + JSON:API definition
 specs/domain/monitoring.md  - Health, stats, logs, events types
 specs/domain/user-context.md - AuthContext from APIGate headers
+specs/domain/node.md        - Node entity for worker nodes
 ```
 
 ### Step 5: Verify Understanding
@@ -255,7 +268,7 @@ If tests fail, something is broken. Fix before proceeding.
 
 Read the plan file for detailed implementation phases:
 ```
-/Users/artpar/.claude/plans/merry-baking-rain.md
+/Users/artpar/.claude/plans/wondrous-forging-donut.md
 ```
 
 **Implementation Phases:**
@@ -266,7 +279,13 @@ Read the plan file for detailed implementation phases:
 - Phase 3: Monitoring Backend (COMPLETE)
 - Phase 4: Frontend Foundation (COMPLETE)
 - Phase 5: Frontend Views (COMPLETE)
-- Phase 6: Integration & Polish <- NEXT
+- Phase 6: Integration & Polish (COMPLETE)
+
+**Creator Worker Nodes Phases:**
+- Phase 1: Domain Model & Scheduler (COMPLETE)
+- Phase 2: Database Layer (COMPLETE)
+- Phase 3: SSH Docker Client via Minion (COMPLETE)
+- Phase 4: Scheduler Integration <- NEXT
 
 ### Step 8: Check Current Status
 
@@ -380,6 +399,7 @@ Use mcp__agile__task_transition to update task status.
 - `github.com/manyminds/api2go` - JSON:API implementation
 - `github.com/gorilla/mux` - Router (api2go support)
 - `github.com/getkin/kin-openapi` - OpenAPI 3.0 types
+- `golang.org/x/crypto/ssh` - SSH client for remote nodes
 
 **Frontend Dependencies (web/package.json):**
 - React 19 + React DOM 19
