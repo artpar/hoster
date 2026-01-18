@@ -21,6 +21,7 @@ type Config struct {
 	Docker   DockerConfig   `mapstructure:"docker"`
 	Log      LogConfig      `mapstructure:"log"`
 	Domain   DomainConfig   `mapstructure:"domain"`
+	Auth     AuthConfig     `mapstructure:"auth"`
 }
 
 // ServerConfig holds HTTP server configuration.
@@ -59,6 +60,23 @@ type DomainConfig struct {
 	ConfigDir  string `mapstructure:"config_dir"` // Base directory for deployment config files
 }
 
+// AuthConfig holds authentication configuration.
+// Following ADR-005: APIGate Integration for Authentication and Billing
+type AuthConfig struct {
+	// Mode determines how authentication is handled.
+	// "header" - Extract auth from APIGate headers (production)
+	// "none" - Skip auth checks (development)
+	Mode string `mapstructure:"mode"`
+
+	// RequireAuth determines if authentication is required for protected endpoints.
+	// When true, unauthenticated requests to protected endpoints return 401.
+	RequireAuth bool `mapstructure:"require_auth"`
+
+	// SharedSecret is an optional secret to validate X-APIGate-Secret header.
+	// If empty, secret validation is skipped.
+	SharedSecret string `mapstructure:"shared_secret"`
+}
+
 // =============================================================================
 // Config Loading
 // =============================================================================
@@ -79,6 +97,9 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("log.format", "json")
 	v.SetDefault("domain.base_domain", "apps.localhost")
 	v.SetDefault("domain.config_dir", "./data/configs")
+	v.SetDefault("auth.mode", "none")          // Default to no auth for development
+	v.SetDefault("auth.require_auth", false)   // Don't require auth by default
+	v.SetDefault("auth.shared_secret", "")     // No secret validation by default
 
 	// Load from file if provided
 	if configPath != "" {

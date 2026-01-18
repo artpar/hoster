@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/artpar/hoster/internal/shell/api/middleware"
 	"github.com/artpar/hoster/internal/shell/api/openapi"
 	"github.com/artpar/hoster/internal/shell/api/resources"
 	"github.com/artpar/hoster/internal/shell/docker"
@@ -26,6 +27,11 @@ type APIConfig struct {
 	Logger     *slog.Logger
 	BaseDomain string
 	ConfigDir  string
+
+	// Auth configuration (following ADR-005)
+	AuthMode         string // "header" or "none"
+	AuthRequire      bool   // Require auth for protected endpoints
+	AuthSharedSecret string // Optional: validate X-APIGate-Secret
 }
 
 // SetupAPI creates the complete API router with JSON:API resources and custom endpoints.
@@ -81,6 +87,15 @@ func SetupAPI(cfg APIConfig) http.Handler {
 	customRouter := mux.NewRouter()
 	customRouter.Use(requestIDMiddleware)
 	customRouter.Use(recoveryMiddleware(cfg.Logger))
+
+	// Add auth middleware (following ADR-005: APIGate Integration)
+	authMW := middleware.NewAuthMiddleware(middleware.AuthConfig{
+		Mode:         cfg.AuthMode,
+		RequireAuth:  cfg.AuthRequire,
+		SharedSecret: cfg.AuthSharedSecret,
+		Logger:       cfg.Logger,
+	})
+	customRouter.Use(authMW.Handler)
 
 	// Health endpoints
 	customRouter.HandleFunc("/health", healthHandler).Methods("GET")

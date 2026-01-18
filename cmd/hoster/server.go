@@ -80,6 +80,10 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		Logger:     logger,
 		BaseDomain: cfg.Domain.BaseDomain,
 		ConfigDir:  cfg.Domain.ConfigDir,
+		// Auth configuration (ADR-005)
+		AuthMode:         cfg.Auth.Mode,
+		AuthRequire:      cfg.Auth.RequireAuth,
+		AuthSharedSecret: cfg.Auth.SharedSecret,
 	})
 
 	// Create HTTP server
