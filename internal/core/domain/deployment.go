@@ -229,7 +229,7 @@ func GenerateDeploymentName(templateSlug string) string {
 // GenerateDomain generates an auto domain for a deployment.
 func GenerateDomain(deploymentName, baseDomain string) Domain {
 	return Domain{
-		Hostname:   fmt.Sprintf("%s.%s", deploymentName, baseDomain),
+		Hostname:   fmt.Sprintf("%s.%s", Slugify(deploymentName), baseDomain),
 		Type:       DomainTypeAuto,
 		SSLEnabled: false, // Enabled after SSL provisioning
 	}

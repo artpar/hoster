@@ -253,6 +253,14 @@ func TestGenerateDomain(t *testing.T) {
 	assert.False(t, domain.SSLEnabled) // SSL enabled after provisioning
 }
 
+func TestGenerateDomain_SlugifiesName(t *testing.T) {
+	// Names with spaces and mixed case should be slugified
+	domain := GenerateDomain("My WordPress Blog", "apps.localhost")
+
+	assert.Equal(t, "my-wordpress-blog.apps.localhost", domain.Hostname)
+	assert.Equal(t, DomainTypeAuto, domain.Type)
+}
+
 // =============================================================================
 // Variable Validation Tests
 // =============================================================================
