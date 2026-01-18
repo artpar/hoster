@@ -81,7 +81,7 @@ export function CreatorDashboardPage() {
     );
     const monthlyRevenue = activeTemplateDeployments.reduce((sum, d) => {
       const template = userTemplates.find((t) => t.id === d.attributes.template_id);
-      return sum + (template?.attributes.price_cents ?? 0);
+      return sum + (template?.attributes.price_monthly_cents ?? 0);
     }, 0);
 
     return {
@@ -313,7 +313,7 @@ export function CreatorDashboardPage() {
                             d.attributes.status === 'running'
                         ).length ?? 0;
                       const revenue =
-                        (activeDeployments * template.attributes.price_cents) / 100;
+                        (activeDeployments * (template.attributes.price_monthly_cents || 0)) / 100;
                       return (
                         <div
                           key={template.id}
