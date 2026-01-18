@@ -56,6 +56,7 @@ type LogConfig struct {
 // DomainConfig holds domain generation configuration.
 type DomainConfig struct {
 	BaseDomain string `mapstructure:"base_domain"`
+	ConfigDir  string `mapstructure:"config_dir"` // Base directory for deployment config files
 }
 
 // =============================================================================
@@ -77,6 +78,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "json")
 	v.SetDefault("domain.base_domain", "apps.localhost")
+	v.SetDefault("domain.config_dir", "./data/configs")
 
 	// Load from file if provided
 	if configPath != "" {

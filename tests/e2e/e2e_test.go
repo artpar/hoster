@@ -102,7 +102,7 @@ func setup() int {
 	}
 
 	// 6. Create HTTP handler
-	handler := api.NewHandler(testStore, testDocker, nil, "apps.localhost")
+	handler := api.NewHandler(testStore, testDocker, nil, "apps.localhost", tmpDir+"/configs")
 	log.Println("E2E Setup: HTTP handler created")
 
 	// 7. Find an available port

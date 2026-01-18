@@ -8,15 +8,16 @@ import "time"
 
 // CreateTemplateRequest is the request body for creating a template.
 type CreateTemplateRequest struct {
-	Name             string            `json:"name"`
-	Version          string            `json:"version"`
-	ComposeSpec      string            `json:"compose_spec"`
-	CreatorID        string            `json:"creator_id"`
-	Description      string            `json:"description,omitempty"`
-	Category         string            `json:"category,omitempty"`
-	Tags             []string          `json:"tags,omitempty"`
-	PriceMonthly     int               `json:"price_monthly_cents,omitempty"`
-	Variables        []VariableRequest `json:"variables,omitempty"`
+	Name             string              `json:"name"`
+	Version          string              `json:"version"`
+	ComposeSpec      string              `json:"compose_spec"`
+	CreatorID        string              `json:"creator_id"`
+	Description      string              `json:"description,omitempty"`
+	Category         string              `json:"category,omitempty"`
+	Tags             []string            `json:"tags,omitempty"`
+	PriceMonthly     int                 `json:"price_monthly_cents,omitempty"`
+	Variables        []VariableRequest   `json:"variables,omitempty"`
+	ConfigFiles      []ConfigFileRequest `json:"config_files,omitempty"`
 }
 
 // VariableRequest represents a variable in a template creation request.
@@ -29,13 +30,22 @@ type VariableRequest struct {
 	Secret      bool   `json:"secret,omitempty"`
 }
 
+// ConfigFileRequest represents a config file in a template creation request.
+type ConfigFileRequest struct {
+	Name    string `json:"name"`              // Human-readable name (e.g., "nginx.conf")
+	Path    string `json:"path"`              // Mount path in container (e.g., "/etc/nginx/nginx.conf")
+	Content string `json:"content"`           // File content
+	Mode    string `json:"mode,omitempty"`    // File mode (e.g., "0644")
+}
+
 // UpdateTemplateRequest is the request body for updating a template.
 type UpdateTemplateRequest struct {
-	Name         string   `json:"name,omitempty"`
-	Description  string   `json:"description,omitempty"`
-	Category     string   `json:"category,omitempty"`
-	Tags         []string `json:"tags,omitempty"`
-	PriceMonthly int      `json:"price_monthly_cents,omitempty"`
+	Name         string              `json:"name,omitempty"`
+	Description  string              `json:"description,omitempty"`
+	Category     string              `json:"category,omitempty"`
+	Tags         []string            `json:"tags,omitempty"`
+	PriceMonthly int                 `json:"price_monthly_cents,omitempty"`
+	ConfigFiles  []ConfigFileRequest `json:"config_files,omitempty"`
 }
 
 // CreateDeploymentRequest is the request body for creating a deployment.
@@ -52,21 +62,22 @@ type CreateDeploymentRequest struct {
 
 // TemplateResponse is the response for template operations.
 type TemplateResponse struct {
-	ID                   string             `json:"id"`
-	Name                 string             `json:"name"`
-	Slug                 string             `json:"slug"`
-	Description          string             `json:"description"`
-	Version              string             `json:"version"`
-	ComposeSpec          string             `json:"compose_spec"`
-	Variables            []VariableResponse `json:"variables"`
-	ResourceRequirements ResourcesResponse  `json:"resource_requirements"`
-	PriceMonthly         int                `json:"price_monthly_cents"`
-	Category             string             `json:"category"`
-	Tags                 []string           `json:"tags"`
-	Published            bool               `json:"published"`
-	CreatorID            string             `json:"creator_id"`
-	CreatedAt            time.Time          `json:"created_at"`
-	UpdatedAt            time.Time          `json:"updated_at"`
+	ID                   string               `json:"id"`
+	Name                 string               `json:"name"`
+	Slug                 string               `json:"slug"`
+	Description          string               `json:"description"`
+	Version              string               `json:"version"`
+	ComposeSpec          string               `json:"compose_spec"`
+	Variables            []VariableResponse   `json:"variables"`
+	ConfigFiles          []ConfigFileResponse `json:"config_files,omitempty"`
+	ResourceRequirements ResourcesResponse    `json:"resource_requirements"`
+	PriceMonthly         int                  `json:"price_monthly_cents"`
+	Category             string               `json:"category"`
+	Tags                 []string             `json:"tags"`
+	Published            bool                 `json:"published"`
+	CreatorID            string               `json:"creator_id"`
+	CreatedAt            time.Time            `json:"created_at"`
+	UpdatedAt            time.Time            `json:"updated_at"`
 }
 
 // VariableResponse represents a variable in a template response.
@@ -77,6 +88,14 @@ type VariableResponse struct {
 	Default     string `json:"default,omitempty"`
 	Required    bool   `json:"required,omitempty"`
 	Secret      bool   `json:"secret,omitempty"`
+}
+
+// ConfigFileResponse represents a config file in a template response.
+type ConfigFileResponse struct {
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	Content string `json:"content"`
+	Mode    string `json:"mode,omitempty"`
 }
 
 // ResourcesResponse represents resource requirements.

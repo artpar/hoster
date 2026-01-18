@@ -85,6 +85,27 @@ type Variable struct {
 }
 
 // =============================================================================
+// ConfigFile
+// =============================================================================
+
+// ConfigFile represents a configuration file to be mounted in containers.
+// These are stored with the template and written to disk at deployment time.
+type ConfigFile struct {
+	// Name is a human-readable identifier (e.g., "nginx.conf")
+	Name string `json:"name"`
+
+	// Path is the absolute path where the file will be mounted in the container
+	// (e.g., "/etc/nginx/nginx.conf")
+	Path string `json:"path"`
+
+	// Content is the actual file content
+	Content string `json:"content"`
+
+	// Mode is the file permission mode (e.g., "0644"). Defaults to "0644" if empty.
+	Mode string `json:"mode,omitempty"`
+}
+
+// =============================================================================
 // Resources
 // =============================================================================
 
@@ -101,21 +122,22 @@ type Resources struct {
 
 // Template represents a deployable package definition.
 type Template struct {
-	ID                   string     `json:"id"`
-	Name                 string     `json:"name"`
-	Slug                 string     `json:"slug"`
-	Description          string     `json:"description,omitempty"`
-	Version              string     `json:"version"`
-	ComposeSpec          string     `json:"compose_spec"`
-	Variables            []Variable `json:"variables,omitempty"`
-	ResourceRequirements Resources  `json:"resource_requirements"`
-	PriceMonthly         int64      `json:"price_monthly_cents"`
-	Category             string     `json:"category,omitempty"`
-	Tags                 []string   `json:"tags,omitempty"`
-	Published            bool       `json:"published"`
-	CreatorID            string     `json:"creator_id"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+	ID                   string       `json:"id"`
+	Name                 string       `json:"name"`
+	Slug                 string       `json:"slug"`
+	Description          string       `json:"description,omitempty"`
+	Version              string       `json:"version"`
+	ComposeSpec          string       `json:"compose_spec"`
+	Variables            []Variable   `json:"variables,omitempty"`
+	ConfigFiles          []ConfigFile `json:"config_files,omitempty"`
+	ResourceRequirements Resources    `json:"resource_requirements"`
+	PriceMonthly         int64        `json:"price_monthly_cents"`
+	Category             string       `json:"category,omitempty"`
+	Tags                 []string     `json:"tags,omitempty"`
+	Published            bool         `json:"published"`
+	CreatorID            string       `json:"creator_id"`
+	CreatedAt            time.Time    `json:"created_at"`
+	UpdatedAt            time.Time    `json:"updated_at"`
 }
 
 // NewTemplate creates a new template with the given name, version, and compose spec.

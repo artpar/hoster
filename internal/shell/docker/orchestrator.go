@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -20,18 +22,24 @@ import (
 
 // Orchestrator manages the lifecycle of deployments using Docker.
 type Orchestrator struct {
-	docker Client
-	logger *slog.Logger
+	docker    Client
+	logger    *slog.Logger
+	configDir string // Base directory for storing config files
 }
 
 // NewOrchestrator creates a new orchestrator.
-func NewOrchestrator(docker Client, logger *slog.Logger) *Orchestrator {
+// configDir is the base directory for storing deployment config files.
+func NewOrchestrator(docker Client, logger *slog.Logger, configDir string) *Orchestrator {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if configDir == "" {
+		configDir = "/var/lib/hoster/configs"
+	}
 	return &Orchestrator{
-		docker: docker,
-		logger: logger,
+		docker:    docker,
+		logger:    logger,
+		configDir: configDir,
 	}
 }
 
@@ -41,13 +49,21 @@ func NewOrchestrator(docker Client, logger *slog.Logger) *Orchestrator {
 
 // StartDeployment creates and starts all containers for a deployment.
 // Returns the container info for all started containers.
-func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.Deployment, composeSpec string) ([]domain.ContainerInfo, error) {
+// configFiles are written to disk and mounted into containers at their specified paths.
+func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.Deployment, composeSpec string, configFiles []domain.ConfigFile) ([]domain.ContainerInfo, error) {
 	o.logger.Info("starting deployment",
 		"deployment_id", deployment.ID,
 		"template_id", deployment.TemplateID,
+		"config_files", len(configFiles),
 	)
 
-	// 1. Parse compose spec
+	// 1. Write config files to disk
+	configMounts, err := o.writeConfigFiles(deployment.ID, configFiles)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write config files: %w", err)
+	}
+
+	// 2. Parse compose spec
 	parsedSpec, err := compose.ParseComposeSpec(composeSpec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse compose spec: %w", err)
@@ -128,7 +144,7 @@ func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.D
 		} else {
 			// Create new container
 			containerName := coredeployment.ContainerName(deployment.ID, svc.Name)
-			spec := o.buildContainerSpec(deployment, svc, containerName, networkName, parsedSpec.Volumes)
+			spec := o.buildContainerSpec(deployment, svc, containerName, networkName, parsedSpec.Volumes, configMounts)
 
 			containerID, err = o.docker.CreateContainer(spec)
 			if err != nil {
@@ -396,7 +412,8 @@ func (o *Orchestrator) createDeploymentVolume(ctx context.Context, deploymentID,
 }
 
 // buildContainerSpec builds a ContainerSpec from a compose service.
-func (o *Orchestrator) buildContainerSpec(deployment *domain.Deployment, svc compose.Service, containerName, networkName string, volumes []compose.Volume) ContainerSpec {
+// configMounts maps container paths to host file paths for config file bind mounts.
+func (o *Orchestrator) buildContainerSpec(deployment *domain.Deployment, svc compose.Service, containerName, networkName string, volumes []compose.Volume, configMounts map[string]string) ContainerSpec {
 	spec := ContainerSpec{
 		Name:       containerName,
 		Image:      svc.Image,
@@ -438,6 +455,15 @@ func (o *Orchestrator) buildContainerSpec(deployment *domain.Deployment, svc com
 			Source:   source,
 			Target:   v.Target,
 			ReadOnly: v.ReadOnly,
+		})
+	}
+
+	// Config file bind mounts
+	for containerPath, hostPath := range configMounts {
+		spec.Volumes = append(spec.Volumes, VolumeMount{
+			Source:   hostPath,
+			Target:   containerPath,
+			ReadOnly: true, // Config files are read-only
 		})
 	}
 
@@ -572,4 +598,93 @@ func (o *Orchestrator) RefreshContainerInfo(ctx context.Context, deployment *dom
 	}
 
 	return result, nil
+}
+
+// =============================================================================
+// Config File Management
+// =============================================================================
+
+// writeConfigFiles writes config files to the host filesystem and returns a map
+// of container paths to host paths for bind mounting.
+func (o *Orchestrator) writeConfigFiles(deploymentID string, configFiles []domain.ConfigFile) (map[string]string, error) {
+	mounts := make(map[string]string)
+
+	if len(configFiles) == 0 {
+		return mounts, nil
+	}
+
+	// Ensure config directory is an absolute path (required for Docker bind mounts)
+	configDir := o.configDir
+	if !filepath.IsAbs(configDir) {
+		absDir, err := filepath.Abs(configDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get absolute path for config dir: %w", err)
+		}
+		configDir = absDir
+	}
+
+	// Create deployment config directory
+	deploymentDir := filepath.Join(configDir, deploymentID)
+	if err := os.MkdirAll(deploymentDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	for _, cf := range configFiles {
+		// Sanitize the config file name for the host filesystem
+		// Use a hash or sanitized version of the path as the filename
+		hostFileName := sanitizeFileName(cf.Name)
+		if hostFileName == "" {
+			hostFileName = sanitizeFileName(filepath.Base(cf.Path))
+		}
+		hostPath := filepath.Join(deploymentDir, hostFileName)
+
+		// Parse file mode (default to 0644)
+		fileMode := os.FileMode(0644)
+		if cf.Mode != "" {
+			var mode uint32
+			if _, err := fmt.Sscanf(cf.Mode, "%o", &mode); err == nil {
+				fileMode = os.FileMode(mode)
+			}
+		}
+
+		// Write the config file
+		if err := os.WriteFile(hostPath, []byte(cf.Content), fileMode); err != nil {
+			return nil, fmt.Errorf("failed to write config file %s: %w", cf.Name, err)
+		}
+
+		o.logger.Debug("wrote config file",
+			"name", cf.Name,
+			"host_path", hostPath,
+			"container_path", cf.Path,
+			"mode", cf.Mode,
+		)
+
+		// Map container path to host path
+		mounts[cf.Path] = hostPath
+	}
+
+	return mounts, nil
+}
+
+// sanitizeFileName makes a filename safe for the filesystem.
+func sanitizeFileName(name string) string {
+	// Replace unsafe characters with underscores
+	unsafe := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|", " "}
+	result := name
+	for _, char := range unsafe {
+		result = strings.ReplaceAll(result, char, "_")
+	}
+	// Remove leading/trailing underscores
+	result = strings.Trim(result, "_")
+	return result
+}
+
+// CleanupConfigFiles removes config files for a deployment.
+func (o *Orchestrator) CleanupConfigFiles(deploymentID string) error {
+	deploymentDir := filepath.Join(o.configDir, deploymentID)
+	if err := os.RemoveAll(deploymentDir); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to cleanup config files: %w", err)
+	}
+	o.logger.Debug("cleaned up config files", "deployment_id", deploymentID)
+	return nil
 }

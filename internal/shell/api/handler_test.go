@@ -304,7 +304,7 @@ func (d *stubDocker) ImageExists(image string) (bool, error) {
 func newTestHandler() (*Handler, *stubStore, *stubDocker) {
 	s := newStubStore()
 	d := newStubDocker()
-	h := NewHandler(s, d, nil, "apps.localhost") // nil logger uses default
+	h := NewHandler(s, d, nil, "apps.localhost", "/tmp/hoster-test-configs") // nil logger uses default
 	return h, s, d
 }
 

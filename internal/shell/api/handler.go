@@ -30,19 +30,25 @@ type Handler struct {
 	orchestrator *docker.Orchestrator
 	logger       *slog.Logger
 	baseDomain   string
+	configDir    string
 }
 
 // NewHandler creates a new API handler.
-func NewHandler(s store.Store, d docker.Client, l *slog.Logger, baseDomain string) *Handler {
+// configDir is the base directory for storing deployment config files.
+func NewHandler(s store.Store, d docker.Client, l *slog.Logger, baseDomain, configDir string) *Handler {
 	if l == nil {
 		l = slog.Default()
+	}
+	if configDir == "" {
+		configDir = "/var/lib/hoster/configs"
 	}
 	return &Handler{
 		store:        s,
 		docker:       d,
-		orchestrator: docker.NewOrchestrator(d, l),
+		orchestrator: docker.NewOrchestrator(d, l, configDir),
 		logger:       l,
 		baseDomain:   baseDomain,
+		configDir:    configDir,
 	}
 }
 
@@ -185,6 +191,16 @@ func (h *Handler) handleCreateTemplate(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// Convert config files
+	for _, cf := range req.ConfigFiles {
+		template.ConfigFiles = append(template.ConfigFiles, domain.ConfigFile{
+			Name:    cf.Name,
+			Path:    cf.Path,
+			Content: cf.Content,
+			Mode:    cf.Mode,
+		})
+	}
+
 	if err := h.store.CreateTemplate(r.Context(), template); err != nil {
 		h.logger.Error("failed to create template", "error", err)
 		h.writeError(w, http.StatusInternalServerError, "failed to create template", "internal_error")
@@ -286,6 +302,17 @@ func (h *Handler) handleUpdateTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.PriceMonthly > 0 {
 		template.PriceMonthly = int64(req.PriceMonthly)
+	}
+	if len(req.ConfigFiles) > 0 {
+		template.ConfigFiles = nil // Reset to replace
+		for _, cf := range req.ConfigFiles {
+			template.ConfigFiles = append(template.ConfigFiles, domain.ConfigFile{
+				Name:    cf.Name,
+				Path:    cf.Path,
+				Content: cf.Content,
+				Mode:    cf.Mode,
+			})
+		}
 	}
 	template.UpdatedAt = time.Now()
 
@@ -586,7 +613,7 @@ func (h *Handler) handleStartDeployment(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Start containers using orchestrator
-	containers, err := h.orchestrator.StartDeployment(r.Context(), deployment, template.ComposeSpec)
+	containers, err := h.orchestrator.StartDeployment(r.Context(), deployment, template.ComposeSpec, template.ConfigFiles)
 	if err != nil {
 		h.logger.Error("failed to start deployment containers", "error", err)
 		// Transition to failed
@@ -709,6 +736,7 @@ func (h *Handler) templateToResponse(t *domain.Template) TemplateResponse {
 		Version:      t.Version,
 		ComposeSpec:  t.ComposeSpec,
 		Variables:    make([]VariableResponse, 0, len(t.Variables)),
+		ConfigFiles:  make([]ConfigFileResponse, 0, len(t.ConfigFiles)),
 		PriceMonthly: int(t.PriceMonthly),
 		Category:     t.Category,
 		Tags:         t.Tags,
@@ -732,6 +760,14 @@ func (h *Handler) templateToResponse(t *domain.Template) TemplateResponse {
 			Type:        string(v.Type),
 			Default:     v.Default,
 			Required:    v.Required,
+		})
+	}
+	for _, cf := range t.ConfigFiles {
+		resp.ConfigFiles = append(resp.ConfigFiles, ConfigFileResponse{
+			Name:    cf.Name,
+			Path:    cf.Path,
+			Content: cf.Content,
+			Mode:    cf.Mode,
 		})
 	}
 	return resp

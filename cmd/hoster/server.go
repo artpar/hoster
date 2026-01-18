@@ -74,7 +74,7 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 	}
 
 	// Create HTTP handler
-	handler := api.NewHandler(s, d, logger, cfg.Domain.BaseDomain)
+	handler := api.NewHandler(s, d, logger, cfg.Domain.BaseDomain, cfg.Domain.ConfigDir)
 
 	// Create HTTP server
 	httpServer := &http.Server{

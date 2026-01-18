@@ -108,6 +108,7 @@ type templateRow struct {
 	Version         string  `db:"version"`
 	ComposeSpec     string  `db:"compose_spec"`
 	Variables       *string `db:"variables"`
+	ConfigFiles     *string `db:"config_files"`
 	ResourcesCPU    float64 `db:"resources_cpu_cores"`
 	ResourcesMemory int64   `db:"resources_memory_mb"`
 	ResourcesDisk   int64   `db:"resources_disk_mb"`
@@ -305,6 +306,10 @@ func createTemplate(ctx context.Context, exec executor, template *domain.Templat
 	if err != nil {
 		return NewStoreError("CreateTemplate", "template", template.ID, "failed to serialize variables", ErrInvalidData)
 	}
+	configFilesJSON, err := json.Marshal(template.ConfigFiles)
+	if err != nil {
+		return NewStoreError("CreateTemplate", "template", template.ID, "failed to serialize config_files", ErrInvalidData)
+	}
 	tagsJSON, err := json.Marshal(template.Tags)
 	if err != nil {
 		return NewStoreError("CreateTemplate", "template", template.ID, "failed to serialize tags", ErrInvalidData)
@@ -312,12 +317,12 @@ func createTemplate(ctx context.Context, exec executor, template *domain.Templat
 
 	query := `
 		INSERT INTO templates (
-			id, name, slug, description, version, compose_spec, variables,
+			id, name, slug, description, version, compose_spec, variables, config_files,
 			resources_cpu_cores, resources_memory_mb, resources_disk_mb,
 			price_monthly_cents, category, tags, published, creator_id,
 			created_at, updated_at
 		) VALUES (
-			:id, :name, :slug, :description, :version, :compose_spec, :variables,
+			:id, :name, :slug, :description, :version, :compose_spec, :variables, :config_files,
 			:resources_cpu_cores, :resources_memory_mb, :resources_disk_mb,
 			:price_monthly_cents, :category, :tags, :published, :creator_id,
 			:created_at, :updated_at
@@ -331,6 +336,7 @@ func createTemplate(ctx context.Context, exec executor, template *domain.Templat
 		"version":              template.Version,
 		"compose_spec":         template.ComposeSpec,
 		"variables":            string(variablesJSON),
+		"config_files":         string(configFilesJSON),
 		"resources_cpu_cores":  template.ResourceRequirements.CPUCores,
 		"resources_memory_mb":  template.ResourceRequirements.MemoryMB,
 		"resources_disk_mb":    template.ResourceRequirements.DiskMB,
@@ -393,6 +399,10 @@ func updateTemplate(ctx context.Context, exec executor, template *domain.Templat
 	if err != nil {
 		return NewStoreError("UpdateTemplate", "template", template.ID, "failed to serialize variables", ErrInvalidData)
 	}
+	configFilesJSON, err := json.Marshal(template.ConfigFiles)
+	if err != nil {
+		return NewStoreError("UpdateTemplate", "template", template.ID, "failed to serialize config_files", ErrInvalidData)
+	}
 	tagsJSON, err := json.Marshal(template.Tags)
 	if err != nil {
 		return NewStoreError("UpdateTemplate", "template", template.ID, "failed to serialize tags", ErrInvalidData)
@@ -406,6 +416,7 @@ func updateTemplate(ctx context.Context, exec executor, template *domain.Templat
 			version = :version,
 			compose_spec = :compose_spec,
 			variables = :variables,
+			config_files = :config_files,
 			resources_cpu_cores = :resources_cpu_cores,
 			resources_memory_mb = :resources_memory_mb,
 			resources_disk_mb = :resources_disk_mb,
@@ -425,6 +436,7 @@ func updateTemplate(ctx context.Context, exec executor, template *domain.Templat
 		"version":              template.Version,
 		"compose_spec":         template.ComposeSpec,
 		"variables":            string(variablesJSON),
+		"config_files":         string(configFilesJSON),
 		"resources_cpu_cores":  template.ResourceRequirements.CPUCores,
 		"resources_memory_mb":  template.ResourceRequirements.MemoryMB,
 		"resources_disk_mb":    template.ResourceRequirements.DiskMB,
@@ -751,6 +763,13 @@ func rowToTemplate(row *templateRow) (*domain.Template, error) {
 		}
 	}
 
+	var configFiles []domain.ConfigFile
+	if row.ConfigFiles != nil && *row.ConfigFiles != "" && *row.ConfigFiles != "null" {
+		if err := json.Unmarshal([]byte(*row.ConfigFiles), &configFiles); err != nil {
+			return nil, NewStoreError("rowToTemplate", "template", row.ID, "failed to parse config_files", ErrInvalidData)
+		}
+	}
+
 	var tags []string
 	if row.Tags != nil && *row.Tags != "" && *row.Tags != "null" {
 		if err := json.Unmarshal([]byte(*row.Tags), &tags); err != nil {
@@ -766,6 +785,7 @@ func rowToTemplate(row *templateRow) (*domain.Template, error) {
 		Version:     row.Version,
 		ComposeSpec: row.ComposeSpec,
 		Variables:   variables,
+		ConfigFiles: configFiles,
 		ResourceRequirements: domain.Resources{
 			CPUCores: row.ResourcesCPU,
 			MemoryMB: row.ResourcesMemory,
