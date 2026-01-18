@@ -214,6 +214,255 @@ err := deployment.Transition(StatusRunning) // ErrInvalidTransition
 err := deployment.Transition(StatusStarting) // ErrInvalidTransition (must stop first)
 ```
 
+## JSON:API Resource Definition
+
+Per ADR-003, Deployments are exposed as JSON:API resources.
+
+### Resource Type
+
+```
+deployments
+```
+
+### Resource Structure
+
+```json
+{
+  "data": {
+    "type": "deployments",
+    "id": "dep_abc123",
+    "attributes": {
+      "name": "wordpress-blog-a1b2c3",
+      "template_id": "tmpl_xyz789",
+      "template_version": "1.0.0",
+      "customer_id": "user_cust456",
+      "node_id": "node_001",
+      "status": "running",
+      "variables": {
+        "DB_PASSWORD": "***REDACTED***"
+      },
+      "domains": [
+        {
+          "hostname": "wordpress-blog-a1b2c3.apps.hoster.io",
+          "type": "auto",
+          "ssl_enabled": true
+        }
+      ],
+      "containers": [
+        {
+          "id": "abc123def456",
+          "service_name": "wordpress",
+          "image": "wordpress:latest",
+          "status": "running"
+        },
+        {
+          "id": "ghi789jkl012",
+          "service_name": "mysql",
+          "image": "mysql:8.0",
+          "status": "running"
+        }
+      ],
+      "resources": {
+        "cpu_cores": 1.0,
+        "memory_mb": 512,
+        "disk_mb": 2048
+      },
+      "error_message": null,
+      "created_at": "2024-01-15T10:30:00Z",
+      "updated_at": "2024-01-15T12:00:00Z",
+      "started_at": "2024-01-15T10:31:00Z",
+      "stopped_at": null
+    },
+    "relationships": {
+      "template": {
+        "data": {
+          "type": "templates",
+          "id": "tmpl_xyz789"
+        },
+        "links": {
+          "related": "/api/v1/templates/tmpl_xyz789"
+        }
+      },
+      "customer": {
+        "data": {
+          "type": "users",
+          "id": "user_cust456"
+        }
+      }
+    },
+    "links": {
+      "self": "/api/v1/deployments/dep_abc123"
+    }
+  }
+}
+```
+
+### List Response
+
+```json
+{
+  "data": [
+    {"type": "deployments", "id": "dep_1", "attributes": {...}},
+    {"type": "deployments", "id": "dep_2", "attributes": {...}}
+  ],
+  "links": {
+    "self": "/api/v1/deployments?page[number]=1&page[size]=20",
+    "first": "/api/v1/deployments?page[number]=1&page[size]=20",
+    "next": "/api/v1/deployments?page[number]=2&page[size]=20"
+  },
+  "meta": {
+    "total": 5,
+    "page": 1,
+    "page_size": 20
+  }
+}
+```
+
+### Filtering & Sorting
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `filter[customer_id]` | Filter by customer | `?filter[customer_id]=user_xyz` |
+| `filter[template_id]` | Filter by template | `?filter[template_id]=tmpl_abc` |
+| `filter[status]` | Filter by status | `?filter[status]=running` |
+| `sort` | Sort field | `?sort=-created_at` |
+| `page[number]` | Page number (1-based) | `?page[number]=2` |
+| `page[size]` | Items per page | `?page[size]=20` |
+
+### Actions (Non-CRUD Operations)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/deployments/:id/start` | Start a stopped deployment |
+| POST | `/api/v1/deployments/:id/stop` | Stop a running deployment |
+| POST | `/api/v1/deployments/:id/restart` | Restart a running deployment |
+
+Action responses return the updated deployment resource.
+
+### Security Notes
+
+- `variables` field is redacted in responses (sensitive values replaced with `***REDACTED***`)
+- `customer_id` filter is automatically applied based on auth context (users only see their own)
+- Template relationship resolved only if template is published or user is creator
+
+### api2go Implementation
+
+```go
+// internal/shell/api/resources/deployment.go
+
+type Deployment struct {
+    domain.Deployment
+}
+
+func (d Deployment) GetID() string {
+    return d.ID
+}
+
+func (d *Deployment) SetID(id string) error {
+    d.ID = id
+    return nil
+}
+
+func (d Deployment) GetName() string {
+    return "deployments"
+}
+
+func (d Deployment) GetReferences() []api2go.Reference {
+    return []api2go.Reference{
+        {Type: "templates", Name: "template"},
+        {Type: "users", Name: "customer"},
+    }
+}
+
+func (d Deployment) GetReferencedIDs() []api2go.ReferenceID {
+    return []api2go.ReferenceID{
+        {ID: d.TemplateID, Name: "template", Type: "templates"},
+        {ID: d.CustomerID, Name: "customer", Type: "users"},
+    }
+}
+```
+
+### OpenAPI Schema
+
+Generated reflectively from struct fields. Maps to:
+
+```yaml
+components:
+  schemas:
+    DeploymentAttributes:
+      type: object
+      properties:
+        name:
+          type: string
+          readOnly: true
+        template_id:
+          type: string
+        template_version:
+          type: string
+          readOnly: true
+        customer_id:
+          type: string
+          readOnly: true
+        node_id:
+          type: string
+          readOnly: true
+        status:
+          type: string
+          enum: [pending, scheduled, starting, running, stopping, stopped, deleting, deleted, failed]
+          readOnly: true
+        variables:
+          type: object
+          additionalProperties:
+            type: string
+        domains:
+          type: array
+          readOnly: true
+          items:
+            $ref: '#/components/schemas/Domain'
+        containers:
+          type: array
+          readOnly: true
+          items:
+            $ref: '#/components/schemas/ContainerInfo'
+        resources:
+          $ref: '#/components/schemas/Resources'
+          readOnly: true
+        error_message:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        started_at:
+          type: string
+          format: date-time
+          readOnly: true
+        stopped_at:
+          type: string
+          format: date-time
+          readOnly: true
+
+    CreateDeploymentInput:
+      type: object
+      required: [template_id]
+      properties:
+        template_id:
+          type: string
+        name:
+          type: string
+          description: Optional custom name
+        variables:
+          type: object
+          additionalProperties:
+            type: string
+```
+
 ## Tests
 
 - `internal/core/domain/deployment_test.go` - Deployment validation and state machine tests
+- `internal/shell/api/resources/deployment_test.go` - JSON:API resource tests

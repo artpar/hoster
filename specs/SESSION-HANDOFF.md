@@ -3,6 +3,31 @@
 > This document is for Claude (AI assistant) when starting a new session with zero memory.
 > Follow this protocol EXACTLY before doing any work.
 
+---
+
+## CURRENT PROJECT STATE (January 18, 2026)
+
+### Status: Post-MVP, Phase -1 COMPLETE
+
+**What's Done:**
+- MVP complete (core deployment loop works)
+- 427 tests passing
+- Phase -1 (ADR & Spec Updates) COMPLETE
+
+**Phase -1 Deliverables (ALL COMPLETE):**
+- 5 new ADRs (003-007)
+- 6 new feature specs (F008-F013)
+- 2 updated domain specs (template.md, deployment.md)
+- 2 new domain specs (monitoring.md, user-context.md)
+
+**Next Step: Phase 0 - API Layer Migration**
+- Migrate from chi router to Gorilla mux + api2go
+- Implement JSON:API format
+- Add reflective OpenAPI generation
+- See plan file: `/Users/artpar/.claude/plans/merry-baking-rain.md`
+
+---
+
 ## Phase 1: Context Loading (MANDATORY)
 
 ### Step 1: Read Core Documents (in order)
@@ -20,18 +45,50 @@ Read these files in this exact order:
 4. **`specs/decisions/ADR-001-docker-direct.md`** - Architecture decision
 5. **`specs/decisions/ADR-002-values-as-boundaries.md`** - Code organization
 
-### Step 2: Verify Understanding
+### Step 2: Read Post-MVP ADRs (for UI/API work)
+
+These are critical for Phase 0 and beyond:
+
+6. **`specs/decisions/ADR-003-jsonapi-api2go.md`** - JSON:API with api2go
+7. **`specs/decisions/ADR-004-reflective-openapi.md`** - OpenAPI generation
+8. **`specs/decisions/ADR-005-apigate-integration.md`** - Auth/billing via APIGate
+9. **`specs/decisions/ADR-006-frontend-architecture.md`** - React + Vite frontend
+10. **`specs/decisions/ADR-007-uiux-guidelines.md`** - UI/UX consistency
+
+### Step 3: Read Feature Specs (for implementation)
+
+```
+specs/features/F008-authentication.md     - Header-based auth
+specs/features/F009-billing-integration.md - Usage tracking
+specs/features/F010-monitoring-dashboard.md - Health/logs/stats
+specs/features/F011-marketplace-ui.md      - Template browsing
+specs/features/F012-deployment-management-ui.md - Deployment controls
+specs/features/F013-creator-dashboard-ui.md - Template management
+```
+
+### Step 4: Read Domain Specs
+
+```
+specs/domain/template.md    - Template entity + JSON:API definition
+specs/domain/deployment.md  - Deployment entity + JSON:API definition
+specs/domain/monitoring.md  - Health, stats, logs, events types
+specs/domain/user-context.md - AuthContext from APIGate headers
+```
+
+### Step 5: Verify Understanding
 
 After reading, you should know:
 - [ ] What is Hoster? (Deployment marketplace platform)
-- [ ] What is STC? (Spec → Test → Code)
+- [ ] What is STC? (Spec -> Test -> Code)
 - [ ] What is "Values as Boundaries"? (Pure core, thin shell)
+- [ ] What is JSON:API? (Standardized API format via api2go)
+- [ ] What is APIGate? (External auth/billing, injects X-User-ID headers)
 - [ ] Where do specs go? (`specs/` directory)
 - [ ] Where does core code go? (`internal/core/`)
 - [ ] Where does I/O code go? (`internal/shell/`)
 - [ ] What libraries to use? (Listed in CLAUDE.md)
 
-### Step 3: Verify Tests Pass
+### Step 6: Verify Tests Pass
 
 ```bash
 make test
@@ -43,21 +100,38 @@ If tests fail, something is broken. Fix before proceeding.
 
 ## Phase 2: Task Understanding
 
-### Step 4: Check Current Status
+### Step 7: Check Implementation Plan
+
+Read the plan file for detailed implementation phases:
+```
+/Users/artpar/.claude/plans/merry-baking-rain.md
+```
+
+**Implementation Phases:**
+- Phase -1: ADR & Spec Updates (COMPLETE)
+- Phase 0: API Layer Migration (JSON:API + OpenAPI) <- NEXT
+- Phase 1: APIGate Integration (Backend Auth)
+- Phase 2: Billing Integration
+- Phase 3: Monitoring Backend
+- Phase 4: Frontend Foundation
+- Phase 5: Frontend Views
+- Phase 6: Integration & Polish
+
+### Step 8: Check Current Status
 
 Read `CLAUDE.md` section "Current Implementation Status" to understand:
 - What's DONE
 - What's TODO
 - What's BLOCKED
 
-### Step 5: Check Agile Project
+### Step 9: Check Agile Project
 
 ```
 Use mcp__agile__workflow_execute with workflow: "backlog_status"
 and project_id: "HOSTER" to see current tasks.
 ```
 
-### Step 6: Understand User's Request
+### Step 10: Understand User's Request
 
 Now you can ask the user what they want to do. Compare against:
 - What's already implemented (don't redo)
@@ -68,14 +142,14 @@ Now you can ask the user what they want to do. Compare against:
 
 ## Phase 3: Before Making Changes
 
-### Step 7: Identify Relevant Specs
+### Step 11: Identify Relevant Specs
 
 For ANY change:
 1. Find the relevant spec in `specs/`
-2. If no spec exists → WRITE SPEC FIRST
-3. If spec exists → READ IT before changing code
+2. If no spec exists -> WRITE SPEC FIRST
+3. If spec exists -> READ IT before changing code
 
-### Step 8: Pre-Flight Checklist
+### Step 12: Pre-Flight Checklist
 
 Before writing ANY code, verify:
 
@@ -93,53 +167,68 @@ Before writing ANY code, verify:
 ### For New Features
 
 ```
-1. SPEC   → Create specs/features/F###-name.md
-2. TEST   → Create internal/core/xxx/feature_test.go (failing tests)
-3. CODE   → Create internal/core/xxx/feature.go (make tests pass)
-4. VERIFY → make test
+1. SPEC   -> Create specs/features/F###-name.md
+2. TEST   -> Create internal/core/xxx/feature_test.go (failing tests)
+3. CODE   -> Create internal/core/xxx/feature.go (make tests pass)
+4. VERIFY -> make test
 ```
 
 ### For Bug Fixes
 
 ```
-1. SPEC   → Update spec if behavior was wrong
-2. TEST   → Add test that demonstrates the bug
-3. CODE   → Fix code to pass test
-4. VERIFY → make test
+1. SPEC   -> Update spec if behavior was wrong
+2. TEST   -> Add test that demonstrates the bug
+3. CODE   -> Fix code to pass test
+4. VERIFY -> make test
 ```
 
 ### For Refactoring
 
 ```
-1. VERIFY → make test (all pass before)
-2. REFACTOR → Make changes
-3. VERIFY → make test (all pass after)
+1. VERIFY -> make test (all pass before)
+2. REFACTOR -> Make changes
+3. VERIFY -> make test (all pass after)
 ```
 
 ---
 
 ## Phase 5: After Making Changes
 
-### Step 9: Verify Sync
+### Step 13: Verify Sync
 
 After any change:
 - [ ] Spec still matches implementation
 - [ ] Tests still match spec
 - [ ] All tests pass (`make test`)
 
-### Step 10: Update CLAUDE.md
+### Step 14: Update CLAUDE.md
 
 If you:
-- Completed a TODO item → Move to DONE
-- Made a new decision → Document in CLAUDE.md
-- Added new spec → Reference in CLAUDE.md
-- Changed architecture → Update ADR or create new one
+- Completed a TODO item -> Move to DONE
+- Made a new decision -> Document in CLAUDE.md
+- Added new spec -> Reference in CLAUDE.md
+- Changed architecture -> Update ADR or create new one
 
-### Step 11: Update Agile Project
+### Step 15: Update Agile Project
 
 ```
 Use mcp__agile__task_transition to update task status.
 ```
+
+---
+
+## Key Library Changes (Post-MVP)
+
+| Purpose | Old | New |
+|---------|-----|-----|
+| HTTP router | chi/v5 | gorilla/mux (api2go built-in) |
+| API format | custom JSON | JSON:API via api2go |
+| OpenAPI | manual | reflective generation |
+
+**New Dependencies:**
+- `github.com/manyminds/api2go` - JSON:API implementation
+- `github.com/gorilla/mux` - Router (api2go support)
+- `github.com/getkin/kin-openapi` - OpenAPI 3.0 types
 
 ---
 
@@ -154,6 +243,7 @@ Use mcp__agile__task_transition to update task status.
 | Implementing "NOT Supported" items | Scope creep, wasted effort | Read spec's NOT Supported section |
 | Skipping `make test` | Broken code goes unnoticed | Run after every change |
 | Not updating CLAUDE.md | Next session loses context | Update after significant changes |
+| Ignoring ADR-007 UI guidelines | Inconsistent UI | Follow semantic colors, patterns |
 
 ---
 
@@ -162,13 +252,14 @@ Use mcp__agile__task_transition to update task status.
 | What | Where | Example |
 |------|-------|---------|
 | Domain specs | `specs/domain/` | `template.md` |
-| Feature specs | `specs/features/` | `F001-parse-compose.md` |
-| ADRs | `specs/decisions/` | `ADR-001-docker-direct.md` |
+| Feature specs | `specs/features/` | `F008-authentication.md` |
+| ADRs | `specs/decisions/` | `ADR-003-jsonapi-api2go.md` |
 | Pure logic | `internal/core/` | `domain/template.go` |
 | I/O code | `internal/shell/` | `docker/client.go` |
 | Unit tests | Same dir as code | `template_test.go` |
 | E2E tests | `tests/e2e/` | `deploy_test.go` |
 | Sample templates | `examples/` | `wordpress/compose.yml` |
+| Frontend (future) | `web/` | React + Vite app |
 
 ---
 
@@ -192,7 +283,8 @@ git checkout HEAD~1 -- <file>
 1. Re-read `CLAUDE.md` from the beginning
 2. Run `make test` to verify baseline
 3. Read the specific spec for what you're working on
-4. Ask user for clarification
+4. Read the plan file for implementation phases
+5. Ask user for clarification
 
 ### If Spec Doesn't Exist
 
@@ -217,3 +309,4 @@ Before ending a session:
   - [ ] Any new decisions
 - [ ] Agile project updated
 - [ ] User informed of current state
+- [ ] This file updated if project state changed significantly

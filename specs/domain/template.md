@@ -196,7 +196,197 @@ Template{
 }
 ```
 
+## JSON:API Resource Definition
+
+Per ADR-003, Templates are exposed as JSON:API resources.
+
+### Resource Type
+
+```
+templates
+```
+
+### Resource Structure
+
+```json
+{
+  "data": {
+    "type": "templates",
+    "id": "tmpl_abc123",
+    "attributes": {
+      "name": "WordPress with MySQL",
+      "slug": "wordpress-with-mysql",
+      "description": "A WordPress blog with MySQL database",
+      "version": "1.0.0",
+      "compose_spec": "services:\n  wordpress:\n    image: wordpress:latest\n...",
+      "variables": [
+        {
+          "name": "DB_PASSWORD",
+          "label": "Database Password",
+          "description": "Root password for MySQL",
+          "type": "password",
+          "required": true
+        }
+      ],
+      "resource_requirements": {
+        "cpu_cores": 1.0,
+        "memory_mb": 512,
+        "disk_mb": 2048
+      },
+      "price_monthly_cents": 999,
+      "category": "cms",
+      "tags": ["wordpress", "blog", "mysql"],
+      "published": true,
+      "creator_id": "user_xyz789",
+      "created_at": "2024-01-15T10:30:00Z",
+      "updated_at": "2024-01-15T12:00:00Z"
+    },
+    "relationships": {
+      "deployments": {
+        "links": {
+          "related": "/api/v1/templates/tmpl_abc123/deployments"
+        }
+      },
+      "creator": {
+        "data": {
+          "type": "users",
+          "id": "user_xyz789"
+        }
+      }
+    },
+    "links": {
+      "self": "/api/v1/templates/tmpl_abc123"
+    }
+  }
+}
+```
+
+### List Response
+
+```json
+{
+  "data": [
+    {"type": "templates", "id": "tmpl_1", "attributes": {...}},
+    {"type": "templates", "id": "tmpl_2", "attributes": {...}}
+  ],
+  "links": {
+    "self": "/api/v1/templates?page[number]=1&page[size]=20",
+    "first": "/api/v1/templates?page[number]=1&page[size]=20",
+    "last": "/api/v1/templates?page[number]=5&page[size]=20",
+    "next": "/api/v1/templates?page[number]=2&page[size]=20"
+  },
+  "meta": {
+    "total": 100,
+    "page": 1,
+    "page_size": 20
+  }
+}
+```
+
+### Filtering & Sorting
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `filter[published]` | Filter by publish status | `?filter[published]=true` |
+| `filter[creator_id]` | Filter by creator | `?filter[creator_id]=user_xyz` |
+| `filter[search]` | Full-text search name/description | `?filter[search]=wordpress` |
+| `sort` | Sort field (prefix `-` for descending) | `?sort=-created_at` |
+| `page[number]` | Page number (1-based) | `?page[number]=2` |
+| `page[size]` | Items per page | `?page[size]=20` |
+
+### api2go Implementation
+
+```go
+// internal/shell/api/resources/template.go
+
+type Template struct {
+    domain.Template
+}
+
+func (t Template) GetID() string {
+    return t.ID
+}
+
+func (t *Template) SetID(id string) error {
+    t.ID = id
+    return nil
+}
+
+func (t Template) GetName() string {
+    return "templates"
+}
+
+func (t Template) GetReferences() []api2go.Reference {
+    return []api2go.Reference{
+        {Type: "deployments", Name: "deployments"},
+        {Type: "users", Name: "creator"},
+    }
+}
+
+func (t Template) GetReferencedIDs() []api2go.ReferenceID {
+    return []api2go.ReferenceID{
+        {ID: t.CreatorID, Name: "creator", Type: "users"},
+    }
+}
+```
+
+### OpenAPI Schema
+
+Generated reflectively from struct fields. Maps to:
+
+```yaml
+components:
+  schemas:
+    TemplateAttributes:
+      type: object
+      required: [name, version, compose_spec, price_monthly_cents]
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 100
+        slug:
+          type: string
+          readOnly: true
+        description:
+          type: string
+        version:
+          type: string
+          pattern: "^\\d+\\.\\d+\\.\\d+$"
+        compose_spec:
+          type: string
+        variables:
+          type: array
+          items:
+            $ref: '#/components/schemas/Variable'
+        resource_requirements:
+          $ref: '#/components/schemas/Resources'
+        price_monthly_cents:
+          type: integer
+          minimum: 0
+        category:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        published:
+          type: boolean
+        creator_id:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+```
+
 ## Tests
 
 - `internal/core/domain/template_test.go` - Template validation tests
 - `internal/core/compose/parser_test.go` - Compose parsing tests
+- `internal/shell/api/resources/template_test.go` - JSON:API resource tests

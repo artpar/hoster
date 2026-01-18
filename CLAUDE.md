@@ -92,29 +92,57 @@ hoster/
 ├── CLAUDE.md                   # THIS FILE - READ FIRST
 ├── specs/                      # SOURCE OF TRUTH
 │   ├── README.md               # How to write specs
+│   ├── SESSION-HANDOFF.md      # New session onboarding protocol
 │   ├── domain/                 # Entity specifications
 │   │   ├── template.md         # Template entity (IMPLEMENTED)
-│   │   └── deployment.md       # Deployment entity (IMPLEMENTED)
+│   │   ├── deployment.md       # Deployment entity (IMPLEMENTED)
+│   │   ├── monitoring.md       # Monitoring types (SPEC READY)
+│   │   └── user-context.md     # Auth context (SPEC READY)
 │   ├── features/               # Feature specifications
-│   │   └── F###-{name}.md      # (TODO)
+│   │   ├── F008-authentication.md       # Auth integration (SPEC READY)
+│   │   ├── F009-billing-integration.md  # Billing (SPEC READY)
+│   │   ├── F010-monitoring-dashboard.md # Monitoring (SPEC READY)
+│   │   ├── F011-marketplace-ui.md       # Marketplace UI (SPEC READY)
+│   │   ├── F012-deployment-management-ui.md # Deployment UI (SPEC READY)
+│   │   └── F013-creator-dashboard-ui.md # Creator UI (SPEC READY)
 │   └── decisions/              # Architecture Decision Records
 │       ├── ADR-001-docker-direct.md       # (IMPLEMENTED)
-│       └── ADR-002-values-as-boundaries.md # (IMPLEMENTED)
+│       ├── ADR-002-values-as-boundaries.md # (IMPLEMENTED)
+│       ├── ADR-003-jsonapi-api2go.md      # JSON:API (SPEC READY)
+│       ├── ADR-004-reflective-openapi.md  # OpenAPI gen (SPEC READY)
+│       ├── ADR-005-apigate-integration.md # APIGate auth (SPEC READY)
+│       ├── ADR-006-frontend-architecture.md # React frontend (SPEC READY)
+│       └── ADR-007-uiux-guidelines.md     # UI/UX patterns (SPEC READY)
 ├── internal/
 │   ├── core/                   # FUNCTIONAL CORE (no I/O)
 │   │   ├── domain/             # Domain types + validation (IMPLEMENTED)
-│   │   ├── compose/            # Compose parsing (TODO)
-│   │   ├── deployment/         # Deployment logic (TODO)
-│   │   └── traefik/            # Traefik config generation (TODO)
+│   │   ├── compose/            # Compose parsing (IMPLEMENTED)
+│   │   ├── deployment/         # Deployment logic (IMPLEMENTED)
+│   │   ├── traefik/            # Traefik config generation (IMPLEMENTED)
+│   │   ├── auth/               # Auth context (TODO - F008)
+│   │   ├── limits/             # Plan limits (TODO - F009)
+│   │   └── monitoring/         # Health aggregation (TODO - F010)
 │   └── shell/                  # IMPERATIVE SHELL (I/O)
-│       ├── api/                # HTTP handlers (TODO)
-│       ├── docker/             # Docker SDK wrapper (TODO)
-│       └── store/              # Database layer (TODO)
+│       ├── api/                # HTTP handlers (IMPLEMENTED)
+│       │   ├── resources/      # api2go resources (TODO - ADR-003)
+│       │   ├── openapi/        # OpenAPI generator (TODO - ADR-004)
+│       │   └── middleware/     # Auth middleware (TODO - F008)
+│       ├── docker/             # Docker SDK wrapper (IMPLEMENTED)
+│       ├── store/              # Database layer (IMPLEMENTED)
+│       └── billing/            # APIGate billing client (TODO - F009)
+├── web/                        # FRONTEND (TODO - ADR-006)
+│   ├── src/
+│   │   ├── api/                # API client + generated types
+│   │   ├── pages/              # Page components
+│   │   ├── components/         # Reusable components
+│   │   ├── hooks/              # TanStack Query hooks
+│   │   └── stores/             # Zustand stores
+│   └── package.json
 ├── tests/
-│   ├── e2e/                    # End-to-end tests (TODO)
-│   └── fixtures/               # Test data (TODO)
-├── examples/                   # Sample templates (TODO)
-├── cmd/hoster/                 # Entry point (TODO)
+│   ├── e2e/                    # End-to-end tests (IMPLEMENTED)
+│   └── fixtures/               # Test data (IMPLEMENTED)
+├── examples/                   # Sample templates (IMPLEMENTED)
+├── cmd/hoster/                 # Entry point (IMPLEMENTED)
 ├── Makefile                    # Build commands (IMPLEMENTED)
 └── go.mod                      # Go module (IMPLEMENTED)
 ```
@@ -137,7 +165,47 @@ hoster/
 - **Implication**: Core has NO I/O, shell is thin
 - **DO NOT**: Put I/O in `internal/core/`
 
-### ADR-003: SQLite for Prototype
+### ADR-003: JSON:API with api2go
+
+- **Decision**: Use JSON:API specification via api2go library
+- **Rationale**: Standardized format, relationship support, tooling ecosystem
+- **Implication**: Consistent `{type, id, attributes, relationships}` format
+- **DO NOT**: Use custom JSON format or GraphQL
+- **Spec**: `specs/decisions/ADR-003-jsonapi-api2go.md`
+
+### ADR-004: Reflective OpenAPI Generation
+
+- **Decision**: Generate OpenAPI 3.0 spec at runtime by reflecting on api2go resources
+- **Rationale**: Spec always matches implementation, no drift
+- **Implication**: Serve `/openapi.json` endpoint, generate TypeScript types
+- **DO NOT**: Use annotation-based generation (swaggo) or manual spec
+- **Spec**: `specs/decisions/ADR-004-reflective-openapi.md`
+
+### ADR-005: APIGate Integration
+
+- **Decision**: Use APIGate as reverse proxy for auth and billing
+- **Rationale**: Leverage existing auth/billing infrastructure
+- **Implication**: Trust X-User-ID headers, network isolation required
+- **DO NOT**: Build auth from scratch or use external auth providers
+- **Spec**: `specs/decisions/ADR-005-apigate-integration.md`
+
+### ADR-006: Frontend Architecture
+
+- **Decision**: React + Vite + TanStack Query + Zustand + TailwindCSS
+- **Rationale**: Modern stack, good DX, strong typing from OpenAPI
+- **Implication**: Separate frontend build in `web/` directory
+- **DO NOT**: Use Vue, Angular, or server-rendered templates
+- **Spec**: `specs/decisions/ADR-006-frontend-architecture.md`
+
+### ADR-007: UI/UX Implementation Guidelines
+
+- **Decision**: shadcn/ui components, semantic colors, consistent patterns
+- **Rationale**: Consistency, correctness, completeness across all UI
+- **Implication**: Follow design system for all components
+- **DO NOT**: Use raw colors, inconsistent spacing, skip loading/error states
+- **Spec**: `specs/decisions/ADR-007-uiux-guidelines.md`
+
+### SQLite for Prototype
 
 - **Decision**: Use SQLite now, migrate to PostgreSQL later
 - **Rationale**: Fast start, easy to develop
@@ -150,7 +218,9 @@ hoster/
 |---------|---------|------------|
 | Docker SDK | `github.com/docker/docker/client` | Other Docker libs |
 | Compose parsing | `github.com/compose-spec/compose-go/v2` | Custom parser |
-| HTTP router | `github.com/go-chi/chi/v5` | gin, echo, mux |
+| HTTP router | `github.com/gorilla/mux` | chi, gin, echo |
+| JSON:API | `github.com/manyminds/api2go` | Custom marshaling |
+| OpenAPI types | `github.com/getkin/kin-openapi` | Other OpenAPI libs |
 | Database | `github.com/jmoiron/sqlx` | gorm, ent |
 | Migrations | `github.com/golang-migrate/migrate/v4` | goose, others |
 | Testing | `github.com/stretchr/testify` | Other assertion libs |
@@ -305,15 +375,41 @@ All pure logic has been moved to `internal/core/`:
 - [x] `slug.go` - Slugify() for URL-safe names
 - [x] `deployment.go` - GenerateDomain() for auto domain assignment
 
-### What's Next (Post-MVP)
-- [ ] Frontend UI (currently API-only)
-- [ ] User authentication/authorization
-- [ ] Billing/pricing integration
-- [ ] Multi-node deployment support
-- [ ] Monitoring/logging dashboard
+### What's Next (Post-MVP) - SPECS COMPLETE
+
+All specs for the next phase have been written. Implementation can proceed following STC.
+
+**Phase 0: API Layer Migration** (ADR-003, ADR-004)
+- [ ] Migrate from chi to Gorilla mux
+- [ ] Implement api2go resources for Template, Deployment
+- [ ] Build reflective OpenAPI generator
+- [ ] Serve `/openapi.json` endpoint
+
+**Phase 1: Authentication** (F008, ADR-005)
+- [ ] Create auth middleware (extract X-User-ID headers)
+- [ ] Implement authorization functions (pure core)
+- [ ] Add auth checks to resources
+
+**Phase 2: Billing** (F009)
+- [ ] Create usage event storage
+- [ ] Implement APIGate billing client
+- [ ] Add plan limit validation
+- [ ] Background event reporter
+
+**Phase 3: Monitoring** (F010)
+- [ ] Add health/logs/stats/events endpoints
+- [ ] Implement Docker stats integration
+- [ ] Create event recording in orchestrator
+
+**Phase 4-6: Frontend** (F011, F012, F013, ADR-006)
+- [ ] Set up React + Vite + TailwindCSS
+- [ ] Generate TypeScript types from OpenAPI
+- [ ] Implement Marketplace UI
+- [ ] Implement Deployment Management UI
+- [ ] Implement Creator Dashboard UI
 
 ### Blocked
-- Nothing blocked - MVP complete
+- Nothing blocked - specs complete, implementation ready
 
 ---
 
@@ -344,12 +440,16 @@ make vet            # Vet code
 
 1. **This file** (`CLAUDE.md`) - You're reading it
 2. `specs/README.md` - How to write specs
-3. `specs/decisions/ADR-001-docker-direct.md` - Architecture decision
-4. `specs/decisions/ADR-002-values-as-boundaries.md` - Code organization
-5. `specs/domain/template.md` - Template entity spec
-6. `specs/domain/deployment.md` - Deployment entity spec
-7. `internal/core/domain/template.go` - See implementation pattern
-8. `internal/core/domain/deployment.go` - See state machine
+3. `specs/SESSION-HANDOFF.md` - Session onboarding protocol
+4. `specs/decisions/ADR-001-docker-direct.md` - Docker architecture
+5. `specs/decisions/ADR-002-values-as-boundaries.md` - Code organization
+6. `specs/decisions/ADR-003-jsonapi-api2go.md` - JSON:API standard
+7. `specs/decisions/ADR-004-reflective-openapi.md` - OpenAPI generation
+8. `specs/decisions/ADR-005-apigate-integration.md` - Auth/billing
+9. `specs/decisions/ADR-006-frontend-architecture.md` - React frontend
+10. `specs/decisions/ADR-007-uiux-guidelines.md` - UI/UX patterns
+11. `specs/domain/template.md` - Template entity spec
+12. `specs/domain/deployment.md` - Deployment entity spec
 
 ---
 
@@ -390,11 +490,12 @@ If you're starting a new session with no memory:
 3. You're building a deployment marketplace platform
 4. Follow STC: Spec → Test → Code (NEVER skip)
 5. Architecture: Pure core (`internal/core/`), thin shell (`internal/shell/`)
-6. Domain model has Template and Deployment entities (implemented, tested)
-7. Next: Implement compose parsing feature (spec first!)
-8. Use the specific libraries listed above
-9. Run `make test` to verify everything works
-10. Check Agile MCP for task tracking
+6. **MVP is COMPLETE** - Core deployment loop is working
+7. **Post-MVP specs are COMPLETE** - See ADR-003 through ADR-006, F008-F013
+8. **Next: Implementation Phase 0** - Migrate to api2go + OpenAPI
+9. Key libraries: api2go (JSON:API), gorilla/mux (router), kin-openapi (OpenAPI)
+10. Run `make test` to verify everything works
+11. Check the plan file at `.claude/plans/merry-baking-rain.md` for detailed phases
 
 **When in doubt, read the specs in `specs/` directory.**
 
