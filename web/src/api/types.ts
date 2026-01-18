@@ -55,17 +55,43 @@ export interface JsonApiErrorResponse {
 export interface TemplateAttributes {
   name: string;
   slug: string;
-  description: string;
+  description?: string;
   version: string;
   compose_spec: string;
-  price_cents: number;
-  status: 'draft' | 'published' | 'deprecated';
-  icon_url?: string;
-  documentation_url?: string;
+  variables?: Variable[];
+  config_files?: ConfigFile[];
+  resource_requirements: ResourceRequirements;
+  price_monthly_cents: number;
+  category?: string;
+  tags?: string[];
+  published: boolean;
   creator_id: string;
   created_at: string;
   updated_at: string;
-  published_at?: string;
+}
+
+export interface Variable {
+  name: string;
+  description?: string;
+  label?: string;
+  type: string;
+  default?: string;
+  required?: boolean;
+  options?: string[];
+  validation?: string;
+}
+
+export interface ConfigFile {
+  name: string;
+  path: string;
+  content: string;
+  mode?: string;
+}
+
+export interface ResourceRequirements {
+  cpu_cores: number;
+  memory_mb: number;
+  disk_mb: number;
 }
 
 export type Template = JsonApiResource<'templates', TemplateAttributes>;

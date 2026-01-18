@@ -24,7 +24,7 @@ export function MarketplacePage() {
     if (!templates) return [];
 
     // Start with published templates only
-    let result = templates.filter((t) => t.attributes.status === 'published');
+    let result = templates.filter((t) => t.attributes.published === true);
 
     // Apply search filter
     if (searchQuery.trim()) {
@@ -32,15 +32,15 @@ export function MarketplacePage() {
       result = result.filter(
         (t) =>
           t.attributes.name.toLowerCase().includes(query) ||
-          t.attributes.description.toLowerCase().includes(query)
+          (t.attributes.description ?? '').toLowerCase().includes(query)
       );
     }
 
     // Apply price filter
     if (priceFilter === 'free') {
-      result = result.filter((t) => t.attributes.price_cents === 0);
+      result = result.filter((t) => t.attributes.price_monthly_cents === 0);
     } else if (priceFilter === 'paid') {
-      result = result.filter((t) => t.attributes.price_cents > 0);
+      result = result.filter((t) => t.attributes.price_monthly_cents > 0);
     }
 
     // Apply sorting
@@ -49,10 +49,10 @@ export function MarketplacePage() {
         result.sort((a, b) => a.attributes.name.localeCompare(b.attributes.name));
         break;
       case 'price_asc':
-        result.sort((a, b) => a.attributes.price_cents - b.attributes.price_cents);
+        result.sort((a, b) => a.attributes.price_monthly_cents - b.attributes.price_monthly_cents);
         break;
       case 'price_desc':
-        result.sort((a, b) => b.attributes.price_cents - a.attributes.price_cents);
+        result.sort((a, b) => b.attributes.price_monthly_cents - a.attributes.price_monthly_cents);
         break;
       case 'newest':
         result.sort(
@@ -86,7 +86,7 @@ export function MarketplacePage() {
     );
   }
 
-  const totalPublished = templates?.filter((t) => t.attributes.status === 'published').length ?? 0;
+  const totalPublished = templates?.filter((t) => t.attributes.published === true).length ?? 0;
 
   return (
     <div>

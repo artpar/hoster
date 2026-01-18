@@ -56,8 +56,15 @@ func NewAuthMiddleware(cfg AuthConfig) *AuthMiddleware {
 // If Mode is "none", it skips authentication entirely.
 func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip auth in development mode
+		// In "none" mode, set a default dev user context
 		if m.config.Mode == "none" {
+			devCtx := auth.Context{
+				UserID:        "dev-user",
+				PlanID:        "dev-plan",
+				PlanLimits:    auth.DefaultPlanLimits(),
+				Authenticated: true,
+			}
+			r = r.WithContext(auth.WithContext(r.Context(), devCtx))
 			next.ServeHTTP(w, r)
 			return
 		}

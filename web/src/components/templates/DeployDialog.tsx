@@ -163,7 +163,9 @@ export function DeployDialog({
             <div className="flex items-center justify-between">
               <span className="text-sm">Monthly Cost</span>
               <span className="font-semibold">
-                ${(template.attributes.price_cents / 100).toFixed(2)}/mo
+                {template.attributes.price_monthly_cents === 0
+                  ? 'Free'
+                  : `$${(template.attributes.price_monthly_cents / 100).toFixed(2)}/mo`}
               </span>
             </div>
           </div>

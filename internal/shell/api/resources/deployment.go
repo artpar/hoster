@@ -88,6 +88,15 @@ func (d Deployment) GetReferencedStructs() []jsonapi.MarshalIdentifier {
 	return nil
 }
 
+// SetToOneReferenceID implements the UnmarshalToOneRelations interface.
+// This is required for api2go to handle relationship data during POST/PATCH.
+func (d *Deployment) SetToOneReferenceID(name, ID string) error {
+	if name == "template" {
+		d.TemplateID = ID
+	}
+	return nil
+}
+
 // =============================================================================
 // Conversion Functions
 // =============================================================================

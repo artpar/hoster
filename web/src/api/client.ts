@@ -2,6 +2,32 @@ import type { JsonApiResponse, JsonApiErrorResponse, JsonApiError } from './type
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
+// Get auth headers from localStorage (zustand persist)
+function getAuthHeaders(): Record<string, string> {
+  try {
+    const authData = localStorage.getItem('hoster-auth');
+    if (authData) {
+      const parsed = JSON.parse(authData);
+      const state = parsed.state;
+      if (state?.isAuthenticated && state?.userId) {
+        const headers: Record<string, string> = {
+          'X-User-ID': state.userId,
+        };
+        if (state.planId) {
+          headers['X-Plan-ID'] = state.planId;
+        }
+        if (state.planLimits) {
+          headers['X-Plan-Limits'] = JSON.stringify(state.planLimits);
+        }
+        return headers;
+      }
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return {};
+}
+
 export class ApiError extends Error {
   errors: JsonApiError[];
   status: number;
@@ -30,6 +56,7 @@ export async function apiClient<T>(
     headers: {
       'Content-Type': 'application/vnd.api+json',
       'Accept': 'application/vnd.api+json',
+      ...getAuthHeaders(),
       ...options.headers,
     },
     credentials: 'include',

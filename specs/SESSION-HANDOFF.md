@@ -7,7 +7,7 @@
 
 ## CURRENT PROJECT STATE (January 18, 2026)
 
-### Status: Post-MVP, Phases 0-5 COMPLETE
+### Status: Post-MVP, Phases 0-5 COMPLETE, Phase 6 IN PROGRESS
 
 **What's Done:**
 - MVP complete (core deployment loop works)
@@ -19,6 +19,8 @@
 - Phase 3 (Monitoring Backend) COMPLETE
 - Phase 4 (Frontend Foundation) COMPLETE
 - Phase 5 (Frontend Views) COMPLETE
+- Phase 5 Manual Testing COMPLETE (via Chrome DevTools MCP)
+- Phase 6 Integration bug fixes COMPLETE
 
 **Frontend Build Status:**
 ```
@@ -27,140 +29,115 @@ dist/assets/index-*.css          21.94 kB (gzip: 4.83 kB)
 dist/assets/index-*.js          364.07 kB (gzip: 109.41 kB)
 ```
 
-**Next Step: Phase 6 - Integration & Polish**
-- Connect frontend to backend API (ensure CORS, proxy config)
-- End-to-end testing with real deployments
-- Polish UI/UX based on real usage
+**All UI Components Tested & Working:**
+- Marketplace page with search/sort/filter
+- Template detail page with pricing
+- Deploy dialog for creating deployments
+- Deployment detail page with monitoring tabs
+- Creator dashboard for template management
+
+**Next Step: Phase 6 Remaining - Polish & Real Testing**
+- Polish UI/UX (mobile, accessibility, error boundaries)
+- Test with real Docker containers running
 - Performance optimization
 
 ---
 
 ## LAST SESSION SUMMARY (January 18, 2026)
 
-### What Was Accomplished: Phase 5 Frontend Views
+### What Was Accomplished: Phase 5 Manual Testing & Bug Fixes
 
-**UI Components Created (`web/src/components/ui/`):**
-- `Button.tsx` - Variants: default, destructive, outline, secondary, ghost, link
-- `Input.tsx` - Form input with focus states
-- `Label.tsx` - Form labels
-- `Textarea.tsx` - Multi-line text input
-- `Select.tsx` - Dropdown with chevron icon
-- `Tabs.tsx` - Tab navigation using React Context API
-- `Dialog.tsx` - Modal dialog with header, footer, close button, escape key
-- `Card.tsx` - Card layout (Header, Title, Description, Content, Footer)
-- `Badge.tsx` - Status badges (default, secondary, destructive, outline, success, warning)
-- `Skeleton.tsx` - Loading placeholder
-- `index.ts` - Barrel export for all UI components
+**Testing Completed via Chrome DevTools MCP:**
+- Marketplace page - 29 templates displaying with search/sort/filter
+- Template detail page - Pricing, description, deploy button working
+- Deploy dialog - Template selection and deployment creation (201 response)
+- Deployment detail page - All tabs working (Overview, Logs, Stats, Events)
+- Creator Dashboard - Template creation, listing, and management
 
-**Marketplace UI (F011) - `web/src/pages/marketplace/`:**
-- `MarketplacePage.tsx` - Enhanced with:
-  - Search by name and description
-  - Sort options (newest, name, price asc/desc)
-  - Price filtering (all, free, paid)
-  - Results count with filter info
-  - Clear filters button
-- `TemplateDetailPage.tsx` - Enhanced with:
-  - Services list parsed from compose spec
-  - Sidebar with pricing card
-  - Deploy dialog integration
-  - Created/updated dates
+**Bug Fixes Applied During Testing:**
 
-**Deploy Dialog (`web/src/components/templates/`):**
-- `DeployDialog.tsx` - Full deployment form with:
-  - Deployment name input with validation
-  - Custom domain (optional)
-  - Environment variable overrides (KEY=value format)
-  - Price display
-  - Error handling
+| Issue | Root Cause | Fix |
+|-------|------------|-----|
+| NaN price display | Used `price_cents` instead of `price_monthly_cents` | Updated field name in TemplateDetailPage.tsx and DeployDialog.tsx |
+| api2go 406 error | Deployment resource missing `UnmarshalToOneRelations` interface | Added `SetToOneReferenceID` method to deployment.go |
+| 401 Authentication error | Auth middleware "none" mode didn't set authenticated context | Fixed middleware to set dev user context in "none" mode |
+| React null errors | API returned `logs: null`, `events: null`, `containers: null` | Added null safety checks (`logs?.logs && logs.logs.length > 0`) |
+| Creator Dashboard empty | localStorage userId didn't match backend dev mode | Fixed localStorage to use "dev-user" |
 
-**Deployment Management UI (F012) - `web/src/pages/deployments/`:**
-- `DeploymentDetailPage.tsx` - Complete rewrite with tabs:
-  - **Overview tab**: Container health cards, resource usage summary, deployment info
-  - **Logs tab**: Container filter, tail limit selector (50/100/200/500), refresh button
-  - **Stats tab**: Full resource table (CPU, memory, network, block I/O, PIDs)
-  - **Events tab**: Color-coded events (error=red, start=green)
+**Backend Fixes:**
+- `internal/shell/api/resources/deployment.go` - Added `SetToOneReferenceID` method for api2go relationship handling
+- `internal/shell/api/middleware/auth.go` - Dev mode now sets authenticated context with `dev-user` userId
 
-**Creator Dashboard UI (F013) - `web/src/pages/creator/`:**
-- `CreatorDashboardPage.tsx` - Enhanced with:
-  - Stats cards (total templates, deployments, revenue, published)
-  - **Templates tab**: Search and status filtering (all/draft/published/deprecated)
-  - **Analytics tab**: Deployments by template, revenue by template, creator tips
-- `CreateTemplateDialog.tsx` - Template creation form:
-  - Name, description, version (semver validation)
-  - Monthly price (USD, converted to cents)
-  - Docker Compose specification textarea
-  - Validation and error handling
-
-**Other Updates:**
-- `EmptyState.tsx` - Enhanced to support action objects `{label, onClick}`
-- `types.ts` - Added `custom_domain` and `config_overrides` to CreateDeploymentRequest
+**Frontend Fixes:**
+- `web/src/pages/marketplace/TemplateDetailPage.tsx` - Fixed price field and status badge
+- `web/src/components/templates/DeployDialog.tsx` - Fixed price field display
+- `web/src/pages/deployments/DeploymentDetailPage.tsx` - Added null safety for logs/stats/events arrays
+- `web/src/api/client.ts` - Added auth headers from localStorage for API requests
 
 ### Files Modified This Session:
 ```
-web/src/components/ui/Button.tsx (created)
-web/src/components/ui/Input.tsx (created)
-web/src/components/ui/Label.tsx (created)
-web/src/components/ui/Textarea.tsx (created)
-web/src/components/ui/Select.tsx (created)
-web/src/components/ui/Tabs.tsx (created)
-web/src/components/ui/Dialog.tsx (created)
-web/src/components/ui/Card.tsx (created)
-web/src/components/ui/Badge.tsx (created)
-web/src/components/ui/Skeleton.tsx (created)
-web/src/components/ui/index.ts (created)
-web/src/components/templates/DeployDialog.tsx (created)
-web/src/components/templates/CreateTemplateDialog.tsx (created)
-web/src/components/common/EmptyState.tsx (modified)
-web/src/pages/marketplace/MarketplacePage.tsx (modified)
-web/src/pages/marketplace/TemplateDetailPage.tsx (modified)
-web/src/pages/deployments/DeploymentDetailPage.tsx (modified)
-web/src/pages/creator/CreatorDashboardPage.tsx (modified)
-web/src/api/types.ts (modified)
+web/src/pages/marketplace/TemplateDetailPage.tsx (fixed price field)
+web/src/components/templates/DeployDialog.tsx (fixed price field)
+web/src/pages/deployments/DeploymentDetailPage.tsx (null safety)
+web/src/api/client.ts (auth headers from localStorage)
+internal/shell/api/resources/deployment.go (SetToOneReferenceID)
+internal/shell/api/middleware/auth.go (dev user context)
 specs/SESSION-HANDOFF.md (this file)
 ```
+
+### Testing Environment Notes:
+- Backend runs on port 9090: `HOSTER_SERVER_PORT=9090 HOSTER_AUTH_MODE=none ./bin/hoster`
+- Frontend dev server proxies to backend via vite.config.ts
+- Dev mode uses `dev-user` as the authenticated user ID
 
 ---
 
 ## Phase 6 Tasks (NEXT SESSION)
 
-### Primary Goals:
-1. **Configure API Connection**
-   - Set up Vite proxy for development (`vite.config.ts`)
-   - Configure `VITE_API_URL` environment variable
-   - Handle CORS if backend and frontend are on different origins
+### Completed in This Session:
+- [x] Basic API connection working (Vite proxy configured)
+- [x] End-to-end testing via Chrome DevTools MCP
+- [x] Fixed api2go relationship handling (SetToOneReferenceID)
+- [x] Fixed auth middleware dev mode
+- [x] Fixed frontend null safety issues
+- [x] Fixed price field mapping
 
-2. **End-to-End Testing**
-   - Start backend: `make run`
-   - Start frontend: `cd web && npm run dev`
-   - Test full flow: browse marketplace → deploy template → view deployment → monitor logs/stats
+### Remaining Tasks:
 
-3. **Fix Integration Issues**
-   - API response format mismatches
-   - Missing error handling
-   - Loading state edge cases
-
-4. **Polish UI/UX**
+1. **Polish UI/UX**
    - Mobile responsiveness
    - Accessibility (ARIA labels, keyboard navigation)
    - Loading skeletons where appropriate
    - Error boundaries
+   - Toast notifications for actions
 
-5. **Performance Optimization**
+2. **Real Deployment Testing**
+   - Test with actual Docker containers running
+   - Verify logs streaming works with real output
+   - Verify stats collection from running containers
+   - Test start/stop/restart lifecycle
+
+3. **Performance Optimization**
    - Code splitting for routes
    - Lazy loading for heavy components
    - Optimize bundle size
+
+4. **Edge Cases & Error Handling**
+   - Network failure handling
+   - Concurrent operation handling
+   - Long-running operation feedback
 
 ### Verification Commands:
 ```bash
 # Backend
 make test      # All backend tests pass
-make run       # Start backend on :9090
+HOSTER_SERVER_PORT=9090 HOSTER_AUTH_MODE=none make run  # Start backend on :9090
 
 # Frontend
 cd web
 npm install    # Install dependencies
 npm run build  # Build for production (should succeed)
-npm run dev    # Start dev server on :5173
+npm run dev    # Start dev server on :3000 (proxies to :9090)
 ```
 
 ---

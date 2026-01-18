@@ -39,7 +39,7 @@ export function TemplateCard({ template, showActions = false }: TemplateCardProp
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="truncate font-medium">{template.attributes.name}</h3>
-            <StatusBadge status={template.attributes.status} />
+            <StatusBadge status={template.attributes.published ? 'published' : 'draft'} />
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             v{template.attributes.version}
@@ -47,19 +47,21 @@ export function TemplateCard({ template, showActions = false }: TemplateCardProp
         </div>
         <div className="text-right">
           <p className="font-semibold">
-            ${(template.attributes.price_cents / 100).toFixed(2)}
+            {template.attributes.price_monthly_cents === 0
+              ? 'Free'
+              : `$${(template.attributes.price_monthly_cents / 100).toFixed(2)}`}
           </p>
           <p className="text-xs text-muted-foreground">/month</p>
         </div>
       </div>
 
       <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">
-        {template.attributes.description}
+        {template.attributes.description || 'No description available'}
       </p>
 
       {showActions && (
         <div className="mt-4 flex gap-2 border-t border-border pt-4">
-          {template.attributes.status === 'draft' && (
+          {!template.attributes.published && (
             <button
               onClick={handlePublish}
               disabled={publishTemplate.isPending}

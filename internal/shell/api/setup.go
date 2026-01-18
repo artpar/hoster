@@ -157,7 +157,9 @@ func SetupAPI(cfg APIConfig) http.Handler {
 	customRouter.HandleFunc("/openapi.json", openapiGen.Handler()).Methods("GET")
 
 	// Mount api2go handler for all other /api routes
-	customRouter.PathPrefix("/api").Handler(jsonAPI.Handler())
+	// api2go expects paths without the /api prefix (e.g., /v1/templates not /api/v1/templates)
+	// so we strip the /api prefix before passing to the api2go handler
+	customRouter.PathPrefix("/api").Handler(http.StripPrefix("/api", jsonAPI.Handler()))
 
 	return customRouter
 }

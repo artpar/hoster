@@ -96,7 +96,7 @@ export function TemplateDetailPage() {
                 <div>
                   <div className="flex items-center gap-3">
                     <CardTitle className="text-2xl">{template.attributes.name}</CardTitle>
-                    <StatusBadge status={template.attributes.status} />
+                    <StatusBadge status={template.attributes.published ? 'published' : 'draft'} />
                   </div>
                   <p className="mt-1 text-muted-foreground">
                     Version {template.attributes.version}
@@ -144,7 +144,9 @@ export function TemplateDetailPage() {
             <CardContent className="pt-6">
               <div className="text-center">
                 <p className="text-3xl font-bold">
-                  ${(template.attributes.price_cents / 100).toFixed(2)}
+                  {template.attributes.price_monthly_cents === 0
+                    ? 'Free'
+                    : `$${(template.attributes.price_monthly_cents / 100).toFixed(2)}`}
                   <span className="text-base font-normal text-muted-foreground">/month</span>
                 </p>
                 <Button

@@ -250,7 +250,7 @@ export function DeploymentDetailPage() {
                   <div className="flex items-center justify-center py-8">
                     <LoadingSpinner />
                   </div>
-                ) : stats && stats.containers.length > 0 ? (
+                ) : stats?.containers && stats.containers.length > 0 ? (
                   <div className="space-y-3">
                     {stats.containers.map((container) => (
                       <div key={container.name} className="space-y-2 rounded-md border p-3">
@@ -355,7 +355,7 @@ export function DeploymentDetailPage() {
                 <div className="flex items-center justify-center py-8">
                   <LoadingSpinner />
                 </div>
-              ) : logs && logs.logs.length > 0 ? (
+              ) : logs?.logs && logs.logs.length > 0 ? (
                 <div className="max-h-[500px] overflow-auto rounded-md bg-muted p-4 font-mono text-xs">
                   {logs.logs.map((log, idx) => (
                     <div
@@ -394,7 +394,7 @@ export function DeploymentDetailPage() {
                 <div className="flex items-center justify-center py-8">
                   <LoadingSpinner />
                 </div>
-              ) : stats && stats.containers.length > 0 ? (
+              ) : stats?.containers && stats.containers.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="border-b bg-muted/50">
@@ -458,7 +458,7 @@ export function DeploymentDetailPage() {
                 <div className="flex items-center justify-center py-8">
                   <LoadingSpinner />
                 </div>
-              ) : events && events.events.length > 0 ? (
+              ) : events?.events && events.events.length > 0 ? (
                 <div className="space-y-2">
                   {events.events.map((event) => (
                     <div
