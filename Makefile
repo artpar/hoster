@@ -1,14 +1,31 @@
 # Hoster - Modern Deployment Marketplace
 # Build, test, and run commands
 
-.PHONY: all build test test-unit test-integration test-e2e test-e2e-short test-all coverage run clean help
+VERSION ?= 1.0.0
+
+.PHONY: all build build-minion test test-unit test-integration test-e2e test-e2e-short test-all coverage run clean help
 
 # Default target
 all: test build
 
-# Build the binary
-build:
+# Build the minion binary for Linux (embedded in hoster for remote node deployment)
+build-minion:
+	@echo "Building minion for Linux amd64..."
+	GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X main.Version=$(VERSION)" \
+		-o internal/shell/docker/binaries/minion-linux-amd64 ./cmd/hoster-minion
+	@echo "Building minion for Linux arm64..."
+	GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X main.Version=$(VERSION)" \
+		-o internal/shell/docker/binaries/minion-linux-arm64 ./cmd/hoster-minion
+	@echo "Minion binaries built successfully"
+
+# Build the hoster binary (includes embedded minion binaries)
+build: build-minion
 	@echo "Building hoster..."
+	go build -o bin/hoster ./cmd/hoster
+
+# Build hoster without rebuilding minion (faster, for development)
+build-fast:
+	@echo "Building hoster (without minion rebuild)..."
 	go build -o bin/hoster ./cmd/hoster
 
 # Run all tests
@@ -55,6 +72,7 @@ dev:
 # Clean build artifacts
 clean:
 	rm -rf bin/ coverage.out coverage.html
+	rm -f internal/shell/docker/binaries/minion-linux-*
 
 # Download dependencies
 deps:
@@ -74,7 +92,9 @@ help:
 	@echo "Hoster Makefile"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make build            - Build the binary"
+	@echo "  make build            - Build hoster (includes minion binaries)"
+	@echo "  make build-fast       - Build hoster without rebuilding minion"
+	@echo "  make build-minion     - Build minion binaries for Linux (amd64/arm64)"
 	@echo "  make test             - Run unit + integration tests"
 	@echo "  make test-unit        - Run unit tests (core/)"
 	@echo "  make test-integration - Run integration tests (shell/)"

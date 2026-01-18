@@ -1,5 +1,7 @@
 # Binaries
+/bin/
 /hoster
+internal/shell/docker/binaries/minion-*
 
 # Claude local data
 .claude/
