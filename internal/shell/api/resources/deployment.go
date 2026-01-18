@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/artpar/hoster/internal/core/auth"
 	coredeployment "github.com/artpar/hoster/internal/core/deployment"
 	"github.com/artpar/hoster/internal/core/domain"
 	"github.com/artpar/hoster/internal/core/validation"
@@ -168,6 +169,7 @@ func NewDeploymentResource(s store.Store, d docker.Client, l *slog.Logger, baseD
 
 // FindAll returns all deployments with optional filtering and pagination.
 // GET /api/v1/deployments
+// Auth: Users can only see their own deployments
 func (r DeploymentResource) FindAll(req api2go.Request) (api2go.Responder, error) {
 	opts := store.DefaultListOptions()
 
@@ -189,6 +191,8 @@ func (r DeploymentResource) FindAll(req api2go.Request) (api2go.Responder, error
 	}
 
 	ctx := req.PlainRequest.Context()
+	authCtx := auth.FromContext(ctx)
+
 	var deployments []domain.Deployment
 	var err error
 
@@ -205,9 +209,12 @@ func (r DeploymentResource) FindAll(req api2go.Request) (api2go.Responder, error
 		return &Response{Code: http.StatusInternalServerError}, err
 	}
 
+	// Filter deployments based on visibility rules (users can only see their own)
 	result := make([]Deployment, 0, len(deployments))
 	for _, d := range deployments {
-		result = append(result, DeploymentFromDomain(&d))
+		if auth.CanViewDeployment(authCtx, d) {
+			result = append(result, DeploymentFromDomain(&d))
+		}
 	}
 
 	return &Response{
@@ -223,8 +230,11 @@ func (r DeploymentResource) FindAll(req api2go.Request) (api2go.Responder, error
 
 // FindOne returns a single deployment by ID.
 // GET /api/v1/deployments/{id}
+// Auth: Users can only view their own deployments
 func (r DeploymentResource) FindOne(id string, req api2go.Request) (api2go.Responder, error) {
 	ctx := req.PlainRequest.Context()
+	authCtx := auth.FromContext(ctx)
+
 	deployment, err := r.Store.GetDeployment(ctx, id)
 	if err != nil {
 		if isDeploymentNotFound(err) {
@@ -237,6 +247,15 @@ func (r DeploymentResource) FindOne(id string, req api2go.Request) (api2go.Respo
 		return &Response{Code: http.StatusInternalServerError}, err
 	}
 
+	// Check if user can view this deployment
+	if !auth.CanViewDeployment(authCtx, *deployment) {
+		return &Response{Code: http.StatusNotFound}, api2go.NewHTTPError(
+			fmt.Errorf("deployment not found"),
+			"Deployment not found",
+			http.StatusNotFound,
+		)
+	}
+
 	return &Response{
 		Code: http.StatusOK,
 		Res:  DeploymentFromDomain(deployment),
@@ -245,7 +264,20 @@ func (r DeploymentResource) FindOne(id string, req api2go.Request) (api2go.Respo
 
 // Create creates a new deployment.
 // POST /api/v1/deployments
+// Auth: Requires authentication. CustomerID is set from auth context.
 func (r DeploymentResource) Create(obj interface{}, req api2go.Request) (api2go.Responder, error) {
+	ctx := req.PlainRequest.Context()
+	authCtx := auth.FromContext(ctx)
+
+	// Require authentication
+	if !authCtx.Authenticated {
+		return &Response{Code: http.StatusUnauthorized}, api2go.NewHTTPError(
+			fmt.Errorf("authentication required"),
+			"Authentication required",
+			http.StatusUnauthorized,
+		)
+	}
+
 	deployment, ok := obj.(Deployment)
 	if !ok {
 		return &Response{Code: http.StatusBadRequest}, api2go.NewHTTPError(
@@ -263,15 +295,9 @@ func (r DeploymentResource) Create(obj interface{}, req api2go.Request) (api2go.
 			http.StatusBadRequest,
 		)
 	}
-	if deployment.CustomerID == "" {
-		return &Response{Code: http.StatusBadRequest}, api2go.NewHTTPError(
-			fmt.Errorf("customer_id is required"),
-			"customer_id is required",
-			http.StatusBadRequest,
-		)
-	}
 
-	ctx := req.PlainRequest.Context()
+	// Use user ID from auth context as CustomerID (ignore any provided value)
+	customerID := authCtx.UserID
 
 	// Get template
 	template, err := r.Store.GetTemplate(ctx, deployment.TemplateID)
@@ -295,6 +321,20 @@ func (r DeploymentResource) Create(obj interface{}, req api2go.Request) (api2go.
 		)
 	}
 
+	// Check plan limits for deployments
+	existingDeployments, err := r.Store.ListDeploymentsByCustomer(ctx, customerID, store.ListOptions{Limit: 1000})
+	if err != nil {
+		r.Logger.Error("failed to count deployments", "error", err)
+		return &Response{Code: http.StatusInternalServerError}, err
+	}
+	if allowed, reason := auth.CanCreateDeployment(authCtx, len(existingDeployments)); !allowed {
+		return &Response{Code: http.StatusForbidden}, api2go.NewHTTPError(
+			fmt.Errorf("%s", reason),
+			reason,
+			http.StatusForbidden,
+		)
+	}
+
 	now := time.Now()
 	name := deployment.Name
 	if name == "" {
@@ -306,7 +346,7 @@ func (r DeploymentResource) Create(obj interface{}, req api2go.Request) (api2go.
 		Name:            name,
 		TemplateID:      template.ID,
 		TemplateVersion: template.Version,
-		CustomerID:      deployment.CustomerID,
+		CustomerID:      customerID, // From auth context
 		Status:          domain.StatusPending,
 		Variables:       deployment.Variables,
 		CreatedAt:       now,
@@ -329,8 +369,10 @@ func (r DeploymentResource) Create(obj interface{}, req api2go.Request) (api2go.
 
 // Delete removes a deployment by ID.
 // DELETE /api/v1/deployments/{id}
+// Auth: Users can only delete their own deployments
 func (r DeploymentResource) Delete(id string, req api2go.Request) (api2go.Responder, error) {
 	ctx := req.PlainRequest.Context()
+	authCtx := auth.FromContext(ctx)
 
 	deployment, err := r.Store.GetDeployment(ctx, id)
 	if err != nil {
@@ -342,6 +384,15 @@ func (r DeploymentResource) Delete(id string, req api2go.Request) (api2go.Respon
 			)
 		}
 		return &Response{Code: http.StatusInternalServerError}, err
+	}
+
+	// Check if user can delete this deployment
+	if !auth.CanDeleteDeployment(authCtx, *deployment) {
+		return &Response{Code: http.StatusForbidden}, api2go.NewHTTPError(
+			fmt.Errorf("not authorized to delete this deployment"),
+			"Not authorized to delete this deployment",
+			http.StatusForbidden,
+		)
 	}
 
 	// Remove all Docker resources
@@ -366,8 +417,10 @@ func (r DeploymentResource) Delete(id string, req api2go.Request) (api2go.Respon
 
 // StartDeployment starts a deployment.
 // This is a custom action, handled via a separate endpoint.
+// Auth: Users can only start their own deployments
 func (r DeploymentResource) StartDeployment(id string, req *http.Request) (api2go.Responder, error) {
 	ctx := req.Context()
+	authCtx := auth.FromContext(ctx)
 
 	deployment, err := r.Store.GetDeployment(ctx, id)
 	if err != nil {
@@ -379,6 +432,15 @@ func (r DeploymentResource) StartDeployment(id string, req *http.Request) (api2g
 			)
 		}
 		return &Response{Code: http.StatusInternalServerError}, err
+	}
+
+	// Check if user can manage this deployment
+	if !auth.CanManageDeployment(authCtx, *deployment) {
+		return &Response{Code: http.StatusForbidden}, api2go.NewHTTPError(
+			fmt.Errorf("not authorized to start this deployment"),
+			"Not authorized to start this deployment",
+			http.StatusForbidden,
+		)
 	}
 
 	// Check if already running
@@ -469,8 +531,10 @@ func (r DeploymentResource) StartDeployment(id string, req *http.Request) (api2g
 
 // StopDeployment stops a deployment.
 // This is a custom action, handled via a separate endpoint.
+// Auth: Users can only stop their own deployments
 func (r DeploymentResource) StopDeployment(id string, req *http.Request) (api2go.Responder, error) {
 	ctx := req.Context()
+	authCtx := auth.FromContext(ctx)
 
 	deployment, err := r.Store.GetDeployment(ctx, id)
 	if err != nil {
@@ -482,6 +546,15 @@ func (r DeploymentResource) StopDeployment(id string, req *http.Request) (api2go
 			)
 		}
 		return &Response{Code: http.StatusInternalServerError}, err
+	}
+
+	// Check if user can manage this deployment
+	if !auth.CanManageDeployment(authCtx, *deployment) {
+		return &Response{Code: http.StatusForbidden}, api2go.NewHTTPError(
+			fmt.Errorf("not authorized to stop this deployment"),
+			"Not authorized to stop this deployment",
+			http.StatusForbidden,
+		)
 	}
 
 	// Check if transition is valid

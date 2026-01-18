@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/artpar/hoster/internal/core/auth"
 	"github.com/artpar/hoster/internal/core/domain"
 	"github.com/artpar/hoster/internal/core/validation"
 	"github.com/artpar/hoster/internal/shell/store"
@@ -144,6 +145,7 @@ func NewTemplateResource(s store.Store) *TemplateResource {
 
 // FindAll returns all templates with optional pagination.
 // GET /api/v1/templates
+// Auth: Published templates visible to all, unpublished only to creator
 func (r TemplateResource) FindAll(req api2go.Request) (api2go.Responder, error) {
 	opts := store.DefaultListOptions()
 
@@ -166,14 +168,20 @@ func (r TemplateResource) FindAll(req api2go.Request) (api2go.Responder, error) 
 	}
 
 	ctx := req.PlainRequest.Context()
+	authCtx := auth.FromContext(ctx)
+
 	templates, err := r.Store.ListTemplates(ctx, opts)
 	if err != nil {
 		return &Response{Code: http.StatusInternalServerError}, err
 	}
 
+	// Filter templates based on visibility rules
 	result := make([]Template, 0, len(templates))
 	for _, t := range templates {
-		result = append(result, TemplateFromDomain(&t))
+		// Use auth.CanViewTemplate to filter
+		if auth.CanViewTemplate(authCtx, t) {
+			result = append(result, TemplateFromDomain(&t))
+		}
 	}
 
 	return &Response{
@@ -189,8 +197,11 @@ func (r TemplateResource) FindAll(req api2go.Request) (api2go.Responder, error) 
 
 // FindOne returns a single template by ID.
 // GET /api/v1/templates/{id}
+// Auth: Published templates visible to all, unpublished only to creator
 func (r TemplateResource) FindOne(id string, req api2go.Request) (api2go.Responder, error) {
 	ctx := req.PlainRequest.Context()
+	authCtx := auth.FromContext(ctx)
+
 	template, err := r.Store.GetTemplate(ctx, id)
 	if err != nil {
 		if isNotFound(err) {
@@ -203,6 +214,15 @@ func (r TemplateResource) FindOne(id string, req api2go.Request) (api2go.Respond
 		return &Response{Code: http.StatusInternalServerError}, err
 	}
 
+	// Check if user can view this template
+	if !auth.CanViewTemplate(authCtx, *template) {
+		return &Response{Code: http.StatusNotFound}, api2go.NewHTTPError(
+			fmt.Errorf("template not found"),
+			"Template not found",
+			http.StatusNotFound,
+		)
+	}
+
 	return &Response{
 		Code: http.StatusOK,
 		Res:  TemplateFromDomain(template),
@@ -211,7 +231,20 @@ func (r TemplateResource) FindOne(id string, req api2go.Request) (api2go.Respond
 
 // Create creates a new template.
 // POST /api/v1/templates
+// Auth: Requires authentication. CreatorID is set from auth context.
 func (r TemplateResource) Create(obj interface{}, req api2go.Request) (api2go.Responder, error) {
+	ctx := req.PlainRequest.Context()
+	authCtx := auth.FromContext(ctx)
+
+	// Require authentication
+	if !authCtx.Authenticated {
+		return &Response{Code: http.StatusUnauthorized}, api2go.NewHTTPError(
+			fmt.Errorf("authentication required"),
+			"Authentication required",
+			http.StatusUnauthorized,
+		)
+	}
+
 	template, ok := obj.(Template)
 	if !ok {
 		return &Response{Code: http.StatusBadRequest}, api2go.NewHTTPError(
@@ -221,8 +254,11 @@ func (r TemplateResource) Create(obj interface{}, req api2go.Request) (api2go.Re
 		)
 	}
 
+	// Use user ID from auth context as CreatorID (ignore any provided value)
+	creatorID := authCtx.UserID
+
 	// Validate required fields using core validation
-	if field, msg := validation.ValidateCreateTemplateFields(template.Name, template.Version, template.ComposeSpec, template.CreatorID); field != "" {
+	if field, msg := validation.ValidateCreateTemplateFields(template.Name, template.Version, template.ComposeSpec, creatorID); field != "" {
 		return &Response{Code: http.StatusBadRequest}, api2go.NewHTTPError(
 			fmt.Errorf("%s", msg),
 			msg,
@@ -237,7 +273,7 @@ func (r TemplateResource) Create(obj interface{}, req api2go.Request) (api2go.Re
 		Slug:                 domain.Slugify(template.Name),
 		Version:              template.Version,
 		ComposeSpec:          template.ComposeSpec,
-		CreatorID:            template.CreatorID,
+		CreatorID:            creatorID, // From auth context
 		Description:          template.Description,
 		Category:             template.Category,
 		Tags:                 template.Tags,
@@ -250,7 +286,6 @@ func (r TemplateResource) Create(obj interface{}, req api2go.Request) (api2go.Re
 		UpdatedAt:            now,
 	}
 
-	ctx := req.PlainRequest.Context()
 	if err := r.Store.CreateTemplate(ctx, domainTemplate); err != nil {
 		return &Response{Code: http.StatusInternalServerError}, err
 	}
@@ -263,7 +298,11 @@ func (r TemplateResource) Create(obj interface{}, req api2go.Request) (api2go.Re
 
 // Update updates an existing template.
 // PATCH /api/v1/templates/{id}
+// Auth: Only creator can update their templates
 func (r TemplateResource) Update(obj interface{}, req api2go.Request) (api2go.Responder, error) {
+	ctx := req.PlainRequest.Context()
+	authCtx := auth.FromContext(ctx)
+
 	template, ok := obj.(Template)
 	if !ok {
 		return &Response{Code: http.StatusBadRequest}, api2go.NewHTTPError(
@@ -273,7 +312,6 @@ func (r TemplateResource) Update(obj interface{}, req api2go.Request) (api2go.Re
 		)
 	}
 
-	ctx := req.PlainRequest.Context()
 	existing, err := r.Store.GetTemplate(ctx, template.ID)
 	if err != nil {
 		if isNotFound(err) {
@@ -284,6 +322,15 @@ func (r TemplateResource) Update(obj interface{}, req api2go.Request) (api2go.Re
 			)
 		}
 		return &Response{Code: http.StatusInternalServerError}, err
+	}
+
+	// Check if user can modify this template
+	if !auth.CanModifyTemplate(authCtx, *existing) {
+		return &Response{Code: http.StatusForbidden}, api2go.NewHTTPError(
+			fmt.Errorf("not authorized to modify this template"),
+			"Not authorized to modify this template",
+			http.StatusForbidden,
+		)
 	}
 
 	// Can't update published templates
@@ -328,11 +375,13 @@ func (r TemplateResource) Update(obj interface{}, req api2go.Request) (api2go.Re
 
 // Delete removes a template by ID.
 // DELETE /api/v1/templates/{id}
+// Auth: Only creator can delete their templates
 func (r TemplateResource) Delete(id string, req api2go.Request) (api2go.Responder, error) {
 	ctx := req.PlainRequest.Context()
+	authCtx := auth.FromContext(ctx)
 
 	// Check if template exists
-	_, err := r.Store.GetTemplate(ctx, id)
+	template, err := r.Store.GetTemplate(ctx, id)
 	if err != nil {
 		if isNotFound(err) {
 			return &Response{Code: http.StatusNotFound}, api2go.NewHTTPError(
@@ -342,6 +391,15 @@ func (r TemplateResource) Delete(id string, req api2go.Request) (api2go.Responde
 			)
 		}
 		return &Response{Code: http.StatusInternalServerError}, err
+	}
+
+	// Check if user can delete this template
+	if !auth.CanDeleteTemplate(authCtx, *template) {
+		return &Response{Code: http.StatusForbidden}, api2go.NewHTTPError(
+			fmt.Errorf("not authorized to delete this template"),
+			"Not authorized to delete this template",
+			http.StatusForbidden,
+		)
 	}
 
 	// Check for active deployments
@@ -370,8 +428,12 @@ func (r TemplateResource) Delete(id string, req api2go.Request) (api2go.Responde
 
 // PublishTemplate publishes a template.
 // This is a custom action, handled via a separate endpoint.
-func (r TemplateResource) PublishTemplate(id string, ctx *http.Request) (api2go.Responder, error) {
-	template, err := r.Store.GetTemplate(ctx.Context(), id)
+// Auth: Only creator can publish their templates
+func (r TemplateResource) PublishTemplate(id string, req *http.Request) (api2go.Responder, error) {
+	ctx := req.Context()
+	authCtx := auth.FromContext(ctx)
+
+	template, err := r.Store.GetTemplate(ctx, id)
 	if err != nil {
 		if isNotFound(err) {
 			return &Response{Code: http.StatusNotFound}, api2go.NewHTTPError(
@@ -381,6 +443,15 @@ func (r TemplateResource) PublishTemplate(id string, ctx *http.Request) (api2go.
 			)
 		}
 		return &Response{Code: http.StatusInternalServerError}, err
+	}
+
+	// Check if user can publish this template
+	if !auth.CanPublishTemplate(authCtx, *template) {
+		return &Response{Code: http.StatusForbidden}, api2go.NewHTTPError(
+			fmt.Errorf("not authorized to publish this template"),
+			"Not authorized to publish this template",
+			http.StatusForbidden,
+		)
 	}
 
 	if template.Published {
@@ -394,7 +465,7 @@ func (r TemplateResource) PublishTemplate(id string, ctx *http.Request) (api2go.
 	template.Published = true
 	template.UpdatedAt = time.Now()
 
-	if err := r.Store.UpdateTemplate(ctx.Context(), template); err != nil {
+	if err := r.Store.UpdateTemplate(ctx, template); err != nil {
 		return &Response{Code: http.StatusInternalServerError}, err
 	}
 
