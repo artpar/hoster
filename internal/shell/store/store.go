@@ -35,6 +35,10 @@ type Store interface {
 	GetUnreportedEvents(ctx context.Context, limit int) ([]domain.MeterEvent, error)
 	MarkEventsReported(ctx context.Context, ids []string, reportedAt time.Time) error
 
+	// Container event operations (F010: Monitoring)
+	CreateContainerEvent(ctx context.Context, event *domain.ContainerEvent) error
+	GetContainerEvents(ctx context.Context, deploymentID string, limit int, eventType *string) ([]domain.ContainerEvent, error)
+
 	// Transaction support
 	WithTx(ctx context.Context, fn func(Store) error) error
 

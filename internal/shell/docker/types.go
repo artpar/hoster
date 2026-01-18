@@ -163,6 +163,7 @@ type Client interface {
 	InspectContainer(containerID string) (*ContainerInfo, error)
 	ListContainers(opts ListOptions) ([]ContainerInfo, error)
 	ContainerLogs(containerID string, opts LogOptions) (io.ReadCloser, error)
+	ContainerStats(containerID string) (*ContainerResourceStats, error) // F010: Monitoring
 
 	// Network operations
 	CreateNetwork(spec NetworkSpec) (networkID string, err error)
@@ -181,6 +182,20 @@ type Client interface {
 	// Health operations
 	Ping() error
 	Close() error
+}
+
+// ContainerResourceStats represents resource statistics for a container.
+// Used by F010: Monitoring Dashboard
+type ContainerResourceStats struct {
+	CPUPercent       float64
+	MemoryUsageBytes int64
+	MemoryLimitBytes int64
+	MemoryPercent    float64
+	NetworkRxBytes   int64
+	NetworkTxBytes   int64
+	BlockReadBytes   int64
+	BlockWriteBytes  int64
+	PIDs             int
 }
 
 // =============================================================================

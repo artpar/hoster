@@ -7,24 +7,161 @@
 
 ## CURRENT PROJECT STATE (January 18, 2026)
 
-### Status: Post-MVP, Phase -1 COMPLETE
+### Status: Post-MVP, Phases 0-5 COMPLETE
 
 **What's Done:**
 - MVP complete (core deployment loop works)
-- 427 tests passing
+- 460+ tests passing (backend)
 - Phase -1 (ADR & Spec Updates) COMPLETE
+- Phase 0 (API Layer Migration) COMPLETE
+- Phase 1 (APIGate Auth Integration) COMPLETE
+- Phase 2 (Billing Integration) COMPLETE
+- Phase 3 (Monitoring Backend) COMPLETE
+- Phase 4 (Frontend Foundation) COMPLETE
+- Phase 5 (Frontend Views) COMPLETE
 
-**Phase -1 Deliverables (ALL COMPLETE):**
-- 5 new ADRs (003-007)
-- 6 new feature specs (F008-F013)
-- 2 updated domain specs (template.md, deployment.md)
-- 2 new domain specs (monitoring.md, user-context.md)
+**Frontend Build Status:**
+```
+dist/index.html                   0.54 kB
+dist/assets/index-*.css          21.94 kB (gzip: 4.83 kB)
+dist/assets/index-*.js          364.07 kB (gzip: 109.41 kB)
+```
 
-**Next Step: Phase 0 - API Layer Migration**
-- Migrate from chi router to Gorilla mux + api2go
-- Implement JSON:API format
-- Add reflective OpenAPI generation
-- See plan file: `/Users/artpar/.claude/plans/merry-baking-rain.md`
+**Next Step: Phase 6 - Integration & Polish**
+- Connect frontend to backend API (ensure CORS, proxy config)
+- End-to-end testing with real deployments
+- Polish UI/UX based on real usage
+- Performance optimization
+
+---
+
+## LAST SESSION SUMMARY (January 18, 2026)
+
+### What Was Accomplished: Phase 5 Frontend Views
+
+**UI Components Created (`web/src/components/ui/`):**
+- `Button.tsx` - Variants: default, destructive, outline, secondary, ghost, link
+- `Input.tsx` - Form input with focus states
+- `Label.tsx` - Form labels
+- `Textarea.tsx` - Multi-line text input
+- `Select.tsx` - Dropdown with chevron icon
+- `Tabs.tsx` - Tab navigation using React Context API
+- `Dialog.tsx` - Modal dialog with header, footer, close button, escape key
+- `Card.tsx` - Card layout (Header, Title, Description, Content, Footer)
+- `Badge.tsx` - Status badges (default, secondary, destructive, outline, success, warning)
+- `Skeleton.tsx` - Loading placeholder
+- `index.ts` - Barrel export for all UI components
+
+**Marketplace UI (F011) - `web/src/pages/marketplace/`:**
+- `MarketplacePage.tsx` - Enhanced with:
+  - Search by name and description
+  - Sort options (newest, name, price asc/desc)
+  - Price filtering (all, free, paid)
+  - Results count with filter info
+  - Clear filters button
+- `TemplateDetailPage.tsx` - Enhanced with:
+  - Services list parsed from compose spec
+  - Sidebar with pricing card
+  - Deploy dialog integration
+  - Created/updated dates
+
+**Deploy Dialog (`web/src/components/templates/`):**
+- `DeployDialog.tsx` - Full deployment form with:
+  - Deployment name input with validation
+  - Custom domain (optional)
+  - Environment variable overrides (KEY=value format)
+  - Price display
+  - Error handling
+
+**Deployment Management UI (F012) - `web/src/pages/deployments/`:**
+- `DeploymentDetailPage.tsx` - Complete rewrite with tabs:
+  - **Overview tab**: Container health cards, resource usage summary, deployment info
+  - **Logs tab**: Container filter, tail limit selector (50/100/200/500), refresh button
+  - **Stats tab**: Full resource table (CPU, memory, network, block I/O, PIDs)
+  - **Events tab**: Color-coded events (error=red, start=green)
+
+**Creator Dashboard UI (F013) - `web/src/pages/creator/`:**
+- `CreatorDashboardPage.tsx` - Enhanced with:
+  - Stats cards (total templates, deployments, revenue, published)
+  - **Templates tab**: Search and status filtering (all/draft/published/deprecated)
+  - **Analytics tab**: Deployments by template, revenue by template, creator tips
+- `CreateTemplateDialog.tsx` - Template creation form:
+  - Name, description, version (semver validation)
+  - Monthly price (USD, converted to cents)
+  - Docker Compose specification textarea
+  - Validation and error handling
+
+**Other Updates:**
+- `EmptyState.tsx` - Enhanced to support action objects `{label, onClick}`
+- `types.ts` - Added `custom_domain` and `config_overrides` to CreateDeploymentRequest
+
+### Files Modified This Session:
+```
+web/src/components/ui/Button.tsx (created)
+web/src/components/ui/Input.tsx (created)
+web/src/components/ui/Label.tsx (created)
+web/src/components/ui/Textarea.tsx (created)
+web/src/components/ui/Select.tsx (created)
+web/src/components/ui/Tabs.tsx (created)
+web/src/components/ui/Dialog.tsx (created)
+web/src/components/ui/Card.tsx (created)
+web/src/components/ui/Badge.tsx (created)
+web/src/components/ui/Skeleton.tsx (created)
+web/src/components/ui/index.ts (created)
+web/src/components/templates/DeployDialog.tsx (created)
+web/src/components/templates/CreateTemplateDialog.tsx (created)
+web/src/components/common/EmptyState.tsx (modified)
+web/src/pages/marketplace/MarketplacePage.tsx (modified)
+web/src/pages/marketplace/TemplateDetailPage.tsx (modified)
+web/src/pages/deployments/DeploymentDetailPage.tsx (modified)
+web/src/pages/creator/CreatorDashboardPage.tsx (modified)
+web/src/api/types.ts (modified)
+specs/SESSION-HANDOFF.md (this file)
+```
+
+---
+
+## Phase 6 Tasks (NEXT SESSION)
+
+### Primary Goals:
+1. **Configure API Connection**
+   - Set up Vite proxy for development (`vite.config.ts`)
+   - Configure `VITE_API_URL` environment variable
+   - Handle CORS if backend and frontend are on different origins
+
+2. **End-to-End Testing**
+   - Start backend: `make run`
+   - Start frontend: `cd web && npm run dev`
+   - Test full flow: browse marketplace → deploy template → view deployment → monitor logs/stats
+
+3. **Fix Integration Issues**
+   - API response format mismatches
+   - Missing error handling
+   - Loading state edge cases
+
+4. **Polish UI/UX**
+   - Mobile responsiveness
+   - Accessibility (ARIA labels, keyboard navigation)
+   - Loading skeletons where appropriate
+   - Error boundaries
+
+5. **Performance Optimization**
+   - Code splitting for routes
+   - Lazy loading for heavy components
+   - Optimize bundle size
+
+### Verification Commands:
+```bash
+# Backend
+make test      # All backend tests pass
+make run       # Start backend on :9090
+
+# Frontend
+cd web
+npm install    # Install dependencies
+npm run build  # Build for production (should succeed)
+npm run dev    # Start dev server on :5173
+```
 
 ---
 
@@ -47,7 +184,7 @@ Read these files in this exact order:
 
 ### Step 2: Read Post-MVP ADRs (for UI/API work)
 
-These are critical for Phase 0 and beyond:
+These are critical for Phase 6:
 
 6. **`specs/decisions/ADR-003-jsonapi-api2go.md`** - JSON:API with api2go
 7. **`specs/decisions/ADR-004-reflective-openapi.md`** - OpenAPI generation
@@ -61,9 +198,9 @@ These are critical for Phase 0 and beyond:
 specs/features/F008-authentication.md     - Header-based auth
 specs/features/F009-billing-integration.md - Usage tracking
 specs/features/F010-monitoring-dashboard.md - Health/logs/stats
-specs/features/F011-marketplace-ui.md      - Template browsing
-specs/features/F012-deployment-management-ui.md - Deployment controls
-specs/features/F013-creator-dashboard-ui.md - Template management
+specs/features/F011-marketplace-ui.md      - Template browsing (IMPLEMENTED)
+specs/features/F012-deployment-management-ui.md - Deployment controls (IMPLEMENTED)
+specs/features/F013-creator-dashboard-ui.md - Template management (IMPLEMENTED)
 ```
 
 ### Step 4: Read Domain Specs
@@ -109,13 +246,13 @@ Read the plan file for detailed implementation phases:
 
 **Implementation Phases:**
 - Phase -1: ADR & Spec Updates (COMPLETE)
-- Phase 0: API Layer Migration (JSON:API + OpenAPI) <- NEXT
-- Phase 1: APIGate Integration (Backend Auth)
-- Phase 2: Billing Integration
-- Phase 3: Monitoring Backend
-- Phase 4: Frontend Foundation
-- Phase 5: Frontend Views
-- Phase 6: Integration & Polish
+- Phase 0: API Layer Migration (JSON:API + OpenAPI) (COMPLETE)
+- Phase 1: APIGate Integration (Backend Auth) (COMPLETE)
+- Phase 2: Billing Integration (COMPLETE)
+- Phase 3: Monitoring Backend (COMPLETE)
+- Phase 4: Frontend Foundation (COMPLETE)
+- Phase 5: Frontend Views (COMPLETE)
+- Phase 6: Integration & Polish <- NEXT
 
 ### Step 8: Check Current Status
 
@@ -225,10 +362,87 @@ Use mcp__agile__task_transition to update task status.
 | API format | custom JSON | JSON:API via api2go |
 | OpenAPI | manual | reflective generation |
 
-**New Dependencies:**
+**Backend Dependencies:**
 - `github.com/manyminds/api2go` - JSON:API implementation
 - `github.com/gorilla/mux` - Router (api2go support)
 - `github.com/getkin/kin-openapi` - OpenAPI 3.0 types
+
+**Frontend Dependencies (web/package.json):**
+- React 19 + React DOM 19
+- React Router DOM 7.1
+- TanStack Query 5.62
+- Zustand 5.0
+- Vite 6.0
+- TailwindCSS 3.4
+- Lucide React 0.469 (icons)
+
+---
+
+## Frontend File Structure
+
+```
+web/
+├── src/
+│   ├── api/
+│   │   ├── client.ts         # JSON:API fetch wrapper
+│   │   ├── types.ts          # TypeScript types
+│   │   ├── templates.ts      # Template API
+│   │   ├── deployments.ts    # Deployment API
+│   │   └── monitoring.ts     # Monitoring API
+│   ├── components/
+│   │   ├── common/
+│   │   │   ├── LoadingSpinner.tsx
+│   │   │   ├── EmptyState.tsx
+│   │   │   └── StatusBadge.tsx
+│   │   ├── layout/
+│   │   │   ├── Header.tsx
+│   │   │   ├── Sidebar.tsx
+│   │   │   └── Layout.tsx
+│   │   ├── templates/
+│   │   │   ├── TemplateCard.tsx
+│   │   │   ├── DeployDialog.tsx
+│   │   │   └── CreateTemplateDialog.tsx
+│   │   ├── deployments/
+│   │   │   └── DeploymentCard.tsx
+│   │   └── ui/
+│   │       ├── Button.tsx
+│   │       ├── Input.tsx
+│   │       ├── Label.tsx
+│   │       ├── Textarea.tsx
+│   │       ├── Select.tsx
+│   │       ├── Tabs.tsx
+│   │       ├── Dialog.tsx
+│   │       ├── Card.tsx
+│   │       ├── Badge.tsx
+│   │       ├── Skeleton.tsx
+│   │       └── index.ts
+│   ├── hooks/
+│   │   ├── useTemplates.ts   # TanStack Query hooks
+│   │   ├── useDeployments.ts
+│   │   └── useMonitoring.ts
+│   ├── pages/
+│   │   ├── marketplace/
+│   │   │   ├── MarketplacePage.tsx
+│   │   │   └── TemplateDetailPage.tsx
+│   │   ├── deployments/
+│   │   │   ├── MyDeploymentsPage.tsx
+│   │   │   └── DeploymentDetailPage.tsx
+│   │   ├── creator/
+│   │   │   └── CreatorDashboardPage.tsx
+│   │   └── NotFoundPage.tsx
+│   ├── stores/
+│   │   └── authStore.ts      # Zustand store
+│   ├── lib/
+│   │   └── cn.ts             # clsx + tailwind-merge
+│   ├── App.tsx
+│   ├── main.tsx
+│   └── index.css
+├── package.json
+├── vite.config.ts
+├── tailwind.config.ts
+├── postcss.config.js
+└── tsconfig.json
+```
 
 ---
 
@@ -259,7 +473,9 @@ Use mcp__agile__task_transition to update task status.
 | Unit tests | Same dir as code | `template_test.go` |
 | E2E tests | `tests/e2e/` | `deploy_test.go` |
 | Sample templates | `examples/` | `wordpress/compose.yml` |
-| Frontend (future) | `web/` | React + Vite app |
+| Frontend | `web/` | React + Vite app |
+| UI components | `web/src/components/ui/` | `Button.tsx` |
+| Page components | `web/src/pages/` | `MarketplacePage.tsx` |
 
 ---
 
@@ -278,13 +494,23 @@ git log --oneline -10
 git checkout HEAD~1 -- <file>
 ```
 
+### If Frontend Won't Build
+
+```bash
+cd web
+rm -rf node_modules
+npm install
+npm run build
+```
+
 ### If You're Lost
 
 1. Re-read `CLAUDE.md` from the beginning
 2. Run `make test` to verify baseline
-3. Read the specific spec for what you're working on
-4. Read the plan file for implementation phases
-5. Ask user for clarification
+3. Run `cd web && npm run build` to verify frontend
+4. Read the specific spec for what you're working on
+5. Read the plan file for implementation phases
+6. Ask user for clarification
 
 ### If Spec Doesn't Exist
 
@@ -303,6 +529,7 @@ DO NOT write code. Instead:
 Before ending a session:
 
 - [ ] All tests pass (`make test`)
+- [ ] Frontend builds (`cd web && npm run build`)
 - [ ] CLAUDE.md is updated with:
   - [ ] New DONE items
   - [ ] New TODO items

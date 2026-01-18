@@ -3,6 +3,7 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -591,4 +592,88 @@ func (d *DockerClient) ImageExists(imageName string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// =============================================================================
+// Container Stats (F010: Monitoring)
+// =============================================================================
+
+// ContainerStats returns resource usage statistics for a container.
+func (d *DockerClient) ContainerStats(containerID string) (*ContainerResourceStats, error) {
+	ctx := context.Background()
+
+	// Get container stats (one-shot, not streaming)
+	resp, err := d.cli.ContainerStats(ctx, containerID, false)
+	if err != nil {
+		if client.IsErrNotFound(err) {
+			return nil, NewDockerError("ContainerStats", "container", containerID, "container not found", ErrContainerNotFound)
+		}
+		return nil, NewDockerError("ContainerStats", "container", containerID, err.Error(), err)
+	}
+	defer resp.Body.Close()
+
+	// Parse the stats JSON
+	var statsJSON container.StatsResponse
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(&statsJSON); err != nil {
+		return nil, NewDockerError("ContainerStats", "container", containerID, "failed to decode stats: "+err.Error(), err)
+	}
+
+	// Calculate CPU percentage
+	cpuPercent := calculateCPUPercent(&statsJSON)
+
+	// Calculate memory percentage
+	var memPercent float64
+	if statsJSON.MemoryStats.Limit > 0 {
+		memPercent = float64(statsJSON.MemoryStats.Usage) / float64(statsJSON.MemoryStats.Limit) * 100.0
+	}
+
+	// Calculate network I/O (aggregate across all interfaces)
+	var netRx, netTx int64
+	for _, netStats := range statsJSON.Networks {
+		netRx += int64(netStats.RxBytes)
+		netTx += int64(netStats.TxBytes)
+	}
+
+	// Calculate block I/O
+	var blockRead, blockWrite int64
+	for _, blkioStat := range statsJSON.BlkioStats.IoServiceBytesRecursive {
+		switch blkioStat.Op {
+		case "Read", "read":
+			blockRead += int64(blkioStat.Value)
+		case "Write", "write":
+			blockWrite += int64(blkioStat.Value)
+		}
+	}
+
+	return &ContainerResourceStats{
+		CPUPercent:       cpuPercent,
+		MemoryUsageBytes: int64(statsJSON.MemoryStats.Usage),
+		MemoryLimitBytes: int64(statsJSON.MemoryStats.Limit),
+		MemoryPercent:    memPercent,
+		NetworkRxBytes:   netRx,
+		NetworkTxBytes:   netTx,
+		BlockReadBytes:   blockRead,
+		BlockWriteBytes:  blockWrite,
+		PIDs:             int(statsJSON.PidsStats.Current),
+	}, nil
+}
+
+// calculateCPUPercent calculates the CPU usage percentage.
+func calculateCPUPercent(stats *container.StatsResponse) float64 {
+	// Calculate the change in CPU usage
+	cpuDelta := float64(stats.CPUStats.CPUUsage.TotalUsage - stats.PreCPUStats.CPUUsage.TotalUsage)
+	systemDelta := float64(stats.CPUStats.SystemUsage - stats.PreCPUStats.SystemUsage)
+
+	if systemDelta > 0 && cpuDelta > 0 {
+		cpuCount := float64(stats.CPUStats.OnlineCPUs)
+		if cpuCount == 0 {
+			cpuCount = float64(len(stats.CPUStats.CPUUsage.PercpuUsage))
+		}
+		if cpuCount == 0 {
+			cpuCount = 1
+		}
+		return (cpuDelta / systemDelta) * cpuCount * 100.0
+	}
+	return 0.0
 }

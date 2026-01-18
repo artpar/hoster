@@ -1031,3 +1031,122 @@ func rowToUsageEvent(row *usageEventRow) (*domain.MeterEvent, error) {
 		CreatedAt:    createdAt,
 	}, nil
 }
+
+// =============================================================================
+// Container Events (F010: Monitoring)
+// =============================================================================
+
+// containerEventRow represents a database row for container events.
+type containerEventRow struct {
+	ID           string `db:"id"`
+	DeploymentID string `db:"deployment_id"`
+	Type         string `db:"type"`
+	Container    string `db:"container"`
+	Message      string `db:"message"`
+	Timestamp    string `db:"timestamp"`
+	CreatedAt    string `db:"created_at"`
+}
+
+// CreateContainerEvent stores a new container event.
+func (s *SQLiteStore) CreateContainerEvent(ctx context.Context, event *domain.ContainerEvent) error {
+	return createContainerEvent(ctx, s.db, event)
+}
+
+func (s *txSQLiteStore) CreateContainerEvent(ctx context.Context, event *domain.ContainerEvent) error {
+	return createContainerEvent(ctx, s.tx, event)
+}
+
+func createContainerEvent(ctx context.Context, exec executor, event *domain.ContainerEvent) error {
+	query := `
+		INSERT INTO container_events (id, deployment_id, type, container, message, timestamp, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`
+
+	_, err := exec.ExecContext(ctx, query,
+		event.ID,
+		event.DeploymentID,
+		string(event.Type),
+		event.Container,
+		event.Message,
+		event.Timestamp.Format(time.RFC3339),
+		event.CreatedAt.Format(time.RFC3339),
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			return NewStoreError("CreateContainerEvent", "container_event", event.ID, "event already exists", ErrDuplicateID)
+		}
+		return NewStoreError("CreateContainerEvent", "container_event", event.ID, err.Error(), err)
+	}
+
+	return nil
+}
+
+// GetContainerEvents retrieves container events for a deployment.
+func (s *SQLiteStore) GetContainerEvents(ctx context.Context, deploymentID string, limit int, eventType *string) ([]domain.ContainerEvent, error) {
+	return getContainerEvents(ctx, s.db, deploymentID, limit, eventType)
+}
+
+func (s *txSQLiteStore) GetContainerEvents(ctx context.Context, deploymentID string, limit int, eventType *string) ([]domain.ContainerEvent, error) {
+	return getContainerEvents(ctx, s.tx, deploymentID, limit, eventType)
+}
+
+func getContainerEvents(ctx context.Context, exec executor, deploymentID string, limit int, eventType *string) ([]domain.ContainerEvent, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	var query string
+	var args []any
+
+	if eventType != nil && *eventType != "" {
+		query = `
+			SELECT id, deployment_id, type, container, message, timestamp, created_at
+			FROM container_events
+			WHERE deployment_id = ? AND type = ?
+			ORDER BY timestamp DESC
+			LIMIT ?`
+		args = []any{deploymentID, *eventType, limit}
+	} else {
+		query = `
+			SELECT id, deployment_id, type, container, message, timestamp, created_at
+			FROM container_events
+			WHERE deployment_id = ?
+			ORDER BY timestamp DESC
+			LIMIT ?`
+		args = []any{deploymentID, limit}
+	}
+
+	var rows []containerEventRow
+	if err := exec.SelectContext(ctx, &rows, query, args...); err != nil {
+		return nil, NewStoreError("GetContainerEvents", "container_event", deploymentID, err.Error(), err)
+	}
+
+	events := make([]domain.ContainerEvent, 0, len(rows))
+	for _, row := range rows {
+		event, err := rowToContainerEvent(&row)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, *event)
+	}
+
+	return events, nil
+}
+
+// rowToContainerEvent converts a database row to a domain.ContainerEvent.
+func rowToContainerEvent(row *containerEventRow) (*domain.ContainerEvent, error) {
+	timestamp, _ := time.Parse(time.RFC3339, row.Timestamp)
+	createdAt, _ := time.Parse(time.RFC3339, row.CreatedAt)
+
+	return &domain.ContainerEvent{
+		ID:           row.ID,
+		DeploymentID: row.DeploymentID,
+		Type:         domain.ContainerEventType(row.Type),
+		Container:    row.Container,
+		Message:      row.Message,
+		Timestamp:    timestamp,
+		CreatedAt:    createdAt,
+	}, nil
+}

@@ -31,3 +31,8 @@ Thumbs.db
 
 # E2E test logs (captured container logs)
 tests/e2e/logs/
+
+# Node.js
+node_modules/
+web/dist/
+web/.vite/

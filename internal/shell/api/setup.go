@@ -124,6 +124,10 @@ func SetupAPI(cfg APIConfig) http.Handler {
 		writeResponder(w, resp, err, cfg.Logger)
 	}).Methods("POST")
 
+	// Monitoring endpoints - Following F010: Monitoring Dashboard
+	monitoringHandlers := NewMonitoringHandlers(cfg.Store, cfg.Docker)
+	monitoringHandlers.RegisterRoutes(customRouter)
+
 	// OpenAPI endpoint - Following ADR-004: Reflective OpenAPI Generation
 	openapiGen := openapi.NewGenerator(
 		openapi.WithTitle("Hoster API"),

@@ -203,6 +203,14 @@ func (s *stubStore) MarkEventsReported(ctx context.Context, ids []string, report
 	return nil // Stub - no-op for tests
 }
 
+func (s *stubStore) CreateContainerEvent(ctx context.Context, event *domain.ContainerEvent) error {
+	return nil // Stub - no-op for tests
+}
+
+func (s *stubStore) GetContainerEvents(ctx context.Context, deploymentID string, limit int, eventType *string) ([]domain.ContainerEvent, error) {
+	return []domain.ContainerEvent{}, nil // Stub - return empty for tests
+}
+
 // stubDocker implements docker.Client for testing.
 type stubDocker struct {
 	pingErr    error
@@ -278,6 +286,23 @@ func (d *stubDocker) ListContainers(opts docker.ListOptions) ([]docker.Container
 
 func (d *stubDocker) ContainerLogs(containerID string, opts docker.LogOptions) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader([]byte("test logs"))), nil
+}
+
+func (d *stubDocker) ContainerStats(containerID string) (*docker.ContainerResourceStats, error) {
+	if _, ok := d.containers[containerID]; !ok {
+		return nil, docker.ErrContainerNotFound
+	}
+	return &docker.ContainerResourceStats{
+		CPUPercent:       5.0,
+		MemoryUsageBytes: 100 * 1024 * 1024,
+		MemoryLimitBytes: 512 * 1024 * 1024,
+		MemoryPercent:    19.5,
+		NetworkRxBytes:   1024,
+		NetworkTxBytes:   2048,
+		BlockReadBytes:   4096,
+		BlockWriteBytes:  8192,
+		PIDs:             10,
+	}, nil
 }
 
 func (d *stubDocker) CreateNetwork(spec docker.NetworkSpec) (string, error) {
