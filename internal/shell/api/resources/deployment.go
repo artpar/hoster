@@ -16,6 +16,7 @@ import (
 	"github.com/artpar/hoster/internal/core/validation"
 	"github.com/artpar/hoster/internal/shell/billing"
 	"github.com/artpar/hoster/internal/shell/docker"
+	"github.com/artpar/hoster/internal/shell/scheduler"
 	"github.com/artpar/hoster/internal/shell/store"
 	"github.com/google/uuid"
 	"github.com/manyminds/api2go"
@@ -154,23 +155,30 @@ type DeploymentResource struct {
 	Store        store.Store
 	Docker       docker.Client
 	Orchestrator *docker.Orchestrator
+	Scheduler    *scheduler.Service
 	Logger       *slog.Logger
 	BaseDomain   string
 	ConfigDir    string
 }
 
 // NewDeploymentResource creates a new deployment resource handler.
-func NewDeploymentResource(s store.Store, d docker.Client, l *slog.Logger, baseDomain, configDir string) *DeploymentResource {
+// The scheduler parameter is used to schedule deployments to nodes.
+// If scheduler is nil, a default scheduler with no remote node support is created.
+func NewDeploymentResource(s store.Store, d docker.Client, sched *scheduler.Service, l *slog.Logger, baseDomain, configDir string) *DeploymentResource {
 	if l == nil {
 		l = slog.Default()
 	}
 	if configDir == "" {
 		configDir = "/var/lib/hoster/configs"
 	}
+	if sched == nil {
+		sched = scheduler.NewService(s, nil, d, l) // nil NodePool for backward compat
+	}
 	return &DeploymentResource{
 		Store:        s,
 		Docker:       d,
 		Orchestrator: docker.NewOrchestrator(d, l, configDir),
+		Scheduler:    sched,
 		Logger:       l,
 		BaseDomain:   baseDomain,
 		ConfigDir:    configDir,
@@ -415,8 +423,18 @@ func (r DeploymentResource) Delete(id string, req api2go.Request) (api2go.Respon
 		)
 	}
 
+	// Get client for the deployment's node
+	client, err := r.Scheduler.GetClientForNode(ctx, deployment.NodeID)
+	if err != nil {
+		r.Logger.Warn("failed to get client for node, using local client", "node_id", deployment.NodeID, "error", err)
+		client = r.Docker // Fallback to local client for cleanup
+	}
+
+	// Create orchestrator with the node's client
+	orchestrator := docker.NewOrchestrator(client, r.Logger, r.ConfigDir)
+
 	// Remove all Docker resources
-	if err := r.Orchestrator.RemoveDeployment(ctx, deployment); err != nil {
+	if err := orchestrator.RemoveDeployment(ctx, deployment); err != nil {
 		r.Logger.Warn("failed to remove deployment resources", "error", err)
 		// Continue with database deletion even if Docker cleanup fails
 	}
@@ -498,7 +516,31 @@ func (r DeploymentResource) StartDeployment(id string, req *http.Request) (api2g
 		)
 	}
 
-	deployment.NodeID = "local" // For now, all deployments run locally
+	// Schedule deployment to a node
+	// If deployment already has a NodeID (restart case), try to use the same node
+	schedReq := scheduler.ScheduleDeploymentRequest{
+		Template:        template,
+		CreatorID:       template.CreatorID,
+		PreferredNodeID: deployment.NodeID, // Use existing node for restarts
+	}
+
+	schedResult, err := r.Scheduler.ScheduleDeployment(ctx, schedReq)
+	if err != nil {
+		r.Logger.Error("failed to schedule deployment", "error", err)
+		return &Response{Code: http.StatusInternalServerError}, api2go.NewHTTPError(
+			err,
+			"Failed to schedule deployment: "+err.Error(),
+			http.StatusInternalServerError,
+		)
+	}
+
+	deployment.NodeID = schedResult.NodeID
+	r.Logger.Info("scheduled deployment",
+		"deployment_id", deployment.ID,
+		"node_id", schedResult.NodeID,
+		"is_local", schedResult.IsLocal,
+		"score", schedResult.Score,
+	)
 
 	// Execute the state transitions
 	for _, status := range startPath.Transitions {
@@ -519,8 +561,11 @@ func (r DeploymentResource) StartDeployment(id string, req *http.Request) (api2g
 		r.Logger.Error("failed to update deployment status", "error", err)
 	}
 
+	// Create orchestrator with the scheduled node's client
+	orchestrator := docker.NewOrchestrator(schedResult.Client, r.Logger, r.ConfigDir)
+
 	// Start containers using orchestrator
-	containers, err := r.Orchestrator.StartDeployment(ctx, deployment, template.ComposeSpec, template.ConfigFiles)
+	containers, err := orchestrator.StartDeployment(ctx, deployment, template.ComposeSpec, template.ConfigFiles)
 	if err != nil {
 		r.Logger.Error("failed to start deployment containers", "error", err)
 		_ = deployment.TransitionToFailed(err.Error())
@@ -613,8 +658,22 @@ func (r DeploymentResource) StopDeployment(id string, req *http.Request) (api2go
 		r.Logger.Error("failed to update deployment status", "error", err)
 	}
 
+	// Get client for the deployment's node
+	client, err := r.Scheduler.GetClientForNode(ctx, deployment.NodeID)
+	if err != nil {
+		r.Logger.Error("failed to get client for node", "node_id", deployment.NodeID, "error", err)
+		return &Response{Code: http.StatusInternalServerError}, api2go.NewHTTPError(
+			err,
+			"Failed to get client for node: "+err.Error(),
+			http.StatusInternalServerError,
+		)
+	}
+
+	// Create orchestrator with the node's client
+	orchestrator := docker.NewOrchestrator(client, r.Logger, r.ConfigDir)
+
 	// Stop containers using orchestrator
-	if err := r.Orchestrator.StopDeployment(ctx, deployment); err != nil {
+	if err := orchestrator.StopDeployment(ctx, deployment); err != nil {
 		r.Logger.Error("failed to stop deployment containers", "error", err)
 		_ = deployment.TransitionToFailed(err.Error())
 		_ = r.Store.UpdateDeployment(ctx, deployment)

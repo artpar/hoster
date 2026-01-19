@@ -18,7 +18,8 @@ import (
 type AuthConfig struct {
 	// Mode determines how authentication is handled.
 	// "header" - Extract auth from APIGate headers (production)
-	// "none" - Skip auth checks (development)
+	// "none" - Skip auth extraction entirely (unauthenticated requests)
+	// "dev" - Auto-authenticate as dev-user (local development)
 	Mode string
 
 	// RequireAuth determines if authentication is required for protected endpoints.
@@ -53,11 +54,24 @@ func NewAuthMiddleware(cfg AuthConfig) *AuthMiddleware {
 
 // Handler returns the middleware handler function.
 // This middleware extracts auth context from headers and stores it in the request context.
-// If Mode is "none", it skips authentication entirely.
+// If Mode is "none", it skips authentication extraction entirely (unauthenticated).
+// If Mode is "dev", it auto-authenticates as a dev user for local development.
 func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// In "none" mode, set a default dev user context
+		// In "none" mode, skip auth extraction entirely (unauthenticated)
 		if m.config.Mode == "none" {
+			// Set an unauthenticated context
+			emptyCtx := auth.Context{
+				Authenticated: false,
+				PlanLimits:    auth.DefaultPlanLimits(),
+			}
+			r = r.WithContext(auth.WithContext(r.Context(), emptyCtx))
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// In "dev" mode, set a default dev user context (for local development)
+		if m.config.Mode == "dev" {
 			devCtx := auth.Context{
 				UserID:        "dev-user",
 				PlanID:        "dev-plan",

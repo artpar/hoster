@@ -66,7 +66,8 @@ type DomainConfig struct {
 type AuthConfig struct {
 	// Mode determines how authentication is handled.
 	// "header" - Extract auth from APIGate headers (production)
-	// "none" - Skip auth checks (development)
+	// "dev" - Auto-authenticate as dev-user (local development)
+	// "none" - Skip auth extraction entirely (unauthenticated requests)
 	Mode string `mapstructure:"mode"`
 
 	// RequireAuth determines if authentication is required for protected endpoints.
@@ -117,7 +118,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("log.format", "json")
 	v.SetDefault("domain.base_domain", "apps.localhost")
 	v.SetDefault("domain.config_dir", "./data/configs")
-	v.SetDefault("auth.mode", "none")          // Default to no auth for development
+	v.SetDefault("auth.mode", "dev")           // Default to dev user for development
 	v.SetDefault("auth.require_auth", false)   // Don't require auth by default
 	v.SetDefault("auth.shared_secret", "")     // No secret validation by default
 

@@ -11,6 +11,7 @@ import (
 	"github.com/artpar/hoster/internal/shell/api/openapi"
 	"github.com/artpar/hoster/internal/shell/api/resources"
 	"github.com/artpar/hoster/internal/shell/docker"
+	"github.com/artpar/hoster/internal/shell/scheduler"
 	"github.com/artpar/hoster/internal/shell/store"
 	"github.com/gorilla/mux"
 	"github.com/manyminds/api2go"
@@ -24,12 +25,13 @@ import (
 type APIConfig struct {
 	Store      store.Store
 	Docker     docker.Client
+	Scheduler  *scheduler.Service // Scheduler for node selection (nil = local only)
 	Logger     *slog.Logger
 	BaseDomain string
 	ConfigDir  string
 
 	// Auth configuration (following ADR-005)
-	AuthMode         string // "header" or "none"
+	AuthMode         string // "header", "dev", or "none"
 	AuthRequire      bool   // Require auth for protected endpoints
 	AuthSharedSecret string // Optional: validate X-APIGate-Secret
 }
@@ -67,6 +69,7 @@ func SetupAPI(cfg APIConfig) http.Handler {
 	deploymentResource := resources.NewDeploymentResource(
 		cfg.Store,
 		cfg.Docker,
+		cfg.Scheduler,
 		cfg.Logger,
 		cfg.BaseDomain,
 		cfg.ConfigDir,

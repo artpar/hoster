@@ -13,6 +13,7 @@ import (
 	"github.com/artpar/hoster/internal/core/domain"
 	"github.com/artpar/hoster/internal/core/validation"
 	"github.com/artpar/hoster/internal/shell/docker"
+	"github.com/artpar/hoster/internal/shell/scheduler"
 	"github.com/artpar/hoster/internal/shell/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -28,6 +29,7 @@ type Handler struct {
 	store        store.Store
 	docker       docker.Client
 	orchestrator *docker.Orchestrator
+	scheduler    *scheduler.Service
 	logger       *slog.Logger
 	baseDomain   string
 	configDir    string
@@ -46,6 +48,30 @@ func NewHandler(s store.Store, d docker.Client, l *slog.Logger, baseDomain, conf
 		store:        s,
 		docker:       d,
 		orchestrator: docker.NewOrchestrator(d, l, configDir),
+		scheduler:    scheduler.NewService(s, nil, d, l), // nil NodePool for backward compat
+		logger:       l,
+		baseDomain:   baseDomain,
+		configDir:    configDir,
+	}
+}
+
+// NewHandlerWithScheduler creates a new API handler with a custom scheduler service.
+// Use this when you need remote node support via NodePool.
+func NewHandlerWithScheduler(s store.Store, d docker.Client, sched *scheduler.Service, l *slog.Logger, baseDomain, configDir string) *Handler {
+	if l == nil {
+		l = slog.Default()
+	}
+	if configDir == "" {
+		configDir = "/var/lib/hoster/configs"
+	}
+	if sched == nil {
+		sched = scheduler.NewService(s, nil, d, l)
+	}
+	return &Handler{
+		store:        s,
+		docker:       d,
+		orchestrator: docker.NewOrchestrator(d, l, configDir), // Default orchestrator with local client
+		scheduler:    sched,
 		logger:       l,
 		baseDomain:   baseDomain,
 		configDir:    configDir,
@@ -538,8 +564,20 @@ func (h *Handler) handleDeleteDeployment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Get Docker client for the deployment's node
+	client, err := h.scheduler.GetClientForNode(r.Context(), deployment.NodeID)
+	if err != nil {
+		h.logger.Warn("failed to get client for node, attempting local cleanup",
+			"node_id", deployment.NodeID, "error", err)
+		// Fall back to local client for cleanup attempt
+		client = h.docker
+	}
+
+	// Create orchestrator with the node's client
+	orchestrator := docker.NewOrchestrator(client, h.logger, h.configDir)
+
 	// Remove all Docker resources (containers, network, volumes)
-	if err := h.orchestrator.RemoveDeployment(r.Context(), deployment); err != nil {
+	if err := orchestrator.RemoveDeployment(r.Context(), deployment); err != nil {
 		h.logger.Warn("failed to remove deployment resources", "error", err)
 		// Continue with database deletion even if Docker cleanup fails
 	}
@@ -550,7 +588,7 @@ func (h *Handler) handleDeleteDeployment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	h.logger.Info("deployment deleted", "deployment_id", id)
+	h.logger.Info("deployment deleted", "deployment_id", id, "node_id", deployment.NodeID)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -590,7 +628,28 @@ func (h *Handler) handleStartDeployment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	deployment.NodeID = "local" // For now, all deployments run locally
+	// Schedule deployment to a node
+	// If deployment already has a NodeID (restart case), try to use the same node
+	schedReq := scheduler.ScheduleDeploymentRequest{
+		Template:        template,
+		CreatorID:       template.CreatorID,
+		PreferredNodeID: deployment.NodeID, // Use existing node for restarts
+	}
+
+	schedResult, err := h.scheduler.ScheduleDeployment(r.Context(), schedReq)
+	if err != nil {
+		h.logger.Error("failed to schedule deployment", "error", err)
+		h.writeError(w, http.StatusInternalServerError, "failed to schedule deployment: "+err.Error(), "scheduling_error")
+		return
+	}
+
+	deployment.NodeID = schedResult.NodeID
+	h.logger.Info("scheduled deployment",
+		"deployment_id", deployment.ID,
+		"node_id", schedResult.NodeID,
+		"is_local", schedResult.IsLocal,
+		"score", schedResult.Score,
+	)
 
 	// Execute the state transitions
 	for _, status := range startPath.Transitions {
@@ -612,8 +671,11 @@ func (h *Handler) handleStartDeployment(w http.ResponseWriter, r *http.Request) 
 		h.logger.Error("failed to update deployment status", "error", err)
 	}
 
+	// Create orchestrator with the scheduled node's client
+	orchestrator := docker.NewOrchestrator(schedResult.Client, h.logger, h.configDir)
+
 	// Start containers using orchestrator
-	containers, err := h.orchestrator.StartDeployment(r.Context(), deployment, template.ComposeSpec, template.ConfigFiles)
+	containers, err := orchestrator.StartDeployment(r.Context(), deployment, template.ComposeSpec, template.ConfigFiles)
 	if err != nil {
 		h.logger.Error("failed to start deployment containers", "error", err)
 		// Transition to failed
@@ -642,6 +704,7 @@ func (h *Handler) handleStartDeployment(w http.ResponseWriter, r *http.Request) 
 
 	h.logger.Info("deployment started",
 		"deployment_id", deployment.ID,
+		"node_id", deployment.NodeID,
 		"containers", len(containers),
 	)
 
@@ -668,6 +731,14 @@ func (h *Handler) handleStopDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get Docker client for the deployment's node
+	client, err := h.scheduler.GetClientForNode(r.Context(), deployment.NodeID)
+	if err != nil {
+		h.logger.Error("failed to get client for node", "node_id", deployment.NodeID, "error", err)
+		h.writeError(w, http.StatusInternalServerError, "failed to connect to deployment node", "node_error")
+		return
+	}
+
 	// Transition to stopping
 	if err := deployment.Transition(domain.StatusStopping); err != nil {
 		h.logger.Error("failed to transition to stopping", "error", err)
@@ -678,8 +749,11 @@ func (h *Handler) handleStopDeployment(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("failed to update deployment status", "error", err)
 	}
 
+	// Create orchestrator with the node's client
+	orchestrator := docker.NewOrchestrator(client, h.logger, h.configDir)
+
 	// Stop containers using orchestrator
-	if err := h.orchestrator.StopDeployment(r.Context(), deployment); err != nil {
+	if err := orchestrator.StopDeployment(r.Context(), deployment); err != nil {
 		h.logger.Error("failed to stop deployment containers", "error", err)
 		// Transition to failed
 		_ = deployment.TransitionToFailed(err.Error())
@@ -704,7 +778,7 @@ func (h *Handler) handleStopDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Info("deployment stopped", "deployment_id", deployment.ID)
+	h.logger.Info("deployment stopped", "deployment_id", deployment.ID, "node_id", deployment.NodeID)
 
 	h.writeJSON(w, http.StatusOK, h.deploymentToResponse(deployment))
 }

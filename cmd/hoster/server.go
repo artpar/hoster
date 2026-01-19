@@ -12,6 +12,7 @@ import (
 	"github.com/artpar/hoster/internal/shell/api"
 	"github.com/artpar/hoster/internal/shell/billing"
 	"github.com/artpar/hoster/internal/shell/docker"
+	"github.com/artpar/hoster/internal/shell/scheduler"
 	"github.com/artpar/hoster/internal/shell/store"
 )
 
@@ -75,10 +76,15 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		}
 	}
 
+	// Create scheduler service for node selection
+	// TODO: Create NodePool with encryption key when remote nodes are enabled
+	sched := scheduler.NewService(s, nil, d, logger) // nil NodePool = local only
+
 	// Create HTTP handler using new JSON:API setup (ADR-003)
 	handler := api.SetupAPI(api.APIConfig{
 		Store:      s,
 		Docker:     d,
+		Scheduler:  sched,
 		Logger:     logger,
 		BaseDomain: cfg.Domain.BaseDomain,
 		ConfigDir:  cfg.Domain.ConfigDir,
