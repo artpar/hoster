@@ -7,7 +7,7 @@
 
 ## CURRENT PROJECT STATE (January 19, 2026)
 
-### Status: E2E Testing COMPLETE, Production Ready
+### Status: Billing Integration Updated for APIGate JSON:API
 
 **What's Done:**
 - MVP complete (core deployment loop works)
@@ -26,6 +26,7 @@
 - **App Proxy - Built-in HTTP routing (no Traefik dependency) COMPLETE**
 - **F014 Phase A (App Proxy) - FULLY IMPLEMENTED with STC alignment**
 - **F014 Phases B-D - E2E TESTED with real APIGate instance**
+- **Billing Client Updated to JSON:API Format (per APIGate #17)**
 
 **Frontend Build Status:**
 ```
@@ -87,82 +88,98 @@ User Request → APIGate (8080) → App Proxy (9091) → Container (30000-39999)
 
 ## LAST SESSION SUMMARY (January 19, 2026)
 
-### What Was Accomplished: Comprehensive E2E Testing with APIGate
+### What Was Accomplished: Billing Client Updated to JSON:API Format
 
-This session performed full end-to-end testing of the Hoster platform with a real APIGate instance, verifying the complete deployment lifecycle and billing integration.
+This session updated the billing client to use the JSON:API format expected by APIGate's newly implemented Metering API.
 
-**1. E2E Testing Infrastructure Setup:**
+**1. APIGate Issues Progress:**
 
-- Started Hoster backend on port 8080 with billing enabled
-- Started frontend dev server on port 3000
-- Set up APIGate instance on port 8082 (user portal at `/portal`)
-- Created test user account (`testuser@example.com`)
-- Created API key for authentication
-- Configured APIGate upstream and routes for Hoster API proxying
+| Issue | Status | Description |
+|-------|--------|-------------|
+| [#17](https://github.com/artpar/apigate/issues/17) | ✅ IMPLEMENTED | External Meter API - APIGate now has `POST /api/v1/meter` |
+| [#18](https://github.com/artpar/apigate/issues/18) | Documenting | Billing flow documentation |
+| [#19](https://github.com/artpar/apigate/issues/19) | IN PROGRESS | Host-based routing (being fixed by APIGate team) |
 
-**2. E2E Test Results:**
+**2. Billing Client Updates:**
 
-| Test | Result | Notes |
-|------|--------|-------|
-| Landing page | ✅ Pass | Hero, features, pricing sections render |
-| APIGate signup | ✅ Pass | User account created |
-| API key creation | ✅ Pass | Key generated successfully |
-| APIGate routing | ✅ Pass | `/api/v1/*` routes to Hoster |
-| Marketplace browsing | ✅ Pass | 32 templates displayed |
-| Deployment creation | ✅ Pass | Deployment created from nginx template |
-| Deployment start | ✅ Pass | Container running, nginx serving |
-| Deployment stop | ✅ Pass | Container stopped |
-| Plan limits | ✅ Pass | Max 1 deployment enforced (403 on excess) |
-| Billing events | ✅ Pass | Events generated for create/start/stop |
+The billing client was updated to match APIGate's JSON:API format:
 
-**3. Billing Integration Verification:**
+- **Request format changed from:**
+  ```json
+  {"events": [{"id": "...", "user_id": "...", "event_type": "deployment_created", ...}]}
+  ```
 
-- Billing reporter runs every 60 seconds
-- Events are queued and counted correctly (count: 27 after full lifecycle)
-- Events failing to send with 401 (expected - needs `HOSTER_BILLING_API_KEY`)
-- Plan limits enforced correctly via APIGate integration
+- **To JSON:API format:**
+  ```json
+  {
+    "data": [{
+      "type": "usage_events",
+      "attributes": {
+        "id": "evt_xxx",
+        "user_id": "user-123",
+        "event_type": "deployment.created",
+        ...
+      }
+    }]
+  }
+  ```
 
-**4. Configuration Updates:**
+- Event type constants now use dots instead of underscores:
+  - `deployment_created` → `deployment.created`
+  - `deployment_started` → `deployment.started`
+  - `deployment_stopped` → `deployment.stopped`
+  - `deployment_deleted` → `deployment.deleted`
 
-- Updated `web/vite.config.ts`:
-  - `/api` proxy → Hoster at `localhost:8080`
-  - `/auth` proxy → APIGate at `localhost:8082` with path rewrite to `/portal/api`
+- Content-Type changed from `application/json` to `application/vnd.api+json`
 
-- Updated `CLAUDE.md`:
-  - Added External Resources section with APIGate links
-  - APIGate repo: https://github.com/artpar/apigate
-  - APIGate issues: https://github.com/artpar/apigate/issues
+- Response parsing added for JSON:API format: `{"meta": {"accepted": N, "rejected": M}}`
 
-**Files Modified This Session:**
+**3. Files Modified:**
+
 ```
-CLAUDE.md                # Added External Resources section
-web/vite.config.ts       # Fixed proxy configuration for APIGate
+internal/core/domain/usage.go         # Event type constants (dots)
+internal/shell/billing/client.go      # JSON:API request/response format
+internal/shell/billing/client_test.go # Updated test expectations
 ```
 
-**Commit:** `f34c727 docs: Add APIGate resources and fix Vite proxy config`
+**4. All Tests Pass:** 500+ tests including updated billing tests
+
+**5. Next Steps:**
+
+- Phase 2 (App Proxy Integration) - Blocked on APIGate #19 (host-based routing)
+- Phase 3 (E2E Billing Test) - Can test once API key is configured
+- Phase 5 (Operational Readiness) - Health endpoints, metrics, graceful shutdown
+
+See plan file at `/Users/artpar/.claude/plans/partitioned-juggling-giraffe.md` for full details
 
 ---
 
 ## SUGGESTED NEXT STEPS
 
-E2E testing is complete. The platform is production-ready for local development. Next steps for deployment:
+Billing client updated to JSON:API. Next steps per production readiness plan:
 
-### Priority 1: Production Deployment Configuration
-- Configure `HOSTER_BILLING_API_KEY` for full billing integration
-- Set up production APIGate with persistent database
-- Configure production domain and SSL certificates
-- See: `specs/features/F014-e2e-production-readiness.md` → Phase E
+### Priority 1: E2E Billing Test (Phase 3)
+- Create service API key in APIGate with `meter:write` scope
+- Configure `HOSTER_BILLING_API_KEY` environment variable
+- Test billing event delivery (create/start/stop/delete deployment)
+- Verify events appear in APIGate admin (`GET /api/v1/meter`)
 
-### Priority 2: F014 Phase E - Operational Readiness
+### Priority 2: App Proxy Integration (Phase 2)
+- **BLOCKED** on APIGate #19 (host-based routing being implemented)
+- Can add health endpoint to app proxy server now
+- Full integration testing requires APIGate #19
+
+### Priority 3: Payment Flow Testing (Phase 4)
+- Configure APIGate with Stripe test keys
+- Test Stripe checkout flow end-to-end
+- Test subscription webhook handling
+- Verify plan limits enforcement
+
+### Priority 4: Operational Readiness (Phase 5)
 - Health endpoints (`/health`, `/health/ready`, `/health/live`)
 - Prometheus metrics endpoint
 - Request ID correlation in logs
 - Graceful shutdown handling
-
-### Priority 3: Documentation & Polish
-- Self-service documentation (getting started, marketplace, API reference)
-- API reference from OpenAPI spec
-- Deployment guides for production setup
 
 ### Other Options (Lower Priority)
 - **Node Metrics Collection**: CPU/memory/disk usage from nodes

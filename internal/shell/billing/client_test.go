@@ -36,18 +36,18 @@ func TestNewAPIGateClient_CustomConfig(t *testing.T) {
 
 func TestAPIGateClient_MeterUsage_Success(t *testing.T) {
 	// Create test server
-	var receivedRequest meterRequest
+	var receivedRequest jsonAPIRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, "/api/v1/meter", r.URL.Path)
-		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		assert.Equal(t, "application/vnd.api+json", r.Header.Get("Content-Type"))
 		assert.Equal(t, "test-service-key", r.Header.Get("X-API-Key"))
 
 		err := json.NewDecoder(r.Body).Decode(&receivedRequest)
 		require.NoError(t, err)
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"ok": true}`))
+		w.Write([]byte(`{"meta": {"accepted": 1, "rejected": 0}}`))
 	}))
 	defer server.Close()
 
@@ -67,20 +67,22 @@ func TestAPIGateClient_MeterUsage_Success(t *testing.T) {
 	err := client.MeterUsage(context.Background(), event)
 	require.NoError(t, err)
 
-	// Verify the request was correct
-	require.Len(t, receivedRequest.Events, 1)
-	assert.Equal(t, "evt-123", receivedRequest.Events[0].ID)
-	assert.Equal(t, "user-456", receivedRequest.Events[0].UserID)
-	assert.Equal(t, "deployment_created", receivedRequest.Events[0].EventType)
-	assert.Equal(t, "depl-789", receivedRequest.Events[0].ResourceID)
-	assert.Equal(t, "tmpl-001", receivedRequest.Events[0].Metadata["template_id"])
+	// Verify the JSON:API request format
+	require.Len(t, receivedRequest.Data, 1)
+	assert.Equal(t, "usage_events", receivedRequest.Data[0].Type)
+	assert.Equal(t, "evt-123", receivedRequest.Data[0].Attributes.ID)
+	assert.Equal(t, "user-456", receivedRequest.Data[0].Attributes.UserID)
+	assert.Equal(t, "deployment.created", receivedRequest.Data[0].Attributes.EventType)
+	assert.Equal(t, "depl-789", receivedRequest.Data[0].Attributes.ResourceID)
+	assert.Equal(t, "tmpl-001", receivedRequest.Data[0].Attributes.Metadata["template_id"])
 }
 
 func TestAPIGateClient_MeterUsageBatch_Success(t *testing.T) {
-	var receivedRequest meterRequest
+	var receivedRequest jsonAPIRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&receivedRequest)
 		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"meta": {"accepted": 2, "rejected": 0}}`))
 	}))
 	defer server.Close()
 
@@ -94,9 +96,10 @@ func TestAPIGateClient_MeterUsageBatch_Success(t *testing.T) {
 	err := client.MeterUsageBatch(context.Background(), events)
 	require.NoError(t, err)
 
-	assert.Len(t, receivedRequest.Events, 2)
-	assert.Equal(t, "deployment_created", receivedRequest.Events[0].EventType)
-	assert.Equal(t, "deployment_started", receivedRequest.Events[1].EventType)
+	assert.Len(t, receivedRequest.Data, 2)
+	assert.Equal(t, "usage_events", receivedRequest.Data[0].Type)
+	assert.Equal(t, "deployment.created", receivedRequest.Data[0].Attributes.EventType)
+	assert.Equal(t, "deployment.started", receivedRequest.Data[1].Attributes.EventType)
 }
 
 func TestAPIGateClient_MeterUsageBatch_EmptyEvents(t *testing.T) {

@@ -12,16 +12,20 @@ type EventType string
 
 const (
 	// EventDeploymentCreated is recorded when a deployment is created.
-	EventDeploymentCreated EventType = "deployment_created"
+	// Uses dot notation to match APIGate's JSON:API format.
+	EventDeploymentCreated EventType = "deployment.created"
 
 	// EventDeploymentStarted is recorded when a deployment starts running.
-	EventDeploymentStarted EventType = "deployment_started"
+	// Uses dot notation to match APIGate's JSON:API format.
+	EventDeploymentStarted EventType = "deployment.started"
 
 	// EventDeploymentStopped is recorded when a deployment stops.
-	EventDeploymentStopped EventType = "deployment_stopped"
+	// Uses dot notation to match APIGate's JSON:API format.
+	EventDeploymentStopped EventType = "deployment.stopped"
 
 	// EventDeploymentDeleted is recorded when a deployment is deleted.
-	EventDeploymentDeleted EventType = "deployment_deleted"
+	// Uses dot notation to match APIGate's JSON:API format.
+	EventDeploymentDeleted EventType = "deployment.deleted"
 )
 
 // MeterEvent represents a usage event to be reported to APIGate for billing.

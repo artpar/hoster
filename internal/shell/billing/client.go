@@ -75,13 +75,19 @@ func (c *APIGateClient) MeterUsage(ctx context.Context, event domain.MeterEvent)
 	return c.MeterUsageBatch(ctx, []domain.MeterEvent{event})
 }
 
-// meterRequest is the request payload for the metering API.
-type meterRequest struct {
-	Events []meterEventPayload `json:"events"`
+// jsonAPIRequest is the JSON:API format request payload for the metering API.
+type jsonAPIRequest struct {
+	Data []jsonAPIResource `json:"data"`
 }
 
-// meterEventPayload is the APIGate format for meter events.
-type meterEventPayload struct {
+// jsonAPIResource represents a single resource in JSON:API format.
+type jsonAPIResource struct {
+	Type       string                  `json:"type"`
+	Attributes meterEventAttributes    `json:"attributes"`
+}
+
+// meterEventAttributes contains the event data in JSON:API attributes format.
+type meterEventAttributes struct {
 	ID           string            `json:"id"`
 	UserID       string            `json:"user_id"`
 	EventType    string            `json:"event_type"`
@@ -92,28 +98,49 @@ type meterEventPayload struct {
 	Timestamp    time.Time         `json:"timestamp"`
 }
 
-// MeterUsageBatch reports multiple usage events to APIGate.
+// jsonAPIResponse is the JSON:API format response from the metering API.
+type jsonAPIResponse struct {
+	Meta jsonAPIMeta `json:"meta"`
+}
+
+// jsonAPIMeta contains response metadata.
+type jsonAPIMeta struct {
+	Accepted int              `json:"accepted"`
+	Rejected int              `json:"rejected"`
+	Errors   []jsonAPIError   `json:"errors,omitempty"`
+}
+
+// jsonAPIError represents an error in the response.
+type jsonAPIError struct {
+	Index   int    `json:"index"`
+	Message string `json:"message"`
+}
+
+// MeterUsageBatch reports multiple usage events to APIGate using JSON:API format.
 func (c *APIGateClient) MeterUsageBatch(ctx context.Context, events []domain.MeterEvent) error {
 	if len(events) == 0 {
 		return nil
 	}
 
-	// Convert to APIGate format
-	payloadEvents := make([]meterEventPayload, len(events))
+	// Convert to JSON:API format
+	resources := make([]jsonAPIResource, len(events))
 	for i, e := range events {
-		payloadEvents[i] = meterEventPayload{
-			ID:           e.ID,
-			UserID:       e.UserID,
-			EventType:    string(e.EventType),
-			ResourceID:   e.ResourceID,
-			ResourceType: e.ResourceType,
-			Quantity:     e.Quantity,
-			Metadata:     e.Metadata,
-			Timestamp:    e.Timestamp,
+		resources[i] = jsonAPIResource{
+			Type: "usage_events",
+			Attributes: meterEventAttributes{
+				ID:           e.ID,
+				UserID:       e.UserID,
+				EventType:    string(e.EventType),
+				ResourceID:   e.ResourceID,
+				ResourceType: e.ResourceType,
+				Quantity:     e.Quantity,
+				Metadata:     e.Metadata,
+				Timestamp:    e.Timestamp,
+			},
 		}
 	}
 
-	payload := meterRequest{Events: payloadEvents}
+	payload := jsonAPIRequest{Data: resources}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal meter request: %w", err)
@@ -124,7 +151,7 @@ func (c *APIGateClient) MeterUsageBatch(ctx context.Context, events []domain.Met
 		return fmt.Errorf("create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/vnd.api+json")
 	if c.serviceKey != "" {
 		req.Header.Set("X-API-Key", c.serviceKey)
 	}
@@ -153,8 +180,22 @@ func (c *APIGateClient) MeterUsageBatch(ctx context.Context, events []domain.Met
 		return fmt.Errorf("meter request failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
 
+	// Parse JSON:API response
+	var apiResp jsonAPIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		// Non-fatal: log warning but don't fail if response parsing fails
+		c.logger.Debug("could not parse response body", "error", err)
+	} else if apiResp.Meta.Rejected > 0 {
+		c.logger.Warn("some events were rejected",
+			"accepted", apiResp.Meta.Accepted,
+			"rejected", apiResp.Meta.Rejected,
+			"errors", apiResp.Meta.Errors,
+		)
+	}
+
 	c.logger.Info("usage events reported successfully",
 		"count", len(events),
+		"accepted", apiResp.Meta.Accepted,
 	)
 
 	return nil
