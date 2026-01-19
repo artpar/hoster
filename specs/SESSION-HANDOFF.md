@@ -21,7 +21,7 @@
 - Phase 5 (Frontend Views) COMPLETE
 - Phase 5 Manual Testing COMPLETE (via Chrome DevTools MCP)
 - Phase 6 Integration bug fixes COMPLETE
-- **Creator Worker Nodes Feature - Phase 1, 2, 3 & 4 COMPLETE**
+- **Creator Worker Nodes Feature - Phase 1, 2, 3, 4 & 5 COMPLETE**
 - **Auth middleware tests fixed (mode=none vs mode=dev)**
 
 **Frontend Build Status:**
@@ -43,22 +43,87 @@ dist/assets/index-*.js          364.07 kB (gzip: 109.41 kB)
 - Phase 2 (Database Layer): COMPLETE
 - Phase 3 (SSH Docker Client via Minion): COMPLETE
 - Phase 4 (Scheduler Integration): COMPLETE
-- Phase 5 (Node API Resource): PENDING
+- Phase 5 (Node API Resource): COMPLETE
 - Phase 6 (Frontend Nodes Tab): PENDING
 - Phase 7 (Health Checker Worker): PENDING
 
-**Next Step: Creator Worker Nodes Phase 5**
-- Create Node JSON:API resource
-- Create SSH Key resource
-- Add authorization checks (CanManageNode, CanViewNode)
+**Next Step: Creator Worker Nodes Phase 6**
+- Create `web/src/api/nodes.ts` - Node API client
+- Create `web/src/hooks/useNodes.ts` - TanStack Query hooks
+- Create `web/src/components/nodes/` - NodeCard, NodeForm, AddNodeDialog
+- Add "Nodes" tab to Creator Dashboard
 
 ---
 
 ## LAST SESSION SUMMARY (January 19, 2026)
 
+### What Was Accomplished: Phase 5 (Node API Resource) COMPLETE
+
+This session implemented the Node and SSH Key JSON:API resources for creator worker nodes.
+
+**1. Node Authorization Functions:**
+
+Added authorization functions to `internal/core/auth/authorization.go`:
+- `CanViewNode(ctx, node)` - Only node creator can view
+- `CanManageNode(ctx, node)` - Only node creator can manage
+- `CanCreateNode(ctx)` - Any authenticated user can create
+- `CanViewSSHKey(ctx, key)` - Only key creator can view
+- `CanManageSSHKey(ctx, key)` - Only key creator can manage
+- `CanCreateSSHKey(ctx)` - Any authenticated user can create
+
+Added 6 tests for the new authorization functions.
+
+**2. Node JSON:API Resource:**
+
+Created `internal/shell/api/resources/node.go`:
+- `GET /api/v1/nodes` - List creator's nodes
+- `GET /api/v1/nodes/:id` - Get node details
+- `POST /api/v1/nodes` - Create new node
+- `PATCH /api/v1/nodes/:id` - Update node
+- `DELETE /api/v1/nodes/:id` - Delete node
+- `POST /api/v1/nodes/:id/maintenance` - Enter maintenance mode
+- `DELETE /api/v1/nodes/:id/maintenance` - Exit maintenance mode
+
+**3. SSH Key JSON:API Resource:**
+
+Created `internal/shell/api/resources/ssh_key.go`:
+- `GET /api/v1/ssh_keys` - List creator's SSH keys
+- `GET /api/v1/ssh_keys/:id` - Get SSH key (without private key)
+- `POST /api/v1/ssh_keys` - Create new SSH key (encrypts private key)
+- `DELETE /api/v1/ssh_keys/:id` - Delete SSH key
+- SSH keys are immutable - no PATCH/UPDATE supported
+- Private key is encrypted with AES-256-GCM before storage
+- Private key is NEVER returned in responses
+
+**4. API Setup Updates:**
+
+Updated `internal/shell/api/setup.go`:
+- Added `EncryptionKey` field to `APIConfig`
+- Registered `Node` and `SSHKey` resources with api2go
+- Added maintenance mode endpoints for nodes
+- Registered resources in OpenAPI documentation
+
+**Files Created/Modified This Session:**
+```
+# New files
+internal/shell/api/resources/node.go      # Node JSON:API resource
+internal/shell/api/resources/ssh_key.go   # SSH Key JSON:API resource
+
+# Modified files
+internal/core/auth/authorization.go       # Added Node/SSHKey authorization functions
+internal/core/auth/authorization_test.go  # Added 6 tests
+internal/shell/api/setup.go               # Registered resources, added endpoints
+```
+
+**Test Status:** All backend tests pass (500+ tests)
+
+---
+
+## PREVIOUS SESSION SUMMARY
+
 ### What Was Accomplished: Phase 4 E2E Verification + Auth Middleware Fix
 
-This session completed E2E testing of Phase 4 (Scheduler Integration) and fixed auth middleware test failures.
+That session completed E2E testing of Phase 4 (Scheduler Integration) and fixed auth middleware test failures.
 
 **1. Scheduler Integration E2E Verification:**
 
@@ -164,12 +229,15 @@ The detailed implementation plan is at: `/Users/artpar/.claude/plans/wondrous-fo
 - [x] `internal/shell/scheduler/service_test.go` - 9 tests for scheduling service
 - [x] Modify `internal/shell/api/handler.go` - Replace `NodeID = "local"` with scheduler
 
-### Phase 5 - Node API Resource (NEXT):
-- [ ] `internal/shell/api/resources/node.go` - Node JSON:API resource
-- [ ] `internal/shell/api/resources/ssh_key.go` - SSH Key resource
-- [ ] Authorization checks (CanManageNode, CanViewNode)
+### Phase 5 - Node API Resource (COMPLETE):
+- [x] `internal/shell/api/resources/node.go` - Node JSON:API resource
+- [x] `internal/shell/api/resources/ssh_key.go` - SSH Key resource
+- [x] Authorization checks (CanManageNode, CanViewNode, CanCreateNode)
+- [x] SSH key encryption with AES-256-GCM
+- [x] Maintenance mode endpoints
+- [x] OpenAPI documentation for new resources
 
-### Phase 6 - Frontend Nodes Tab:
+### Phase 6 - Frontend Nodes Tab (NEXT):
 - [ ] `web/src/api/nodes.ts` - Node API client
 - [ ] `web/src/hooks/useNodes.ts` - TanStack Query hooks
 - [ ] `web/src/components/nodes/` - NodeCard, NodeForm, AddNodeDialog

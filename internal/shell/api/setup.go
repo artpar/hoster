@@ -34,6 +34,9 @@ type APIConfig struct {
 	AuthMode         string // "header", "dev", or "none"
 	AuthRequire      bool   // Require auth for protected endpoints
 	AuthSharedSecret string // Optional: validate X-APIGate-Secret
+
+	// Encryption key for SSH keys (required for node management)
+	EncryptionKey []byte
 }
 
 // SetupAPI creates the complete API router with JSON:API resources and custom endpoints.
@@ -74,9 +77,13 @@ func SetupAPI(cfg APIConfig) http.Handler {
 		cfg.BaseDomain,
 		cfg.ConfigDir,
 	)
+	nodeResource := resources.NewNodeResource(cfg.Store)
+	sshKeyResource := resources.NewSSHKeyResource(cfg.Store, cfg.EncryptionKey)
 
 	jsonAPI.AddResource(resources.Template{}, templateResource)
 	jsonAPI.AddResource(resources.Deployment{}, deploymentResource)
+	jsonAPI.AddResource(resources.Node{}, nodeResource)
+	jsonAPI.AddResource(resources.SSHKey{}, sshKeyResource)
 
 	// Mount api2go handler under /api
 	router.PathPrefix("/api").Handler(jsonAPI.Handler())
@@ -127,6 +134,23 @@ func SetupAPI(cfg APIConfig) http.Handler {
 		writeResponder(w, resp, err, cfg.Logger)
 	}).Methods("POST")
 
+	// Node custom actions
+	customRouter.HandleFunc("/api/v1/nodes/{id}/maintenance", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id := vars["id"]
+		// Toggle maintenance mode on
+		resp, err := nodeResource.SetMaintenance(id, true, r)
+		writeResponder(w, resp, err, cfg.Logger)
+	}).Methods("POST")
+
+	customRouter.HandleFunc("/api/v1/nodes/{id}/maintenance", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id := vars["id"]
+		// Toggle maintenance mode off
+		resp, err := nodeResource.SetMaintenance(id, false, r)
+		writeResponder(w, resp, err, cfg.Logger)
+	}).Methods("DELETE")
+
 	// Monitoring endpoints - Following F010: Monitoring Dashboard
 	monitoringHandlers := NewMonitoringHandlers(cfg.Store, cfg.Docker)
 	monitoringHandlers.RegisterRoutes(customRouter)
@@ -154,6 +178,22 @@ func SetupAPI(cfg APIConfig) http.Handler {
 		SupportsFind:   true,
 		SupportsCreate: true,
 		SupportsUpdate: false, // Deployments are managed via actions, not direct updates
+		SupportsDelete: true,
+	})
+	openapiGen.RegisterResource(openapi.ResourceInfo{
+		Name:           "nodes",
+		Model:          resources.Node{},
+		SupportsFind:   true,
+		SupportsCreate: true,
+		SupportsUpdate: true,
+		SupportsDelete: true,
+	})
+	openapiGen.RegisterResource(openapi.ResourceInfo{
+		Name:           "ssh_keys",
+		Model:          resources.SSHKey{},
+		SupportsFind:   true,
+		SupportsCreate: true,
+		SupportsUpdate: false, // SSH keys are immutable
 		SupportsDelete: true,
 	})
 

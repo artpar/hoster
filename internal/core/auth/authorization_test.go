@@ -410,3 +410,104 @@ func TestEmptyCustomerID_Deployment(t *testing.T) {
 	// Empty matches empty
 	assert.True(t, CanViewDeployment(ctx, deployment))
 }
+
+// =============================================================================
+// Node Authorization Tests
+// =============================================================================
+
+func sampleNode(creatorID string) domain.Node {
+	return domain.Node{
+		ID:           "node_test",
+		Name:         "Test Node",
+		CreatorID:    creatorID,
+		SSHHost:      "192.168.1.100",
+		SSHPort:      22,
+		SSHUser:      "deploy",
+		Status:       domain.NodeStatusOnline,
+		Capabilities: []string{"standard"},
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+}
+
+func sampleSSHKey(creatorID string) domain.SSHKey {
+	return domain.SSHKey{
+		ID:          "sshkey_test",
+		CreatorID:   creatorID,
+		Name:        "Test Key",
+		Fingerprint: "SHA256:abc123",
+		CreatedAt:   time.Now(),
+	}
+}
+
+func TestCanViewNode_CreatorOnly(t *testing.T) {
+	node := sampleNode("creator_123")
+
+	// Unauthenticated cannot view
+	assert.False(t, CanViewNode(unauthenticatedContext(), node))
+
+	// Different user cannot view
+	assert.False(t, CanViewNode(authenticatedContext("other_user"), node))
+
+	// Creator can view
+	assert.True(t, CanViewNode(authenticatedContext("creator_123"), node))
+}
+
+func TestCanManageNode_CreatorOnly(t *testing.T) {
+	node := sampleNode("creator_123")
+
+	// Unauthenticated cannot manage
+	assert.False(t, CanManageNode(unauthenticatedContext(), node))
+
+	// Different user cannot manage
+	assert.False(t, CanManageNode(authenticatedContext("other_user"), node))
+
+	// Creator can manage
+	assert.True(t, CanManageNode(authenticatedContext("creator_123"), node))
+}
+
+func TestCanCreateNode_AuthenticatedOnly(t *testing.T) {
+	// Unauthenticated cannot create
+	assert.False(t, CanCreateNode(unauthenticatedContext()))
+
+	// Any authenticated user can create
+	assert.True(t, CanCreateNode(authenticatedContext("any_user")))
+}
+
+// =============================================================================
+// SSH Key Authorization Tests
+// =============================================================================
+
+func TestCanViewSSHKey_CreatorOnly(t *testing.T) {
+	key := sampleSSHKey("creator_123")
+
+	// Unauthenticated cannot view
+	assert.False(t, CanViewSSHKey(unauthenticatedContext(), key))
+
+	// Different user cannot view
+	assert.False(t, CanViewSSHKey(authenticatedContext("other_user"), key))
+
+	// Creator can view
+	assert.True(t, CanViewSSHKey(authenticatedContext("creator_123"), key))
+}
+
+func TestCanManageSSHKey_CreatorOnly(t *testing.T) {
+	key := sampleSSHKey("creator_123")
+
+	// Unauthenticated cannot manage
+	assert.False(t, CanManageSSHKey(unauthenticatedContext(), key))
+
+	// Different user cannot manage
+	assert.False(t, CanManageSSHKey(authenticatedContext("other_user"), key))
+
+	// Creator can manage
+	assert.True(t, CanManageSSHKey(authenticatedContext("creator_123"), key))
+}
+
+func TestCanCreateSSHKey_AuthenticatedOnly(t *testing.T) {
+	// Unauthenticated cannot create
+	assert.False(t, CanCreateSSHKey(unauthenticatedContext()))
+
+	// Any authenticated user can create
+	assert.True(t, CanCreateSSHKey(authenticatedContext("any_user")))
+}

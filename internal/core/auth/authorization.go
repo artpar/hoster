@@ -125,6 +125,50 @@ func ValidateResourceLimits(ctx Context, currentUsage, requested Resources) (boo
 }
 
 // =============================================================================
+// Node Authorization
+// =============================================================================
+
+// CanViewNode checks if the user can view a node.
+// Only the node's creator can view it.
+func CanViewNode(ctx Context, node domain.Node) bool {
+	return ctx.Authenticated && ctx.UserID == node.CreatorID
+}
+
+// CanManageNode checks if the user can manage a node (create/update/delete).
+// Only the node's creator can manage it.
+func CanManageNode(ctx Context, node domain.Node) bool {
+	return ctx.Authenticated && ctx.UserID == node.CreatorID
+}
+
+// CanCreateNode checks if the user can create nodes.
+// Returns true if the user is authenticated.
+func CanCreateNode(ctx Context) bool {
+	return ctx.Authenticated
+}
+
+// =============================================================================
+// SSH Key Authorization
+// =============================================================================
+
+// CanViewSSHKey checks if the user can view an SSH key.
+// Only the key's creator can view it.
+func CanViewSSHKey(ctx Context, key domain.SSHKey) bool {
+	return ctx.Authenticated && ctx.UserID == key.CreatorID
+}
+
+// CanManageSSHKey checks if the user can manage an SSH key (create/delete).
+// Only the key's creator can manage it.
+func CanManageSSHKey(ctx Context, key domain.SSHKey) bool {
+	return ctx.Authenticated && ctx.UserID == key.CreatorID
+}
+
+// CanCreateSSHKey checks if the user can create SSH keys.
+// Returns true if the user is authenticated.
+func CanCreateSSHKey(ctx Context) bool {
+	return ctx.Authenticated
+}
+
+// =============================================================================
 // Generic Helpers
 // =============================================================================
 
