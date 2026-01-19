@@ -38,3 +38,4 @@ tests/e2e/logs/
 node_modules/
 web/dist/
 web/.vite/
+deploy/local/
