@@ -15,7 +15,9 @@ type HealthStatus = 'healthy' | 'unhealthy' | 'degraded' | 'unknown';
 
 type TemplateStatus = 'draft' | 'published' | 'deprecated';
 
-type StatusType = DeploymentStatus | HealthStatus | TemplateStatus;
+type NodeStatus = 'online' | 'offline' | 'maintenance';
+
+type StatusType = DeploymentStatus | HealthStatus | TemplateStatus | NodeStatus;
 
 interface StatusBadgeProps {
   status: StatusType;
@@ -44,6 +46,11 @@ const statusStyles: Record<StatusType, string> = {
   draft: 'bg-gray-100 text-gray-800',
   published: 'bg-green-100 text-green-800',
   deprecated: 'bg-yellow-100 text-yellow-800',
+
+  // Node statuses
+  online: 'bg-green-100 text-green-800',
+  offline: 'bg-red-100 text-red-800',
+  maintenance: 'bg-yellow-100 text-yellow-800',
 };
 
 const statusLabels: Record<StatusType, string> = {
@@ -63,6 +70,11 @@ const statusLabels: Record<StatusType, string> = {
   draft: 'Draft',
   published: 'Published',
   deprecated: 'Deprecated',
+
+  // Node statuses
+  online: 'Online',
+  offline: 'Offline',
+  maintenance: 'Maintenance',
 };
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {

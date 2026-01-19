@@ -202,3 +202,72 @@ export interface CreateDeploymentRequest {
   custom_domain?: string;
   config_overrides?: Record<string, string>;
 }
+
+// Node Types
+export type NodeStatus = 'online' | 'offline' | 'maintenance';
+
+export interface NodeCapacity {
+  cpu_cores: number;
+  memory_mb: number;
+  disk_mb: number;
+  cpu_used: number;
+  memory_used_mb: number;
+  disk_used_mb: number;
+}
+
+export interface NodeAttributes {
+  name: string;
+  ssh_host: string;
+  ssh_port: number;
+  ssh_user: string;
+  ssh_key_id?: string;
+  docker_socket: string;
+  status: NodeStatus;
+  capabilities: string[];
+  capacity: NodeCapacity;
+  location?: string;
+  last_health_check?: string;
+  error_message?: string;
+  creator_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type Node = JsonApiResource<'nodes', NodeAttributes>;
+
+export interface CreateNodeRequest {
+  name: string;
+  ssh_host: string;
+  ssh_port?: number;
+  ssh_user: string;
+  ssh_key_id?: string;
+  docker_socket?: string;
+  capabilities?: string[];
+  location?: string;
+}
+
+export interface UpdateNodeRequest {
+  name?: string;
+  ssh_host?: string;
+  ssh_port?: number;
+  ssh_user?: string;
+  ssh_key_id?: string;
+  docker_socket?: string;
+  capabilities?: string[];
+  location?: string;
+}
+
+// SSH Key Types
+export interface SSHKeyAttributes {
+  name: string;
+  fingerprint: string;
+  creator_id: string;
+  created_at: string;
+}
+
+export type SSHKey = JsonApiResource<'ssh_keys', SSHKeyAttributes>;
+
+export interface CreateSSHKeyRequest {
+  name: string;
+  private_key: string;
+}

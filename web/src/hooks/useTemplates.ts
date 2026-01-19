@@ -1,73 +1,29 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { templatesApi } from '@/api/templates';
-import type { CreateTemplateRequest } from '@/api/types';
+import type { Template, CreateTemplateRequest } from '@/api/types';
+import { createResourceHooks, createIdActionHook } from './createResourceHooks';
 
-export const templateKeys = {
-  all: ['templates'] as const,
-  lists: () => [...templateKeys.all, 'list'] as const,
-  list: (filters: string) => [...templateKeys.lists(), { filters }] as const,
-  details: () => [...templateKeys.all, 'detail'] as const,
-  detail: (id: string) => [...templateKeys.details(), id] as const,
-};
+/**
+ * TanStack Query hooks for Template resources.
+ *
+ * Generated from createResourceHooks factory with custom publish action.
+ */
+const templateHooks = createResourceHooks<Template, CreateTemplateRequest, Partial<CreateTemplateRequest>>({
+  resourceName: 'templates',
+  api: templatesApi,
+});
 
-export function useTemplates() {
-  return useQuery({
-    queryKey: templateKeys.lists(),
-    queryFn: templatesApi.list,
-  });
-}
+// Export query keys for external cache management
+export const templateKeys = templateHooks.keys;
 
-export function useTemplate(id: string) {
-  return useQuery({
-    queryKey: templateKeys.detail(id),
-    queryFn: () => templatesApi.get(id),
-    enabled: !!id,
-  });
-}
+// Export standard CRUD hooks with friendly names
+export const useTemplates = templateHooks.useList;
+export const useTemplate = templateHooks.useGet;
+export const useCreateTemplate = templateHooks.useCreate;
+export const useUpdateTemplate = templateHooks.useUpdate;
+export const useDeleteTemplate = templateHooks.useDelete;
 
-export function useCreateTemplate() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (data: CreateTemplateRequest) => templatesApi.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: templateKeys.lists() });
-    },
-  });
-}
-
-export function useUpdateTemplate() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<CreateTemplateRequest> }) =>
-      templatesApi.update(id, data),
-    onSuccess: (_, { id }) => {
-      queryClient.invalidateQueries({ queryKey: templateKeys.detail(id) });
-      queryClient.invalidateQueries({ queryKey: templateKeys.lists() });
-    },
-  });
-}
-
-export function useDeleteTemplate() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (id: string) => templatesApi.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: templateKeys.lists() });
-    },
-  });
-}
-
-export function usePublishTemplate() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (id: string) => templatesApi.publish(id),
-    onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: templateKeys.detail(id) });
-      queryClient.invalidateQueries({ queryKey: templateKeys.lists() });
-    },
-  });
-}
+// Custom action hook for publishing
+export const usePublishTemplate = createIdActionHook(
+  templateKeys,
+  templatesApi.publish
+);

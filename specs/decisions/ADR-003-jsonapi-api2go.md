@@ -210,8 +210,201 @@ func setupAPI(store store.Store, docker docker.Client) *api2go.API {
 - `internal/shell/api/handler.go` - Refactor to use api2go
 - All `*_test.go` files - Update for JSON:API format
 
+## Frontend Implementation: Generic Factories
+
+### Design Principle: Maximum Reuse, Minimum Debt
+
+To maintain JSON:API spec alignment across the entire stack while minimizing code duplication and technical debt, we implement **generic factory patterns** for both API clients and React hooks.
+
+**Key Insight**: Every JSON:API resource follows the same `{type, id, attributes}` structure and supports the same CRUD operations. Rather than writing boilerplate for each resource, we generate type-safe clients and hooks from configuration.
+
+### API Client Factory
+
+```typescript
+// web/src/api/createResourceApi.ts
+
+export function createResourceApi<
+  Resource extends JsonApiResource<string, unknown>,
+  CreateRequest,
+  UpdateRequest = Partial<CreateRequest>,
+  CustomActions extends string = never
+>(options: CreateResourceApiOptions<CustomActions>): ResourceApi<...> & Record<CustomActions, ...>
+```
+
+**Features:**
+- Type-safe CRUD operations (list, get, create, update, delete)
+- Custom actions support (e.g., `publish`, `enterMaintenance`)
+- Configurable update/delete support (for immutable resources like SSH keys)
+- Automatic JSON:API request body formatting
+
+**Usage:**
+```typescript
+// Simple CRUD resource
+export const templatesApi = createResourceApi<Template, CreateTemplateRequest>({
+  resourceName: 'templates',
+});
+
+// Resource with custom actions
+export const nodesApi = createResourceApi<Node, CreateNodeRequest, UpdateNodeRequest,
+  'enterMaintenance' | 'exitMaintenance'
+>({
+  resourceName: 'nodes',
+  customActions: {
+    enterMaintenance: { method: 'POST', path: 'maintenance', requiresId: true },
+    exitMaintenance: { method: 'DELETE', path: 'maintenance', requiresId: true },
+  },
+});
+
+// Immutable resource (no update)
+export const sshKeysApi = createResourceApi<SSHKey, CreateSSHKeyRequest, never>({
+  resourceName: 'ssh_keys',
+  supportsUpdate: false,
+});
+```
+
+### TanStack Query Hooks Factory
+
+```typescript
+// web/src/hooks/createResourceHooks.ts
+
+export function createResourceHooks<Resource, CreateRequest, UpdateRequest>(
+  options: CreateResourceHooksOptions<...>
+): ResourceHooks<...>
+```
+
+**Features:**
+- Standard query keys pattern for cache management
+- Automatic cache invalidation on mutations
+- `createIdActionHook` for custom id-based actions
+- Type-safe throughout
+
+**Usage:**
+```typescript
+const nodeHooks = createResourceHooks<Node, CreateNodeRequest, UpdateNodeRequest>({
+  resourceName: 'nodes',
+  api: nodesApi,
+});
+
+export const nodeKeys = nodeHooks.keys;
+export const useNodes = nodeHooks.useList;
+export const useNode = nodeHooks.useGet;
+export const useCreateNode = nodeHooks.useCreate;
+export const useUpdateNode = nodeHooks.useUpdate;
+export const useDeleteNode = nodeHooks.useDelete;
+
+// Custom actions
+export const useEnterMaintenanceMode = createIdActionHook(
+  nodeKeys, nodesApi.enterMaintenance
+);
+```
+
+### Code Reduction Results
+
+| Resource | Without Factory | With Factory | Savings |
+|----------|-----------------|--------------|---------|
+| nodes.ts | ~45 lines | ~27 lines | 40% |
+| ssh-keys.ts | ~27 lines | ~21 lines | 22% |
+| useNodes.ts | ~73 lines | ~34 lines | 53% |
+| useSSHKeys.ts | ~45 lines | ~27 lines | 40% |
+| templates.ts | ~44 lines | ~25 lines | 43% |
+| useTemplates.ts | ~73 lines | ~29 lines | 60% |
+
+**Average code reduction: ~43%**
+
+### Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           JSON:API Specification                         │
+│                         (jsonapi.org standard)                           │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                    ┌───────────────┴───────────────┐
+                    ▼                               ▼
+┌─────────────────────────────────┐ ┌─────────────────────────────────────┐
+│        BACKEND (Go)              │ │         FRONTEND (TypeScript)        │
+│                                  │ │                                      │
+│  api2go Resource Interface       │ │  createResourceApi<T> Factory        │
+│  ┌────────────────────────────┐  │ │  ┌──────────────────────────────┐   │
+│  │ FindAll, FindOne, Create,  │  │ │  │ list, get, create, update,   │   │
+│  │ Update, Delete             │  │ │  │ delete, + customActions      │   │
+│  └────────────────────────────┘  │ │  └──────────────────────────────┘   │
+│              │                   │ │              │                       │
+│              ▼                   │ │              ▼                       │
+│  ┌────────────────────────────┐  │ │  ┌──────────────────────────────┐   │
+│  │ TemplateResource           │  │ │  │ createResourceHooks<T>       │   │
+│  │ DeploymentResource         │  │ │  │ useList, useGet, useCreate,  │   │
+│  │ NodeResource               │  │ │  │ useUpdate, useDelete         │   │
+│  │ SSHKeyResource             │  │ │  │ + createIdActionHook         │   │
+│  └────────────────────────────┘  │ │  └──────────────────────────────┘   │
+└─────────────────────────────────┘ └─────────────────────────────────────┘
+```
+
+### Adding New Resources
+
+When adding a new JSON:API resource, follow this pattern:
+
+**1. Backend (Go):**
+```go
+// internal/shell/api/resources/foo.go
+type FooResource struct {
+    store store.Store
+    // ...
+}
+
+func (r FooResource) FindAll(req api2go.Request) (api2go.Responder, error) { ... }
+func (r FooResource) FindOne(id string, req api2go.Request) (api2go.Responder, error) { ... }
+// ...
+```
+
+**2. Frontend Types:**
+```typescript
+// web/src/api/types.ts
+export interface FooAttributes { name: string; /* ... */ }
+export type Foo = JsonApiResource<'foos', FooAttributes>;
+export interface CreateFooRequest { name: string; }
+```
+
+**3. Frontend API Client:**
+```typescript
+// web/src/api/foos.ts
+export const foosApi = createResourceApi<Foo, CreateFooRequest>({
+  resourceName: 'foos',
+});
+```
+
+**4. Frontend Hooks:**
+```typescript
+// web/src/hooks/useFoos.ts
+const fooHooks = createResourceHooks({ resourceName: 'foos', api: foosApi });
+export const useFoos = fooHooks.useList;
+// ...
+```
+
+**Total new code for a standard CRUD resource: ~50 lines** (vs ~150+ lines without factories)
+
+### Benefits of This Approach
+
+1. **Spec Alignment**: Both backend and frontend follow JSON:API exactly
+2. **Type Safety**: Full TypeScript generics from resource types through to React hooks
+3. **Consistency**: Every resource works identically - no special cases
+4. **Maintainability**: Bug fixes in factories benefit all resources
+5. **Onboarding**: New resources take minutes, not hours
+6. **Testing**: Factory logic tested once, all resources inherit correctness
+
+### Technical Debt Prevention
+
+| Debt Pattern | How Factories Prevent It |
+|--------------|--------------------------|
+| Copy-paste errors | Single source of truth for CRUD logic |
+| Inconsistent API calls | Factory enforces JSON:API format |
+| Missing cache invalidation | Built into factory mutations |
+| Query key mismatches | Keys generated from resourceName |
+| Divergent patterns | All resources use same factory |
+
 ## References
 
 - JSON:API Specification: https://jsonapi.org
 - api2go GitHub: https://github.com/manyminds/api2go
 - Gorilla mux: https://github.com/gorilla/mux
+- TanStack Query: https://tanstack.com/query

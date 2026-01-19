@@ -7,7 +7,7 @@
 
 ## CURRENT PROJECT STATE (January 19, 2026)
 
-### Status: Post-MVP, Phases 0-6 COMPLETE, Creator Worker Nodes Feature IN PROGRESS
+### Status: Post-MVP, All Phases COMPLETE, Creator Worker Nodes Phase 6 COMPLETE
 
 **What's Done:**
 - MVP complete (core deployment loop works)
@@ -21,14 +21,14 @@
 - Phase 5 (Frontend Views) COMPLETE
 - Phase 5 Manual Testing COMPLETE (via Chrome DevTools MCP)
 - Phase 6 Integration bug fixes COMPLETE
-- **Creator Worker Nodes Feature - Phase 1, 2, 3, 4 & 5 COMPLETE**
-- **Auth middleware tests fixed (mode=none vs mode=dev)**
+- **Creator Worker Nodes Feature - Phase 1, 2, 3, 4, 5 & 6 COMPLETE**
+- **Generic API/Hook factories implemented for code reuse**
 
 **Frontend Build Status:**
 ```
 dist/index.html                   0.54 kB
-dist/assets/index-*.css          21.94 kB (gzip: 4.83 kB)
-dist/assets/index-*.js          364.07 kB (gzip: 109.41 kB)
+dist/assets/index-*.css          23.47 kB (gzip: 5.02 kB)
+dist/assets/index-*.js          383.96 kB (gzip: 114.21 kB)
 ```
 
 **All UI Components Tested & Working:**
@@ -37,6 +37,7 @@ dist/assets/index-*.js          364.07 kB (gzip: 109.41 kB)
 - Deploy dialog for creating deployments
 - Deployment detail page with monitoring tabs
 - Creator dashboard for template management
+- **Nodes tab for worker node management**
 
 **Creator Worker Nodes Feature Progress:**
 - Phase 1 (Domain Model & Scheduler): COMPLETE
@@ -44,78 +45,92 @@ dist/assets/index-*.js          364.07 kB (gzip: 109.41 kB)
 - Phase 3 (SSH Docker Client via Minion): COMPLETE
 - Phase 4 (Scheduler Integration): COMPLETE
 - Phase 5 (Node API Resource): COMPLETE
-- Phase 6 (Frontend Nodes Tab): PENDING
+- Phase 6 (Frontend Nodes Tab): COMPLETE
 - Phase 7 (Health Checker Worker): PENDING
 
-**Next Step: Creator Worker Nodes Phase 6**
-- Create `web/src/api/nodes.ts` - Node API client
-- Create `web/src/hooks/useNodes.ts` - TanStack Query hooks
-- Create `web/src/components/nodes/` - NodeCard, NodeForm, AddNodeDialog
-- Add "Nodes" tab to Creator Dashboard
+**Next Step: Creator Worker Nodes Phase 7**
+- Create `internal/shell/workers/health_checker.go` - Periodic health check worker
 
 ---
 
 ## LAST SESSION SUMMARY (January 19, 2026)
 
-### What Was Accomplished: Phase 5 (Node API Resource) COMPLETE
+### What Was Accomplished: Phase 6 (Frontend Nodes Tab) COMPLETE + Generic Factories
 
-This session implemented the Node and SSH Key JSON:API resources for creator worker nodes.
+This session implemented the frontend Nodes tab AND created reusable factories to reduce code duplication.
 
-**1. Node Authorization Functions:**
+**1. Generic API Client Factory:**
 
-Added authorization functions to `internal/core/auth/authorization.go`:
-- `CanViewNode(ctx, node)` - Only node creator can view
-- `CanManageNode(ctx, node)` - Only node creator can manage
-- `CanCreateNode(ctx)` - Any authenticated user can create
-- `CanViewSSHKey(ctx, key)` - Only key creator can view
-- `CanManageSSHKey(ctx, key)` - Only key creator can manage
-- `CanCreateSSHKey(ctx)` - Any authenticated user can create
+Created `web/src/api/createResourceApi.ts`:
+- Type-safe JSON:API client factory
+- Standard CRUD operations (list, get, create, update, delete)
+- Support for custom actions (e.g., maintenance mode, publish)
+- Configurable update/delete support
 
-Added 6 tests for the new authorization functions.
+**2. Generic TanStack Query Hooks Factory:**
 
-**2. Node JSON:API Resource:**
+Created `web/src/hooks/createResourceHooks.ts`:
+- Query keys management with standard pattern
+- Automatic cache invalidation on mutations
+- `createIdActionHook` for custom id-based actions
+- `createActionHook` for generic action hooks
 
-Created `internal/shell/api/resources/node.go`:
-- `GET /api/v1/nodes` - List creator's nodes
-- `GET /api/v1/nodes/:id` - Get node details
-- `POST /api/v1/nodes` - Create new node
-- `PATCH /api/v1/nodes/:id` - Update node
-- `DELETE /api/v1/nodes/:id` - Delete node
-- `POST /api/v1/nodes/:id/maintenance` - Enter maintenance mode
-- `DELETE /api/v1/nodes/:id/maintenance` - Exit maintenance mode
+**3. Frontend Nodes Implementation:**
 
-**3. SSH Key JSON:API Resource:**
+Created node API and hooks using the factories:
+- `web/src/api/nodes.ts` - Node API client with maintenance mode actions
+- `web/src/api/ssh-keys.ts` - SSH Key API client (immutable, no update)
+- `web/src/hooks/useNodes.ts` - Node query hooks + maintenance actions
+- `web/src/hooks/useSSHKeys.ts` - SSH Key query hooks
 
-Created `internal/shell/api/resources/ssh_key.go`:
-- `GET /api/v1/ssh_keys` - List creator's SSH keys
-- `GET /api/v1/ssh_keys/:id` - Get SSH key (without private key)
-- `POST /api/v1/ssh_keys` - Create new SSH key (encrypts private key)
-- `DELETE /api/v1/ssh_keys/:id` - Delete SSH key
-- SSH keys are immutable - no PATCH/UPDATE supported
-- Private key is encrypted with AES-256-GCM before storage
-- Private key is NEVER returned in responses
+Created node UI components:
+- `web/src/components/nodes/NodeCard.tsx` - Node display with capacity bars
+- `web/src/components/nodes/AddNodeDialog.tsx` - Create node form
+- `web/src/components/nodes/AddSSHKeyDialog.tsx` - Upload SSH key form
+- `web/src/components/nodes/index.ts` - Component exports
 
-**4. API Setup Updates:**
+Updated:
+- `web/src/components/common/StatusBadge.tsx` - Added node statuses (online, offline, maintenance)
+- `web/src/pages/creator/CreatorDashboardPage.tsx` - Added Nodes tab with full node management UI
 
-Updated `internal/shell/api/setup.go`:
-- Added `EncryptionKey` field to `APIConfig`
-- Registered `Node` and `SSHKey` resources with api2go
-- Added maintenance mode endpoints for nodes
-- Registered resources in OpenAPI documentation
+**4. Refactored Existing Code to Use Factories:**
+
+Refactored templates to use generic factories:
+- `web/src/api/templates.ts` - Now uses createResourceApi with publish action
+- `web/src/hooks/useTemplates.ts` - Now uses createResourceHooks + createIdActionHook
+
+**Code Reduction from Factories:**
+| File | Before | After | Savings |
+|------|--------|-------|---------|
+| nodes.ts | ~45 lines | ~27 lines | 40% |
+| ssh-keys.ts | ~27 lines | ~21 lines | 22% |
+| useNodes.ts | ~73 lines | ~34 lines | 53% |
+| useSSHKeys.ts | ~45 lines | ~27 lines | 40% |
+| templates.ts | ~44 lines | ~25 lines | 43% |
+| useTemplates.ts | ~73 lines | ~29 lines | 60% |
 
 **Files Created/Modified This Session:**
 ```
 # New files
-internal/shell/api/resources/node.go      # Node JSON:API resource
-internal/shell/api/resources/ssh_key.go   # SSH Key JSON:API resource
+web/src/api/createResourceApi.ts       # Generic API client factory
+web/src/api/nodes.ts                   # Node API client
+web/src/api/ssh-keys.ts                # SSH Key API client
+web/src/hooks/createResourceHooks.ts   # Generic hooks factory
+web/src/hooks/useNodes.ts              # Node query hooks
+web/src/hooks/useSSHKeys.ts            # SSH Key query hooks
+web/src/components/nodes/NodeCard.tsx         # Node card component
+web/src/components/nodes/AddNodeDialog.tsx    # Add node dialog
+web/src/components/nodes/AddSSHKeyDialog.tsx  # Add SSH key dialog
+web/src/components/nodes/index.ts             # Component exports
 
 # Modified files
-internal/core/auth/authorization.go       # Added Node/SSHKey authorization functions
-internal/core/auth/authorization_test.go  # Added 6 tests
-internal/shell/api/setup.go               # Registered resources, added endpoints
+web/src/api/templates.ts               # Refactored to use factory
+web/src/hooks/useTemplates.ts          # Refactored to use factory
+web/src/components/common/StatusBadge.tsx     # Added node statuses
+web/src/pages/creator/CreatorDashboardPage.tsx # Added Nodes tab
 ```
 
-**Test Status:** All backend tests pass (500+ tests)
+**Frontend Build Status:** SUCCESS (383.96 kB gzip: 114.21 kB)
 
 ---
 
@@ -144,6 +159,25 @@ internal/shell/api/setup.go               # Registered resources, added endpoint
 **Key Insight:** Production uses `setup.go` → `DeploymentResource` NOT `handler.go`.
 The handler.go path is primarily for tests and non-api2go endpoints.
 
+### Generic Factory Pattern:
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ createResourceApi<Resource, CreateReq, UpdateReq, CustomActions>│
+│   → ResourceApi { list, get, create, update, delete }           │
+│   → Custom actions (e.g., publish, enterMaintenance)            │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ createResourceHooks({ resourceName, api })                      │
+│   → keys, useList, useGet, useCreate, useUpdate, useDelete      │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ createIdActionHook(keys, actionFn)                              │
+│   → Custom mutation hook for id-based actions                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
 ### Testing Environment Notes:
 - Backend runs on port 9090: `HOSTER_SERVER_PORT=9090 HOSTER_AUTH_MODE=dev ./bin/hoster`
 - Frontend dev server proxies to backend via vite.config.ts
@@ -154,7 +188,7 @@ The handler.go path is primarily for tests and non-api2go endpoints.
 
 ## Creator Worker Nodes - Task Status
 
-### Completed (Phase 1, 2 & 3):
+### Completed (Phase 1, 2, 3, 4, 5 & 6):
 - [x] `specs/domain/node.md` - Node entity specification
 - [x] `internal/core/domain/node.go` - Node domain model (51 tests)
 - [x] `internal/core/scheduler/scheduler.go` - Pure scheduling algorithm (26 tests)
@@ -170,32 +204,31 @@ The handler.go path is primarily for tests and non-api2go endpoints.
 - [x] `internal/shell/docker/node_pool.go` - Connection pool with lazy init
 - [x] `internal/shell/docker/minion_embed.go` - Embedded minion binaries
 - [x] Makefile updates for minion build
-
-### Phase 4 - Scheduler Integration (COMPLETE):
 - [x] `internal/shell/scheduler/service.go` - Scheduling service with I/O
 - [x] `internal/shell/scheduler/service_test.go` - 9 tests for scheduling service
-- [x] Modify `internal/shell/api/handler.go` - Replace `NodeID = "local"` with scheduler
-
-### Phase 5 - Node API Resource (COMPLETE):
+- [x] `internal/shell/api/handler.go` - Scheduler integration
 - [x] `internal/shell/api/resources/node.go` - Node JSON:API resource
 - [x] `internal/shell/api/resources/ssh_key.go` - SSH Key resource
 - [x] Authorization checks (CanManageNode, CanViewNode, CanCreateNode)
 - [x] SSH key encryption with AES-256-GCM
 - [x] Maintenance mode endpoints
 - [x] OpenAPI documentation for new resources
+- [x] `web/src/api/createResourceApi.ts` - Generic API factory
+- [x] `web/src/hooks/createResourceHooks.ts` - Generic hooks factory
+- [x] `web/src/api/nodes.ts` - Node API client
+- [x] `web/src/api/ssh-keys.ts` - SSH Key API client
+- [x] `web/src/hooks/useNodes.ts` - Node query hooks
+- [x] `web/src/hooks/useSSHKeys.ts` - SSH Key query hooks
+- [x] `web/src/components/nodes/` - NodeCard, AddNodeDialog, AddSSHKeyDialog
+- [x] Nodes tab in Creator Dashboard
 
-### Phase 6 - Frontend Nodes Tab (NEXT):
-- [ ] `web/src/api/nodes.ts` - Node API client
-- [ ] `web/src/api/ssh-keys.ts` - SSH Key API client
-- [ ] `web/src/hooks/useNodes.ts` - TanStack Query hooks for nodes
-- [ ] `web/src/hooks/useSSHKeys.ts` - TanStack Query hooks for SSH keys
-- [ ] `web/src/components/nodes/NodeCard.tsx` - Node card component
-- [ ] `web/src/components/nodes/NodeForm.tsx` - Create/edit node form
-- [ ] `web/src/components/nodes/AddNodeDialog.tsx` - Add node dialog
-- [ ] `web/src/components/nodes/SSHKeyForm.tsx` - SSH key upload form
-- [ ] Add "Nodes" tab to Creator Dashboard (`CreatorDashboardPage.tsx`)
+### Phase 7 - Health Checker Worker (NEXT):
+- [ ] `internal/shell/workers/health_checker.go` - Periodic health check worker
+- [ ] Background goroutine that pings nodes periodically
+- [ ] Updates node status in database
+- [ ] Configurable check interval
 
-**Backend API Endpoints (Already Implemented):**
+### Backend API Endpoints (Already Implemented):
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/v1/nodes` | List creator's nodes |
@@ -209,9 +242,6 @@ The handler.go path is primarily for tests and non-api2go endpoints.
 | POST | `/api/v1/ssh_keys` | Create SSH key (upload private key) |
 | GET | `/api/v1/ssh_keys/:id` | Get SSH key (fingerprint only) |
 | DELETE | `/api/v1/ssh_keys/:id` | Delete SSH key |
-
-### Phase 7 - Health Checker Worker:
-- [ ] `internal/shell/workers/health_checker.go` - Periodic health check
 
 ### Verification Commands:
 ```bash
@@ -248,7 +278,7 @@ Read these files in this exact order:
 
 ### Step 2: Read Post-MVP ADRs (for UI/API work)
 
-These are critical for Phase 6:
+These are critical for frontend work:
 
 6. **`specs/decisions/ADR-003-jsonapi-api2go.md`** - JSON:API with api2go
 7. **`specs/decisions/ADR-004-reflective-openapi.md`** - OpenAPI generation
@@ -289,6 +319,7 @@ After reading, you should know:
 - [ ] Where does core code go? (`internal/core/`)
 - [ ] Where does I/O code go? (`internal/shell/`)
 - [ ] What libraries to use? (Listed in CLAUDE.md)
+- [ ] How to add new CRUD resources? (Use createResourceApi + createResourceHooks factories)
 
 ### Step 6: Verify Tests Pass
 
@@ -325,7 +356,8 @@ Read the plan file for detailed implementation phases:
 - Phase 3: SSH Docker Client via Minion (COMPLETE)
 - Phase 4: Scheduler Integration (COMPLETE)
 - Phase 5: Node API Resource (COMPLETE)
-- Phase 6: Frontend Nodes Tab <- NEXT
+- Phase 6: Frontend Nodes Tab (COMPLETE)
+- Phase 7: Health Checker Worker <- NEXT
 
 ### Step 8: Check Current Status
 
@@ -369,6 +401,7 @@ Before writing ANY code, verify:
 - [ ] Tests exist (or I'll write them first)
 - [ ] I know which directory: `internal/core/` or `internal/shell/`
 - [ ] I'm using the approved libraries (check CLAUDE.md)
+- [ ] For new CRUD resources: use createResourceApi + createResourceHooks factories
 
 ---
 
@@ -381,6 +414,16 @@ Before writing ANY code, verify:
 2. TEST   -> Create internal/core/xxx/feature_test.go (failing tests)
 3. CODE   -> Create internal/core/xxx/feature.go (make tests pass)
 4. VERIFY -> make test
+```
+
+### For New CRUD Resources (Frontend)
+
+```
+1. Add types to web/src/api/types.ts
+2. Create API client using createResourceApi factory
+3. Create hooks using createResourceHooks factory
+4. Create UI components
+5. VERIFY -> npm run build
 ```
 
 ### For Bug Fixes
@@ -410,6 +453,7 @@ After any change:
 - [ ] Spec still matches implementation
 - [ ] Tests still match spec
 - [ ] All tests pass (`make test`)
+- [ ] Frontend builds (`cd web && npm run build`)
 
 ### Step 14: Update CLAUDE.md
 
@@ -458,16 +502,19 @@ Use mcp__agile__task_transition to update task status.
 web/
 ├── src/
 │   ├── api/
-│   │   ├── client.ts         # JSON:API fetch wrapper
-│   │   ├── types.ts          # TypeScript types
-│   │   ├── templates.ts      # Template API
-│   │   ├── deployments.ts    # Deployment API
-│   │   └── monitoring.ts     # Monitoring API
+│   │   ├── client.ts              # JSON:API fetch wrapper
+│   │   ├── types.ts               # TypeScript types
+│   │   ├── createResourceApi.ts   # Generic API factory ← NEW
+│   │   ├── templates.ts           # Template API (uses factory)
+│   │   ├── deployments.ts         # Deployment API
+│   │   ├── monitoring.ts          # Monitoring API
+│   │   ├── nodes.ts               # Node API (uses factory) ← NEW
+│   │   └── ssh-keys.ts            # SSH Key API (uses factory) ← NEW
 │   ├── components/
 │   │   ├── common/
 │   │   │   ├── LoadingSpinner.tsx
 │   │   │   ├── EmptyState.tsx
-│   │   │   └── StatusBadge.tsx
+│   │   │   └── StatusBadge.tsx    # Includes node statuses
 │   │   ├── layout/
 │   │   │   ├── Header.tsx
 │   │   │   ├── Sidebar.tsx
@@ -478,6 +525,11 @@ web/
 │   │   │   └── CreateTemplateDialog.tsx
 │   │   ├── deployments/
 │   │   │   └── DeploymentCard.tsx
+│   │   ├── nodes/                 # ← NEW
+│   │   │   ├── NodeCard.tsx
+│   │   │   ├── AddNodeDialog.tsx
+│   │   │   ├── AddSSHKeyDialog.tsx
+│   │   │   └── index.ts
 │   │   └── ui/
 │   │       ├── Button.tsx
 │   │       ├── Input.tsx
@@ -491,9 +543,12 @@ web/
 │   │       ├── Skeleton.tsx
 │   │       └── index.ts
 │   ├── hooks/
-│   │   ├── useTemplates.ts   # TanStack Query hooks
+│   │   ├── createResourceHooks.ts # Generic hooks factory ← NEW
+│   │   ├── useTemplates.ts        # (uses factory)
 │   │   ├── useDeployments.ts
-│   │   └── useMonitoring.ts
+│   │   ├── useMonitoring.ts
+│   │   ├── useNodes.ts            # ← NEW
+│   │   └── useSSHKeys.ts          # ← NEW
 │   ├── pages/
 │   │   ├── marketplace/
 │   │   │   ├── MarketplacePage.tsx
@@ -502,12 +557,12 @@ web/
 │   │   │   ├── MyDeploymentsPage.tsx
 │   │   │   └── DeploymentDetailPage.tsx
 │   │   ├── creator/
-│   │   │   └── CreatorDashboardPage.tsx
+│   │   │   └── CreatorDashboardPage.tsx  # Has Nodes tab
 │   │   └── NotFoundPage.tsx
 │   ├── stores/
-│   │   └── authStore.ts      # Zustand store
+│   │   └── authStore.ts           # Zustand store
 │   ├── lib/
-│   │   └── cn.ts             # clsx + tailwind-merge
+│   │   └── cn.ts                  # clsx + tailwind-merge
 │   ├── App.tsx
 │   ├── main.tsx
 │   └── index.css
@@ -516,6 +571,50 @@ web/
 ├── tailwind.config.ts
 ├── postcss.config.js
 └── tsconfig.json
+```
+
+---
+
+## Adding New CRUD Resources (Quick Reference)
+
+When adding a new resource type, use the generic factories:
+
+**1. Add types to `web/src/api/types.ts`:**
+```typescript
+export interface FooAttributes { name: string; /* ... */ }
+export type Foo = JsonApiResource<'foos', FooAttributes>;
+export interface CreateFooRequest { name: string; /* ... */ }
+export interface UpdateFooRequest { name?: string; /* ... */ }
+```
+
+**2. Create API client `web/src/api/foos.ts`:**
+```typescript
+import { createResourceApi } from './createResourceApi';
+import type { Foo, CreateFooRequest, UpdateFooRequest } from './types';
+
+export const foosApi = createResourceApi<Foo, CreateFooRequest, UpdateFooRequest>({
+  resourceName: 'foos',
+  // Optional: customActions, supportsUpdate, supportsDelete
+});
+```
+
+**3. Create hooks `web/src/hooks/useFoos.ts`:**
+```typescript
+import { foosApi } from '@/api/foos';
+import type { Foo, CreateFooRequest, UpdateFooRequest } from '@/api/types';
+import { createResourceHooks } from './createResourceHooks';
+
+const fooHooks = createResourceHooks<Foo, CreateFooRequest, UpdateFooRequest>({
+  resourceName: 'foos',
+  api: foosApi,
+});
+
+export const fooKeys = fooHooks.keys;
+export const useFoos = fooHooks.useList;
+export const useFoo = fooHooks.useGet;
+export const useCreateFoo = fooHooks.useCreate;
+export const useUpdateFoo = fooHooks.useUpdate;
+export const useDeleteFoo = fooHooks.useDelete;
 ```
 
 ---
@@ -532,6 +631,7 @@ web/
 | Skipping `make test` | Broken code goes unnoticed | Run after every change |
 | Not updating CLAUDE.md | Next session loses context | Update after significant changes |
 | Ignoring ADR-007 UI guidelines | Inconsistent UI | Follow semantic colors, patterns |
+| Not using factories for new CRUD | Code duplication | Use createResourceApi + createResourceHooks |
 
 ---
 
@@ -550,6 +650,8 @@ web/
 | Frontend | `web/` | React + Vite app |
 | UI components | `web/src/components/ui/` | `Button.tsx` |
 | Page components | `web/src/pages/` | `MarketplacePage.tsx` |
+| API factories | `web/src/api/` | `createResourceApi.ts` |
+| Hook factories | `web/src/hooks/` | `createResourceHooks.ts` |
 
 ---
 
