@@ -89,6 +89,55 @@ func (m *mockStore) ListSSHKeysByCreator(ctx context.Context, creatorID string, 
 }
 func (m *mockStore) WithTx(ctx context.Context, fn func(store.Store) error) error { return fn(m) }
 func (m *mockStore) Close() error                                                 { return nil }
+func (m *mockStore) CountRoutableDeployments(ctx context.Context) (int, error) {
+	count := 0
+	for _, d := range m.deployments {
+		if d.Status == domain.StatusRunning && d.ProxyPort > 0 {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func TestServer_ServeHTTP_Health(t *testing.T) {
+	ms := &mockStore{
+		deployments: map[string]*domain.Deployment{
+			"app1.apps.test.io": {
+				ID:        "depl_1",
+				Status:    domain.StatusRunning,
+				ProxyPort: 30001,
+			},
+			"app2.apps.test.io": {
+				ID:        "depl_2",
+				Status:    domain.StatusRunning,
+				ProxyPort: 30002,
+			},
+			"app3.apps.test.io": {
+				ID:        "depl_3",
+				Status:    domain.StatusStopped,
+				ProxyPort: 30003,
+			},
+		},
+	}
+
+	cfg := Config{
+		BaseDomain: "apps.test.io",
+	}
+
+	server, err := NewServer(cfg, ms, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "http://anything.apps.test.io/health", nil)
+	rec := httptest.NewRecorder()
+
+	server.ServeHTTP(rec, req)
+
+	assert.Equal(t, 200, rec.Code)
+	assert.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+	assert.Contains(t, rec.Body.String(), `"status":"ok"`)
+	assert.Contains(t, rec.Body.String(), `"deployments_routable":2`)
+	assert.Contains(t, rec.Body.String(), `"base_domain":"apps.test.io"`)
+}
 
 func TestServer_ServeHTTP_NotFound(t *testing.T) {
 	ms := &mockStore{

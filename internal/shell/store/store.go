@@ -33,6 +33,7 @@ type Store interface {
 	// Proxy-related deployment operations
 	GetDeploymentByDomain(ctx context.Context, hostname string) (*domain.Deployment, error)
 	GetUsedProxyPorts(ctx context.Context, nodeID string) ([]int, error)
+	CountRoutableDeployments(ctx context.Context) (int, error)
 
 	// Usage event operations (F009: Billing Integration)
 	CreateUsageEvent(ctx context.Context, event *domain.MeterEvent) error

@@ -5,6 +5,7 @@ package proxy
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"errors"
 	"html/template"
 	"log/slog"
@@ -98,6 +99,12 @@ func (s *Server) Start() *http.Server {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	hostname := r.Host
+
+	// Health endpoint - responds regardless of hostname
+	if r.URL.Path == "/health" && r.Method == http.MethodGet {
+		s.serveHealth(w, r)
+		return
+	}
 
 	s.logger.Debug("proxy request",
 		"hostname", hostname,
@@ -247,4 +254,34 @@ func getRealIP(r *http.Request) string {
 
 	// Fall back to remote address
 	return r.RemoteAddr
+}
+
+// HealthResponse is the JSON response for the health endpoint.
+type HealthResponse struct {
+	Status               string `json:"status"`
+	DeploymentsRoutable  int    `json:"deployments_routable"`
+	BaseDomain           string `json:"base_domain"`
+}
+
+// serveHealth handles the /health endpoint for APIGate health checks.
+func (s *Server) serveHealth(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Count routable deployments (running with proxy port assigned)
+	count, err := s.store.CountRoutableDeployments(ctx)
+	if err != nil {
+		s.logger.Error("failed to count routable deployments", "error", err)
+		// Still return healthy but with 0 count
+		count = 0
+	}
+
+	resp := HealthResponse{
+		Status:              "ok",
+		DeploymentsRoutable: count,
+		BaseDomain:          s.config.BaseDomain,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(resp)
 }

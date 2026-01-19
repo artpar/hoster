@@ -99,9 +99,11 @@ func (h *Handler) Routes() http.Handler {
 	r.Use(h.jsonContentType)
 	r.Use(h.requestIDHeader)
 
-	// Health endpoints
-	r.Get("/health", h.handleHealth)
-	r.Get("/ready", h.handleReady)
+	// Health endpoints (Kubernetes-style)
+	r.Get("/health", h.handleHealth)           // Basic health check
+	r.Get("/health/live", h.handleHealth)      // Liveness probe (same as /health)
+	r.Get("/health/ready", h.handleReady)      // Readiness probe (checks dependencies)
+	r.Get("/ready", h.handleReady)             // Legacy endpoint for backward compatibility
 
 	// API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {

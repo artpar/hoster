@@ -25,6 +25,7 @@ type Config struct {
 	Billing  BillingConfig  `mapstructure:"billing"`
 	Nodes    NodesConfig    `mapstructure:"nodes"`
 	Proxy    ProxyConfig    `mapstructure:"proxy"`
+	APIGate  APIGateConfig  `mapstructure:"apigate"`
 }
 
 // ServerConfig holds HTTP server configuration.
@@ -153,6 +154,22 @@ func (c ProxyConfig) Address() string {
 	return fmt.Sprintf("%s:%d", c.Host, c.Port)
 }
 
+// APIGateConfig holds APIGate integration configuration.
+// APIGate is central to running Hoster - it handles routing, auth, and billing.
+type APIGateConfig struct {
+	// URL is the base URL of the APIGate instance.
+	// Used for both admin API and billing API.
+	URL string `mapstructure:"url"`
+
+	// AdminKey is the admin API key for route registration.
+	// Used to automatically register app proxy routes on startup.
+	AdminKey string `mapstructure:"admin_key"`
+
+	// AutoRegister determines if routes should be auto-registered on startup.
+	// When true, Hoster will register its app proxy route with APIGate.
+	AutoRegister bool `mapstructure:"auto_register"`
+}
+
 // =============================================================================
 // Config Loading
 // =============================================================================
@@ -199,6 +216,11 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("proxy.read_timeout", "30s")
 	v.SetDefault("proxy.write_timeout", "60s")
 	v.SetDefault("proxy.idle_timeout", "120s")
+
+	// APIGate defaults (central to Hoster deployment)
+	v.SetDefault("apigate.url", "http://localhost:8082")    // Default APIGate URL
+	v.SetDefault("apigate.admin_key", "")                   // Must be set via environment
+	v.SetDefault("apigate.auto_register", true)             // Auto-register routes on startup
 
 	// Load from file if provided
 	if configPath != "" {

@@ -284,6 +284,19 @@ func (s *stubStore) ListSSHKeysByCreator(ctx context.Context, creatorID string, 
 	return nil, nil // Stub - empty for tests
 }
 
+func (s *stubStore) CountRoutableDeployments(ctx context.Context) (int, error) {
+	if s.err != nil {
+		return 0, s.err
+	}
+	count := 0
+	for _, d := range s.deployments {
+		if d.Status == domain.StatusRunning && d.ProxyPort > 0 {
+			count++
+		}
+	}
+	return count, nil
+}
+
 // stubDocker implements docker.Client for testing.
 type stubDocker struct {
 	pingErr    error
@@ -514,6 +527,36 @@ func TestReady_DockerFailed(t *testing.T) {
 	assert.Equal(t, "not_ready", resp.Status)
 	assert.Equal(t, "ok", resp.Checks["database"])
 	assert.Equal(t, "failed", resp.Checks["docker"])
+}
+
+func TestHealthLive_Success(t *testing.T) {
+	h, _, _ := newTestHandler()
+
+	req := httptest.NewRequest(http.MethodGet, "/health/live", nil)
+	w := httptest.NewRecorder()
+
+	h.Routes().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	resp := parseResponse[HealthResponse](t, w.Body)
+	assert.Equal(t, "healthy", resp.Status)
+}
+
+func TestHealthReady_Success(t *testing.T) {
+	h, _, _ := newTestHandler()
+
+	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	w := httptest.NewRecorder()
+
+	h.Routes().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	resp := parseResponse[ReadyResponse](t, w.Body)
+	assert.Equal(t, "ready", resp.Status)
+	assert.Equal(t, "ok", resp.Checks["database"])
+	assert.Equal(t, "ok", resp.Checks["docker"])
 }
 
 // =============================================================================

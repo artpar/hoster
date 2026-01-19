@@ -296,6 +296,10 @@ func (s *txSQLiteStore) GetUsedProxyPorts(ctx context.Context, nodeID string) ([
 	return getUsedProxyPorts(ctx, s.tx, nodeID)
 }
 
+func (s *txSQLiteStore) CountRoutableDeployments(ctx context.Context) (int, error) {
+	return countRoutableDeployments(ctx, s.tx)
+}
+
 func (s *txSQLiteStore) WithTx(ctx context.Context, fn func(Store) error) error {
 	// Already in a transaction, just run the function
 	return fn(s)
@@ -887,6 +891,26 @@ func getUsedProxyPorts(ctx context.Context, exec executor, nodeID string) ([]int
 	}
 
 	return ports, nil
+}
+
+// CountRoutableDeployments returns the count of deployments that can be routed to.
+// A routable deployment is one that is running and has a proxy port assigned.
+func (s *SQLiteStore) CountRoutableDeployments(ctx context.Context) (int, error) {
+	return countRoutableDeployments(ctx, s.db)
+}
+
+func countRoutableDeployments(ctx context.Context, exec executor) (int, error) {
+	query := `
+		SELECT COUNT(*) FROM deployments
+		WHERE status = 'running' AND proxy_port IS NOT NULL
+	`
+
+	var count int
+	if err := exec.GetContext(ctx, &count, query); err != nil {
+		return 0, NewStoreError("CountRoutableDeployments", "deployment", "", err.Error(), err)
+	}
+
+	return count, nil
 }
 
 // =============================================================================
