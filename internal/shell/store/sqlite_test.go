@@ -1683,6 +1683,34 @@ func TestListOnlineNodes_Success(t *testing.T) {
 	}
 }
 
+func TestListCheckableNodes_Success(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	// Create nodes with different statuses
+	node1 := createTestNode(t, store, "creator-a")
+	node1.Status = domain.NodeStatusOnline
+	store.UpdateNode(ctx, node1)
+
+	node2 := createTestNode(t, store, "creator-b")
+	node2.Status = domain.NodeStatusOffline
+	store.UpdateNode(ctx, node2)
+
+	node3 := createTestNode(t, store, "creator-c")
+	node3.Status = domain.NodeStatusMaintenance
+	store.UpdateNode(ctx, node3)
+
+	// List checkable nodes (should exclude maintenance)
+	nodes, err := store.ListCheckableNodes(ctx)
+	require.NoError(t, err)
+	assert.Len(t, nodes, 2)
+
+	// Verify maintenance node is excluded
+	for _, n := range nodes {
+		assert.NotEqual(t, domain.NodeStatusMaintenance, n.Status)
+	}
+}
+
 // =============================================================================
 // SSH Key Tests
 // =============================================================================

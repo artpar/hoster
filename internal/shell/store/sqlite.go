@@ -333,6 +333,10 @@ func (s *txSQLiteStore) ListOnlineNodes(ctx context.Context) ([]domain.Node, err
 	return listOnlineNodes(ctx, s.tx)
 }
 
+func (s *txSQLiteStore) ListCheckableNodes(ctx context.Context) ([]domain.Node, error) {
+	return listCheckableNodes(ctx, s.tx)
+}
+
 func (s *txSQLiteStore) CreateSSHKey(ctx context.Context, key *domain.SSHKey) error {
 	return createSSHKey(ctx, s.tx, key)
 }
@@ -1497,6 +1501,39 @@ func listOnlineNodes(ctx context.Context, exec executor) ([]domain.Node, error) 
 	var rows []nodeRow
 	if err := exec.SelectContext(ctx, &rows, query); err != nil {
 		return nil, NewStoreError("ListOnlineNodes", "node", "", err.Error(), err)
+	}
+
+	nodes := make([]domain.Node, 0, len(rows))
+	for _, row := range rows {
+		node, err := rowToNode(&row)
+		if err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, *node)
+	}
+
+	return nodes, nil
+}
+
+// ListCheckableNodes lists all nodes that should be health-checked (not in maintenance mode).
+func (s *SQLiteStore) ListCheckableNodes(ctx context.Context) ([]domain.Node, error) {
+	return listCheckableNodes(ctx, s.db)
+}
+
+func listCheckableNodes(ctx context.Context, exec executor) ([]domain.Node, error) {
+	query := `
+		SELECT id, name, creator_id, ssh_host, ssh_port, ssh_user, ssh_key_id,
+			docker_socket, status, capabilities,
+			capacity_cpu_cores, capacity_memory_mb, capacity_disk_mb,
+			capacity_cpu_used, capacity_memory_used_mb, capacity_disk_used_mb,
+			location, last_health_check, error_message, created_at, updated_at
+		FROM nodes
+		WHERE status != 'maintenance'
+		ORDER BY created_at ASC`
+
+	var rows []nodeRow
+	if err := exec.SelectContext(ctx, &rows, query); err != nil {
+		return nil, NewStoreError("ListCheckableNodes", "node", "", err.Error(), err)
 	}
 
 	nodes := make([]domain.Node, 0, len(rows))

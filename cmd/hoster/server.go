@@ -14,6 +14,7 @@ import (
 	"github.com/artpar/hoster/internal/shell/docker"
 	"github.com/artpar/hoster/internal/shell/scheduler"
 	"github.com/artpar/hoster/internal/shell/store"
+	"github.com/artpar/hoster/internal/shell/workers"
 )
 
 // =============================================================================
@@ -38,7 +39,9 @@ type Server struct {
 	httpServer      *http.Server
 	store           store.Store
 	docker          docker.Client
+	nodePool        *docker.NodePool
 	billingReporter *billing.Reporter
+	healthChecker   *workers.HealthChecker
 	logger          *slog.Logger
 }
 
@@ -76,9 +79,38 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		}
 	}
 
+	// Create NodePool and health checker if remote nodes are enabled
+	var nodePool *docker.NodePool
+	var healthChecker *workers.HealthChecker
+	var encryptionKey []byte
+
+	if cfg.Nodes.Enabled && cfg.Nodes.EncryptionKey != "" {
+		encryptionKey = []byte(cfg.Nodes.EncryptionKey)
+		if len(encryptionKey) != 32 {
+			s.Close()
+			d.Close()
+			return nil, &ServerError{
+				Op:       "NewServer",
+				Err:      errors.New("nodes.encryption_key must be exactly 32 bytes for AES-256-GCM"),
+				ExitCode: ExitConfigError,
+			}
+		}
+
+		nodePool = docker.NewNodePool(s, encryptionKey, docker.DefaultNodePoolConfig())
+
+		healthChecker = workers.NewHealthChecker(s, nodePool, encryptionKey, workers.HealthCheckerConfig{
+			Interval:      cfg.Nodes.HealthCheckInterval,
+			NodeTimeout:   cfg.Nodes.HealthCheckTimeout,
+			MaxConcurrent: cfg.Nodes.HealthCheckMaxConcurrent,
+		}, logger)
+
+		logger.Info("remote nodes enabled",
+			"health_check_interval", cfg.Nodes.HealthCheckInterval,
+		)
+	}
+
 	// Create scheduler service for node selection
-	// TODO: Create NodePool with encryption key when remote nodes are enabled
-	sched := scheduler.NewService(s, nil, d, logger) // nil NodePool = local only
+	sched := scheduler.NewService(s, nodePool, d, logger)
 
 	// Create HTTP handler using new JSON:API setup (ADR-003)
 	handler := api.SetupAPI(api.APIConfig{
@@ -133,7 +165,9 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		httpServer:      httpServer,
 		store:           s,
 		docker:          d,
+		nodePool:        nodePool,
 		billingReporter: billingReporter,
+		healthChecker:   healthChecker,
 		logger:          logger,
 	}, nil
 }
@@ -147,6 +181,11 @@ func (s *Server) Start(ctx context.Context) error {
 	// Start billing reporter in background (F009: Billing Integration)
 	if s.billingReporter != nil {
 		go s.billingReporter.Start(ctx)
+	}
+
+	// Start health checker in background (Creator Worker Nodes Phase 7)
+	if s.healthChecker != nil {
+		s.healthChecker.Start()
 	}
 
 	// Start HTTP server in goroutine
@@ -192,6 +231,18 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// Stop billing reporter (F009: Billing Integration)
 	if s.billingReporter != nil {
 		s.billingReporter.Stop()
+	}
+
+	// Stop health checker (Creator Worker Nodes Phase 7)
+	if s.healthChecker != nil {
+		s.healthChecker.Stop()
+	}
+
+	// Close node pool connections
+	if s.nodePool != nil {
+		if err := s.nodePool.CloseAll(); err != nil {
+			s.logger.Error("node pool close error", "error", err)
+		}
 	}
 
 	// Close Docker client

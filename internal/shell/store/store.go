@@ -46,6 +46,7 @@ type Store interface {
 	DeleteNode(ctx context.Context, id string) error
 	ListNodesByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.Node, error)
 	ListOnlineNodes(ctx context.Context) ([]domain.Node, error)
+	ListCheckableNodes(ctx context.Context) ([]domain.Node, error) // Returns nodes not in maintenance mode
 
 	// SSH Key operations
 	CreateSSHKey(ctx context.Context, key *domain.SSHKey) error

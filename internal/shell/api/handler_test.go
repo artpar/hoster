@@ -236,6 +236,10 @@ func (s *stubStore) ListOnlineNodes(ctx context.Context) ([]domain.Node, error) 
 	return nil, nil // Stub - empty for tests
 }
 
+func (s *stubStore) ListCheckableNodes(ctx context.Context) ([]domain.Node, error) {
+	return nil, nil // Stub - empty for tests
+}
+
 // SSH Key operations
 func (s *stubStore) CreateSSHKey(ctx context.Context, key *domain.SSHKey) error {
 	return nil // Stub - no-op for tests

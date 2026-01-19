@@ -23,6 +23,7 @@ type Config struct {
 	Domain   DomainConfig   `mapstructure:"domain"`
 	Auth     AuthConfig     `mapstructure:"auth"`
 	Billing  BillingConfig  `mapstructure:"billing"`
+	Nodes    NodesConfig    `mapstructure:"nodes"`
 }
 
 // ServerConfig holds HTTP server configuration.
@@ -98,6 +99,28 @@ type BillingConfig struct {
 	BatchSize int `mapstructure:"batch_size"`
 }
 
+// NodesConfig holds worker nodes configuration.
+// Following Creator Worker Nodes Phase 7: Health Checker
+type NodesConfig struct {
+	// Enabled determines if remote worker nodes are enabled.
+	// When false, only local Docker is used.
+	Enabled bool `mapstructure:"enabled"`
+
+	// EncryptionKey is the 32-byte key for encrypting SSH private keys.
+	// Must be exactly 32 bytes for AES-256-GCM.
+	// Set via HOSTER_NODES_ENCRYPTION_KEY environment variable.
+	EncryptionKey string `mapstructure:"encryption_key"`
+
+	// HealthCheckInterval is how often to check node health.
+	HealthCheckInterval time.Duration `mapstructure:"health_check_interval"`
+
+	// HealthCheckTimeout is the timeout for checking a single node.
+	HealthCheckTimeout time.Duration `mapstructure:"health_check_timeout"`
+
+	// HealthCheckMaxConcurrent is the max number of concurrent health checks.
+	HealthCheckMaxConcurrent int `mapstructure:"health_check_max_concurrent"`
+}
+
 // =============================================================================
 // Config Loading
 // =============================================================================
@@ -128,6 +151,13 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("billing.api_key", "")
 	v.SetDefault("billing.report_interval", "60s")
 	v.SetDefault("billing.batch_size", 100)
+
+	// Node defaults (Creator Worker Nodes)
+	v.SetDefault("nodes.enabled", false)                    // Disabled by default (local Docker only)
+	v.SetDefault("nodes.encryption_key", "")                // Must be set via environment
+	v.SetDefault("nodes.health_check_interval", "60s")      // Check nodes every minute
+	v.SetDefault("nodes.health_check_timeout", "10s")       // 10 second timeout per node
+	v.SetDefault("nodes.health_check_max_concurrent", 5)    // Max 5 concurrent checks
 
 	// Load from file if provided
 	if configPath != "" {

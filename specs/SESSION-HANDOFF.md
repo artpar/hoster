@@ -7,7 +7,7 @@
 
 ## CURRENT PROJECT STATE (January 19, 2026)
 
-### Status: Post-MVP, All Phases COMPLETE, Creator Worker Nodes Phase 6 COMPLETE
+### Status: Post-MVP, All Phases COMPLETE, Creator Worker Nodes ALL PHASES COMPLETE
 
 **What's Done:**
 - MVP complete (core deployment loop works)
@@ -21,7 +21,7 @@
 - Phase 5 (Frontend Views) COMPLETE
 - Phase 5 Manual Testing COMPLETE (via Chrome DevTools MCP)
 - Phase 6 Integration bug fixes COMPLETE
-- **Creator Worker Nodes Feature - Phase 1, 2, 3, 4, 5 & 6 COMPLETE**
+- **Creator Worker Nodes Feature - ALL 7 PHASES COMPLETE**
 - **Generic API/Hook factories implemented for code reuse**
 
 **Frontend Build Status:**
@@ -46,14 +46,100 @@ dist/assets/index-*.js          383.96 kB (gzip: 114.21 kB)
 - Phase 4 (Scheduler Integration): COMPLETE
 - Phase 5 (Node API Resource): COMPLETE
 - Phase 6 (Frontend Nodes Tab): COMPLETE
-- Phase 7 (Health Checker Worker): PENDING
+- Phase 7 (Health Checker Worker): COMPLETE
 
-**Next Step: Creator Worker Nodes Phase 7**
-- Create `internal/shell/workers/health_checker.go` - Periodic health check worker
+**Creator Worker Nodes Feature: FULLY COMPLETE**
+
+All phases of the Creator Worker Nodes feature are now implemented. The feature includes:
+- Node and SSH Key domain models with full validation
+- Database layer with encrypted SSH key storage (AES-256-GCM)
+- SSH-based Docker client via the minion protocol
+- Intelligent scheduler for node selection based on capabilities and capacity
+- JSON:API resources for nodes and SSH keys
+- Frontend UI for node management in Creator Dashboard
+- Background health checker worker for periodic node monitoring
 
 ---
 
 ## LAST SESSION SUMMARY (January 19, 2026)
+
+### What Was Accomplished: Phase 7 (Health Checker Worker) COMPLETE
+
+This session implemented the Health Checker Worker, completing all 7 phases of the Creator Worker Nodes feature.
+
+**1. Store Interface Extension:**
+
+Added `ListCheckableNodes(ctx context.Context) ([]domain.Node, error)` to Store interface:
+- Returns all nodes NOT in maintenance mode (online and offline)
+- Used by health checker to determine which nodes to check
+- Implemented in SQLite store with proper filtering
+
+**2. Health Checker Worker:**
+
+Created `internal/shell/workers/health_checker.go`:
+- Configurable health check interval (default: 60 seconds)
+- Configurable timeout per node (default: 10 seconds)
+- Concurrent node checking with configurable max concurrency (default: 5)
+- Connects to nodes via SSH and pings Docker daemon
+- Updates node status (online/offline) and last_health_check timestamp
+- Records error messages for offline nodes
+- On-demand checking via CheckNodeNow() and CheckAllNow()
+- Graceful start/stop lifecycle management
+
+**3. Configuration:**
+
+Added `NodesConfig` to application configuration:
+- `enabled` - Enable/disable remote nodes (default: false)
+- `encryption_key` - 32-byte key for AES-256-GCM SSH key encryption
+- `health_check_interval` - Check interval (default: 60s)
+- `health_check_timeout` - Per-node timeout (default: 10s)
+- `health_check_max_concurrent` - Max concurrent checks (default: 5)
+
+Environment variables:
+- `HOSTER_NODES_ENABLED=true`
+- `HOSTER_NODES_ENCRYPTION_KEY=<32-byte-key>`
+- `HOSTER_NODES_HEALTH_CHECK_INTERVAL=60s`
+
+**4. Server Integration:**
+
+Updated `cmd/hoster/server.go`:
+- Creates NodePool when nodes are enabled
+- Starts health checker on server start
+- Stops health checker and closes NodePool on shutdown
+- Validates encryption key is exactly 32 bytes
+
+**5. Tests:**
+
+Created `internal/shell/workers/health_checker_test.go`:
+- Configuration tests
+- Lifecycle (start/stop) tests
+- Run cycle tests
+- Concurrency limit tests
+- Node not found handling
+- Maintenance mode skipping
+
+Added SQLite store test for ListCheckableNodes.
+
+**Files Created/Modified This Session:**
+```
+# New files
+internal/shell/workers/health_checker.go       # Health checker worker
+internal/shell/workers/health_checker_test.go  # Health checker tests
+
+# Modified files
+internal/shell/store/store.go        # Added ListCheckableNodes interface
+internal/shell/store/sqlite.go       # Implemented ListCheckableNodes
+internal/shell/store/sqlite_test.go  # Added ListCheckableNodes test
+internal/shell/api/handler_test.go   # Added stub for ListCheckableNodes
+cmd/hoster/config.go                 # Added NodesConfig
+cmd/hoster/server.go                 # Integrated health checker
+```
+
+**All Tests Pass:** 500+ tests across all packages
+
+---
+
+## PREVIOUS SESSION SUMMARY (January 19, 2026)
 
 ### What Was Accomplished: Phase 6 (Frontend Nodes Tab) COMPLETE + Generic Factories
 
@@ -186,9 +272,9 @@ The handler.go path is primarily for tests and non-api2go endpoints.
 
 ---
 
-## Creator Worker Nodes - Task Status
+## Creator Worker Nodes - Task Status (ALL PHASES COMPLETE)
 
-### Completed (Phase 1, 2, 3, 4, 5 & 6):
+### Completed (All 7 Phases):
 - [x] `specs/domain/node.md` - Node entity specification
 - [x] `internal/core/domain/node.go` - Node domain model (51 tests)
 - [x] `internal/core/scheduler/scheduler.go` - Pure scheduling algorithm (26 tests)
@@ -222,11 +308,16 @@ The handler.go path is primarily for tests and non-api2go endpoints.
 - [x] `web/src/components/nodes/` - NodeCard, AddNodeDialog, AddSSHKeyDialog
 - [x] Nodes tab in Creator Dashboard
 
-### Phase 7 - Health Checker Worker (NEXT):
-- [ ] `internal/shell/workers/health_checker.go` - Periodic health check worker
-- [ ] Background goroutine that pings nodes periodically
-- [ ] Updates node status in database
-- [ ] Configurable check interval
+### Phase 7 - Health Checker Worker (COMPLETE):
+- [x] `internal/shell/workers/health_checker.go` - Periodic health check worker (11 tests)
+- [x] `internal/shell/store/store.go` - Added ListCheckableNodes interface method
+- [x] `internal/shell/store/sqlite.go` - Implemented ListCheckableNodes
+- [x] `cmd/hoster/config.go` - Added NodesConfig
+- [x] `cmd/hoster/server.go` - Integrated health checker with server lifecycle
+- [x] Background goroutine that pings nodes periodically
+- [x] Updates node status (online/offline) and last_health_check timestamp
+- [x] Records error messages for offline nodes
+- [x] Configurable check interval (default: 60s), timeout, and concurrency
 
 ### Backend API Endpoints (Already Implemented):
 | Method | Endpoint | Description |
@@ -249,6 +340,12 @@ The handler.go path is primarily for tests and non-api2go endpoints.
 make test      # All backend tests pass
 make build     # Build with embedded minion binaries
 HOSTER_SERVER_PORT=9090 HOSTER_AUTH_MODE=dev make run   # Start backend on :9090
+
+# Backend with remote nodes enabled
+HOSTER_SERVER_PORT=9090 HOSTER_AUTH_MODE=dev \
+HOSTER_NODES_ENABLED=true \
+HOSTER_NODES_ENCRYPTION_KEY=<32-byte-secret-key-here> \
+make run
 
 # Frontend
 cd web
