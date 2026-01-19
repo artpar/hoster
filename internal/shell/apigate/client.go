@@ -123,7 +123,7 @@ func (c *Client) CreateUpstream(ctx context.Context, upstream Upstream) (*Upstre
 		return nil, fmt.Errorf("marshal upstream: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/upstreams", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/admin/upstreams", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -151,7 +151,7 @@ func (c *Client) CreateUpstream(ctx context.Context, upstream Upstream) (*Upstre
 
 // GetUpstreamByName finds an upstream by name.
 func (c *Client) GetUpstreamByName(ctx context.Context, name string) (*Upstream, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/upstreams", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/admin/upstreams", nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -190,7 +190,7 @@ func (c *Client) UpdateUpstream(ctx context.Context, id string, upstream Upstrea
 		return nil, fmt.Errorf("marshal upstream: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.baseURL+"/api/upstreams/"+id, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.baseURL+"/admin/upstreams/"+id, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -227,7 +227,7 @@ func (c *Client) CreateRoute(ctx context.Context, route Route) (*Route, error) {
 		return nil, fmt.Errorf("marshal route: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/routes", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/admin/routes", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -255,7 +255,7 @@ func (c *Client) CreateRoute(ctx context.Context, route Route) (*Route, error) {
 
 // GetRouteByName finds a route by name.
 func (c *Client) GetRouteByName(ctx context.Context, name string) (*Route, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/routes", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/admin/routes", nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -294,7 +294,7 @@ func (c *Client) UpdateRoute(ctx context.Context, id string, route Route) (*Rout
 		return nil, fmt.Errorf("marshal route: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.baseURL+"/api/routes/"+id, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.baseURL+"/admin/routes/"+id, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}

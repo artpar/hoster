@@ -42,11 +42,11 @@ func TestRegistrar_RegisterAppProxy(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/upstreams":
+		case r.Method == http.MethodGet && r.URL.Path == "/admin/upstreams":
 			// No existing upstream
 			json.NewEncoder(w).Encode(UpstreamsResponse{Data: nil})
 
-		case r.Method == http.MethodPost && r.URL.Path == "/api/upstreams":
+		case r.Method == http.MethodPost && r.URL.Path == "/admin/upstreams":
 			upstreamCreated = true
 			var upstream Upstream
 			json.NewDecoder(r.Body).Decode(&upstream)
@@ -67,11 +67,11 @@ func TestRegistrar_RegisterAppProxy(t *testing.T) {
 				},
 			})
 
-		case r.Method == http.MethodGet && r.URL.Path == "/api/routes":
+		case r.Method == http.MethodGet && r.URL.Path == "/admin/routes":
 			// No existing route
 			json.NewEncoder(w).Encode(RoutesResponse{Data: nil})
 
-		case r.Method == http.MethodPost && r.URL.Path == "/api/routes":
+		case r.Method == http.MethodPost && r.URL.Path == "/admin/routes":
 			routeCreated = true
 			var route Route
 			json.NewDecoder(r.Body).Decode(&route)
@@ -147,10 +147,10 @@ func TestRegistrar_RegisterHosterAPI(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/upstreams":
+		case r.Method == http.MethodGet && r.URL.Path == "/admin/upstreams":
 			json.NewEncoder(w).Encode(UpstreamsResponse{Data: nil})
 
-		case r.Method == http.MethodPost && r.URL.Path == "/api/upstreams":
+		case r.Method == http.MethodPost && r.URL.Path == "/admin/upstreams":
 			upstreamCreated = true
 			var upstream Upstream
 			json.NewDecoder(r.Body).Decode(&upstream)
@@ -170,10 +170,10 @@ func TestRegistrar_RegisterHosterAPI(t *testing.T) {
 				},
 			})
 
-		case r.Method == http.MethodGet && r.URL.Path == "/api/routes":
+		case r.Method == http.MethodGet && r.URL.Path == "/admin/routes":
 			json.NewEncoder(w).Encode(RoutesResponse{Data: nil})
 
-		case r.Method == http.MethodPost && r.URL.Path == "/api/routes":
+		case r.Method == http.MethodPost && r.URL.Path == "/admin/routes":
 			routeCreated = true
 			var route Route
 			json.NewDecoder(r.Body).Decode(&route)
@@ -232,10 +232,10 @@ func TestRegistrar_RegisterAll(t *testing.T) {
 		requestCount++
 
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/upstreams":
+		case r.Method == http.MethodGet && r.URL.Path == "/admin/upstreams":
 			json.NewEncoder(w).Encode(UpstreamsResponse{Data: nil})
 
-		case r.Method == http.MethodPost && r.URL.Path == "/api/upstreams":
+		case r.Method == http.MethodPost && r.URL.Path == "/admin/upstreams":
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(UpstreamResponse{
 				Data: struct {
@@ -249,10 +249,10 @@ func TestRegistrar_RegisterAll(t *testing.T) {
 				},
 			})
 
-		case r.Method == http.MethodGet && r.URL.Path == "/api/routes":
+		case r.Method == http.MethodGet && r.URL.Path == "/admin/routes":
 			json.NewEncoder(w).Encode(RoutesResponse{Data: nil})
 
-		case r.Method == http.MethodPost && r.URL.Path == "/api/routes":
+		case r.Method == http.MethodPost && r.URL.Path == "/admin/routes":
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(RouteResponse{
 				Data: struct {
@@ -296,10 +296,10 @@ func TestRegistrar_RegisterAll_AppProxyOnly(t *testing.T) {
 		requestCount++
 
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/upstreams":
+		case r.Method == http.MethodGet && r.URL.Path == "/admin/upstreams":
 			json.NewEncoder(w).Encode(UpstreamsResponse{Data: nil})
 
-		case r.Method == http.MethodPost && r.URL.Path == "/api/upstreams":
+		case r.Method == http.MethodPost && r.URL.Path == "/admin/upstreams":
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(UpstreamResponse{
 				Data: struct {
@@ -311,10 +311,10 @@ func TestRegistrar_RegisterAll_AppProxyOnly(t *testing.T) {
 				},
 			})
 
-		case r.Method == http.MethodGet && r.URL.Path == "/api/routes":
+		case r.Method == http.MethodGet && r.URL.Path == "/admin/routes":
 			json.NewEncoder(w).Encode(RoutesResponse{Data: nil})
 
-		case r.Method == http.MethodPost && r.URL.Path == "/api/routes":
+		case r.Method == http.MethodPost && r.URL.Path == "/admin/routes":
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(RouteResponse{
 				Data: struct {

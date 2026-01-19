@@ -37,7 +37,7 @@ func TestNewClient_DefaultTimeout(t *testing.T) {
 func TestClient_CreateUpstream(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/upstreams", r.URL.Path)
+		assert.Equal(t, "/admin/upstreams", r.URL.Path)
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 		assert.Equal(t, "test-api-key", r.Header.Get("X-API-Key"))
 
@@ -83,7 +83,7 @@ func TestClient_CreateUpstream(t *testing.T) {
 func TestClient_GetUpstreamByName(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Equal(t, "/api/upstreams", r.URL.Path)
+		assert.Equal(t, "/admin/upstreams", r.URL.Path)
 
 		json.NewEncoder(w).Encode(UpstreamsResponse{
 			Data: []struct {
@@ -137,7 +137,7 @@ func TestClient_GetUpstreamByName_NotFound(t *testing.T) {
 func TestClient_UpdateUpstream(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPatch, r.Method)
-		assert.Equal(t, "/api/upstreams/upstream-123", r.URL.Path)
+		assert.Equal(t, "/admin/upstreams/upstream-123", r.URL.Path)
 
 		json.NewEncoder(w).Encode(UpstreamResponse{
 			Data: struct {
@@ -171,7 +171,7 @@ func TestClient_UpdateUpstream(t *testing.T) {
 func TestClient_CreateRoute(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/routes", r.URL.Path)
+		assert.Equal(t, "/admin/routes", r.URL.Path)
 
 		var route Route
 		err := json.NewDecoder(r.Body).Decode(&route)
@@ -223,7 +223,7 @@ func TestClient_CreateRoute(t *testing.T) {
 func TestClient_GetRouteByName(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Equal(t, "/api/routes", r.URL.Path)
+		assert.Equal(t, "/admin/routes", r.URL.Path)
 
 		json.NewEncoder(w).Encode(RoutesResponse{
 			Data: []struct {
