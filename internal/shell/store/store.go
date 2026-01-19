@@ -30,6 +30,10 @@ type Store interface {
 	ListDeploymentsByTemplate(ctx context.Context, templateID string, opts ListOptions) ([]domain.Deployment, error)
 	ListDeploymentsByCustomer(ctx context.Context, customerID string, opts ListOptions) ([]domain.Deployment, error)
 
+	// Proxy-related deployment operations
+	GetDeploymentByDomain(ctx context.Context, hostname string) (*domain.Deployment, error)
+	GetUsedProxyPorts(ctx context.Context, nodeID string) ([]int, error)
+
 	// Usage event operations (F009: Billing Integration)
 	CreateUsageEvent(ctx context.Context, event *domain.MeterEvent) error
 	GetUnreportedEvents(ctx context.Context, limit int) ([]domain.MeterEvent, error)

@@ -12,6 +12,7 @@ import (
 	"github.com/artpar/hoster/internal/shell/api"
 	"github.com/artpar/hoster/internal/shell/billing"
 	"github.com/artpar/hoster/internal/shell/docker"
+	"github.com/artpar/hoster/internal/shell/proxy"
 	"github.com/artpar/hoster/internal/shell/scheduler"
 	"github.com/artpar/hoster/internal/shell/store"
 	"github.com/artpar/hoster/internal/shell/workers"
@@ -37,6 +38,7 @@ const (
 type Server struct {
 	config          *Config
 	httpServer      *http.Server
+	proxyServer     *http.Server
 	store           store.Store
 	docker          docker.Client
 	nodePool        *docker.NodePool
@@ -160,9 +162,46 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		logger.Info("billing disabled")
 	}
 
+	// Create App Proxy server (specs/domain/proxy.md)
+	var proxyServer *http.Server
+	if cfg.Proxy.Enabled {
+		proxyHandler, err := proxy.NewServer(proxy.Config{
+			Address:      cfg.Proxy.Address(),
+			BaseDomain:   cfg.Proxy.BaseDomain,
+			ReadTimeout:  cfg.Proxy.ReadTimeout,
+			WriteTimeout: cfg.Proxy.WriteTimeout,
+			IdleTimeout:  cfg.Proxy.IdleTimeout,
+		}, s, logger)
+		if err != nil {
+			s.Close()
+			d.Close()
+			return nil, &ServerError{
+				Op:       "NewServer",
+				Err:      err,
+				ExitCode: ExitConfigError,
+			}
+		}
+
+		proxyServer = &http.Server{
+			Addr:         cfg.Proxy.Address(),
+			Handler:      proxyHandler,
+			ReadTimeout:  cfg.Proxy.ReadTimeout,
+			WriteTimeout: cfg.Proxy.WriteTimeout,
+			IdleTimeout:  cfg.Proxy.IdleTimeout,
+		}
+
+		logger.Info("app proxy enabled",
+			"address", cfg.Proxy.Address(),
+			"base_domain", cfg.Proxy.BaseDomain,
+		)
+	} else {
+		logger.Info("app proxy disabled")
+	}
+
 	return &Server{
 		config:          cfg,
 		httpServer:      httpServer,
+		proxyServer:     proxyServer,
 		store:           s,
 		docker:          d,
 		nodePool:        nodePool,
@@ -188,8 +227,20 @@ func (s *Server) Start(ctx context.Context) error {
 		s.healthChecker.Start()
 	}
 
+	// Start App Proxy server in goroutine (specs/domain/proxy.md)
+	errCh := make(chan error, 2)
+	if s.proxyServer != nil {
+		go func() {
+			s.logger.Info("starting App Proxy server",
+				"address", s.config.Proxy.Address(),
+				"base_domain", s.config.Proxy.BaseDomain)
+			if err := s.proxyServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errCh <- err
+			}
+		}()
+	}
+
 	// Start HTTP server in goroutine
-	errCh := make(chan error, 1)
 	go func() {
 		s.logger.Info("starting HTTP server",
 			"address", s.config.Server.Address())
@@ -226,6 +277,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// Shutdown HTTP server
 	if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
 		s.logger.Error("HTTP server shutdown error", "error", err)
+	}
+
+	// Shutdown App Proxy server (specs/domain/proxy.md)
+	if s.proxyServer != nil {
+		if err := s.proxyServer.Shutdown(shutdownCtx); err != nil {
+			s.logger.Error("App Proxy server shutdown error", "error", err)
+		}
 	}
 
 	// Stop billing reporter (F009: Billing Integration)

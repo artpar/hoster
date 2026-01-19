@@ -24,6 +24,7 @@ type Config struct {
 	Auth     AuthConfig     `mapstructure:"auth"`
 	Billing  BillingConfig  `mapstructure:"billing"`
 	Nodes    NodesConfig    `mapstructure:"nodes"`
+	Proxy    ProxyConfig    `mapstructure:"proxy"`
 }
 
 // ServerConfig holds HTTP server configuration.
@@ -121,6 +122,37 @@ type NodesConfig struct {
 	HealthCheckMaxConcurrent int `mapstructure:"health_check_max_concurrent"`
 }
 
+// ProxyConfig holds App Proxy server configuration.
+// Following specs/domain/proxy.md
+type ProxyConfig struct {
+	// Enabled determines if the App Proxy server is enabled.
+	Enabled bool `mapstructure:"enabled"`
+
+	// Host is the interface to bind the proxy server to.
+	Host string `mapstructure:"host"`
+
+	// Port is the port for the proxy server.
+	Port int `mapstructure:"port"`
+
+	// BaseDomain is the base domain for app routing (e.g., "apps.hoster.io").
+	// Requests to {slug}.{BaseDomain} will be routed to the corresponding deployment.
+	BaseDomain string `mapstructure:"base_domain"`
+
+	// ReadTimeout is the HTTP read timeout for the proxy server.
+	ReadTimeout time.Duration `mapstructure:"read_timeout"`
+
+	// WriteTimeout is the HTTP write timeout for the proxy server.
+	WriteTimeout time.Duration `mapstructure:"write_timeout"`
+
+	// IdleTimeout is the HTTP idle timeout for the proxy server.
+	IdleTimeout time.Duration `mapstructure:"idle_timeout"`
+}
+
+// Address returns the proxy server address in host:port format.
+func (c ProxyConfig) Address() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+}
+
 // =============================================================================
 // Config Loading
 // =============================================================================
@@ -158,6 +190,15 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("nodes.health_check_interval", "60s")      // Check nodes every minute
 	v.SetDefault("nodes.health_check_timeout", "10s")       // 10 second timeout per node
 	v.SetDefault("nodes.health_check_max_concurrent", 5)    // Max 5 concurrent checks
+
+	// Proxy defaults (App Proxy - specs/domain/proxy.md)
+	v.SetDefault("proxy.enabled", true)                     // Enabled by default
+	v.SetDefault("proxy.host", "0.0.0.0")
+	v.SetDefault("proxy.port", 9091)                        // Default proxy port
+	v.SetDefault("proxy.base_domain", "apps.localhost")     // Default base domain
+	v.SetDefault("proxy.read_timeout", "30s")
+	v.SetDefault("proxy.write_timeout", "60s")
+	v.SetDefault("proxy.idle_timeout", "120s")
 
 	// Load from file if provided
 	if configPath != "" {

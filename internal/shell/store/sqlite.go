@@ -165,6 +165,7 @@ type deploymentRow struct {
 	ResourcesCPU    float64 `db:"resources_cpu_cores"`
 	ResourcesMemory int64   `db:"resources_memory_mb"`
 	ResourcesDisk   int64   `db:"resources_disk_mb"`
+	ProxyPort       *int    `db:"proxy_port"`
 	ErrorMessage    string  `db:"error_message"`
 	CreatedAt       string  `db:"created_at"`
 	UpdatedAt       string  `db:"updated_at"`
@@ -285,6 +286,14 @@ func (s *txSQLiteStore) ListDeploymentsByTemplate(ctx context.Context, templateI
 
 func (s *txSQLiteStore) ListDeploymentsByCustomer(ctx context.Context, customerID string, opts ListOptions) ([]domain.Deployment, error) {
 	return listDeploymentsByCustomer(ctx, s.tx, customerID, opts)
+}
+
+func (s *txSQLiteStore) GetDeploymentByDomain(ctx context.Context, hostname string) (*domain.Deployment, error) {
+	return getDeploymentByDomain(ctx, s.tx, hostname)
+}
+
+func (s *txSQLiteStore) GetUsedProxyPorts(ctx context.Context, nodeID string) ([]int, error) {
+	return getUsedProxyPorts(ctx, s.tx, nodeID)
 }
 
 func (s *txSQLiteStore) WithTx(ctx context.Context, fn func(Store) error) error {
@@ -592,17 +601,22 @@ func createDeployment(ctx context.Context, exec executor, deployment *domain.Dep
 		stoppedAt = &s
 	}
 
+	var proxyPort *int
+	if deployment.ProxyPort > 0 {
+		proxyPort = &deployment.ProxyPort
+	}
+
 	query := `
 		INSERT INTO deployments (
 			id, name, template_id, template_version, customer_id, node_id,
 			status, variables, domains, containers,
 			resources_cpu_cores, resources_memory_mb, resources_disk_mb,
-			error_message, created_at, updated_at, started_at, stopped_at
+			proxy_port, error_message, created_at, updated_at, started_at, stopped_at
 		) VALUES (
 			:id, :name, :template_id, :template_version, :customer_id, :node_id,
 			:status, :variables, :domains, :containers,
 			:resources_cpu_cores, :resources_memory_mb, :resources_disk_mb,
-			:error_message, :created_at, :updated_at, :started_at, :stopped_at
+			:proxy_port, :error_message, :created_at, :updated_at, :started_at, :stopped_at
 		)`
 
 	row := map[string]any{
@@ -619,6 +633,7 @@ func createDeployment(ctx context.Context, exec executor, deployment *domain.Dep
 		"resources_cpu_cores":  deployment.Resources.CPUCores,
 		"resources_memory_mb":  deployment.Resources.MemoryMB,
 		"resources_disk_mb":    deployment.Resources.DiskMB,
+		"proxy_port":           proxyPort,
 		"error_message":        deployment.ErrorMessage,
 		"created_at":           deployment.CreatedAt.Format(time.RFC3339),
 		"updated_at":           deployment.UpdatedAt.Format(time.RFC3339),
@@ -680,6 +695,11 @@ func updateDeployment(ctx context.Context, exec executor, deployment *domain.Dep
 		stoppedAt = &s
 	}
 
+	var proxyPort *int
+	if deployment.ProxyPort > 0 {
+		proxyPort = &deployment.ProxyPort
+	}
+
 	query := `
 		UPDATE deployments SET
 			name = :name,
@@ -694,6 +714,7 @@ func updateDeployment(ctx context.Context, exec executor, deployment *domain.Dep
 			resources_cpu_cores = :resources_cpu_cores,
 			resources_memory_mb = :resources_memory_mb,
 			resources_disk_mb = :resources_disk_mb,
+			proxy_port = :proxy_port,
 			error_message = :error_message,
 			updated_at = :updated_at,
 			started_at = :started_at,
@@ -714,6 +735,7 @@ func updateDeployment(ctx context.Context, exec executor, deployment *domain.Dep
 		"resources_cpu_cores":  deployment.Resources.CPUCores,
 		"resources_memory_mb":  deployment.Resources.MemoryMB,
 		"resources_disk_mb":    deployment.Resources.DiskMB,
+		"proxy_port":           proxyPort,
 		"error_message":        deployment.ErrorMessage,
 		"updated_at":           deployment.UpdatedAt.Format(time.RFC3339),
 		"started_at":           startedAt,
@@ -816,6 +838,58 @@ func listDeploymentsByCustomer(ctx context.Context, exec executor, customerID st
 }
 
 // =============================================================================
+// Proxy-related Deployment Operations
+// =============================================================================
+
+// GetDeploymentByDomain finds a deployment by its domain hostname.
+func (s *SQLiteStore) GetDeploymentByDomain(ctx context.Context, hostname string) (*domain.Deployment, error) {
+	return getDeploymentByDomain(ctx, s.db, hostname)
+}
+
+func getDeploymentByDomain(ctx context.Context, exec executor, hostname string) (*domain.Deployment, error) {
+	// Query for deployment where any domain in the JSON array matches
+	// We search both $[0] and $[1] to handle typical auto + custom domain scenarios
+	query := `
+		SELECT * FROM deployments
+		WHERE (
+			json_extract(domains, '$[0].hostname') = ?
+			OR json_extract(domains, '$[1].hostname') = ?
+			OR json_extract(domains, '$[2].hostname') = ?
+		)
+		LIMIT 1
+	`
+
+	var row deploymentRow
+	if err := exec.GetContext(ctx, &row, query, hostname, hostname, hostname); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, NewStoreError("GetDeploymentByDomain", "deployment", hostname, "deployment not found for hostname", ErrNotFound)
+		}
+		return nil, NewStoreError("GetDeploymentByDomain", "deployment", hostname, err.Error(), err)
+	}
+
+	return rowToDeployment(&row)
+}
+
+// GetUsedProxyPorts returns all proxy ports in use on a node.
+func (s *SQLiteStore) GetUsedProxyPorts(ctx context.Context, nodeID string) ([]int, error) {
+	return getUsedProxyPorts(ctx, s.db, nodeID)
+}
+
+func getUsedProxyPorts(ctx context.Context, exec executor, nodeID string) ([]int, error) {
+	query := `
+		SELECT proxy_port FROM deployments
+		WHERE node_id = ? AND proxy_port IS NOT NULL AND status != 'deleted'
+	`
+
+	var ports []int
+	if err := exec.SelectContext(ctx, &ports, query, nodeID); err != nil {
+		return nil, NewStoreError("GetUsedProxyPorts", "deployment", nodeID, err.Error(), err)
+	}
+
+	return ports, nil
+}
+
+// =============================================================================
 // Row Conversion Functions
 // =============================================================================
 
@@ -913,6 +987,11 @@ func rowToDeployment(row *deploymentRow) (*domain.Deployment, error) {
 		}
 	}
 
+	var proxyPort int
+	if row.ProxyPort != nil {
+		proxyPort = *row.ProxyPort
+	}
+
 	return &domain.Deployment{
 		ID:              row.ID,
 		Name:            row.Name,
@@ -929,6 +1008,7 @@ func rowToDeployment(row *deploymentRow) (*domain.Deployment, error) {
 			MemoryMB: row.ResourcesMemory,
 			DiskMB:   row.ResourcesDisk,
 		},
+		ProxyPort:    proxyPort,
 		ErrorMessage: row.ErrorMessage,
 		CreatedAt:    createdAt,
 		UpdatedAt:    updatedAt,

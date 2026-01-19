@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>App Unavailable</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 600px;
+            margin: 100px auto;
+            padding: 20px;
+            color: #333;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #9b59b6;
+            margin-bottom: 10px;
+        }
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+        .hint {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f9f5fc;
+            border-left: 3px solid #9b59b6;
+            border-radius: 0 4px 4px 0;
+        }
+        a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <h1>App Unavailable</h1>
+    <p>The app at <code>{{.Hostname}}</code> is temporarily unavailable.</p>
+    <div class="hint">
+        <p><strong>This could happen because:</strong></p>
+        <ul>
+            <li>The app is starting up</li>
+            <li>The app experienced an error and is restarting</li>
+            <li>There is a temporary network issue</li>
+        </ul>
+        <p>Please try again in a few moments.</p>
+    </div>
+    <p><a href="/">Return to homepage</a></p>
+</body>
+</html>

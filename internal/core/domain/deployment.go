@@ -96,6 +96,7 @@ type Deployment struct {
 	Domains         []Domain          `json:"domains,omitempty"`
 	Containers      []ContainerInfo   `json:"containers,omitempty"`
 	Resources       Resources         `json:"resources"`
+	ProxyPort       int               `json:"proxy_port,omitempty"` // Host port for App Proxy routing
 	ErrorMessage    string            `json:"error_message,omitempty"`
 	CreatedAt       time.Time         `json:"created_at"`
 	UpdatedAt       time.Time         `json:"updated_at"`
