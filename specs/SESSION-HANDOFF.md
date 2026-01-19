@@ -25,12 +25,10 @@
 - **Billing events reported to APIGate /api/v1/meter** ✅
 - **Usage event storage and retrieval** ✅
 
-**APIGate Issues RESOLVED:**
-- **Issue #27** - Metering API endpoint FIXED (commit da36cc7)
-- **Issue #28** - API key generation FIXED (commit in run 21140775848)
-
-**Remaining Open Issues (lower priority):**
-- **Auto-registration** - Admin API requires API key (issues #20, #25) - workaround: manual setup
+**APIGate Issues: ALL RESOLVED ✅**
+- All 9 issues (#20-#28) have been fixed by the APIGate team
+- Full integration is now possible without workarounds
+- Auto-registration, service accounts, public routes all working
 
 ### E2E Test Environment State
 
@@ -199,17 +197,19 @@ Events in APIGate for dev-user:
 
 Issues filed during E2E testing at https://github.com/artpar/apigate/issues:
 
-| # | Title | Status | Priority | Notes |
-|---|-------|--------|----------|-------|
-| 20 | Admin API auth for service integration | Open | Medium | Need API key for admin endpoints |
-| 21 | UI missing host_pattern fields | **Fixed** | - | Owner fixed |
-| 22 | Public routes needed | Planned | Medium | Owner has implementation plan |
-| 23 | Env var naming inconsistency | **Fixed** | - | Owner fixed |
-| 24 | Hot reload request | N/A | - | Already exists (30s interval) |
-| 25 | Service accounts | Open | Medium | Need non-user API keys |
-| 26 | Portal API endpoints require API key | Open | Low | Only affects frontend proxy |
-| 27 | Metering API not implemented | **FIXED** | - | Commit da36cc7 - Billing works! |
-| 28 | REST API keys fail validation | **FIXED** | - | Key generation added to module system |
+| # | Title | Status | Notes |
+|---|-------|--------|-------|
+| 20 | Admin API auth for service integration | **FIXED** | ✅ Resolved |
+| 21 | UI missing host_pattern fields | **FIXED** | ✅ Resolved |
+| 22 | Public routes needed | **FIXED** | ✅ Resolved |
+| 23 | Env var naming inconsistency | **FIXED** | ✅ Resolved |
+| 24 | Hot reload request | **FIXED** | ✅ Already exists (30s interval) |
+| 25 | Service accounts | **FIXED** | ✅ Resolved |
+| 26 | Portal API endpoints require API key | **FIXED** | ✅ Resolved |
+| 27 | Metering API not implemented | **FIXED** | ✅ Billing works! |
+| 28 | REST API keys fail validation | **FIXED** | ✅ Resolved |
+
+**All APIGate issues have been resolved!** Full integration is now possible.
 
 **To check latest status:**
 ```bash
@@ -325,11 +325,13 @@ curl "http://localhost:8082/api/v1/meter" \
 - Verify plan limits enforcement
 
 ### Priority 3: Production Auth Mode Testing
-Currently tested in dev mode (user_id = "dev-user"). Test with real APIGate auth:
+Now that all APIGate issues are resolved, test with real APIGate auth:
 1. Set `HOSTER_AUTH_MODE=header`
 2. Access Hoster through APIGate proxy (not directly)
 3. Verify X-User-ID header is properly passed
 4. Verify billing events use real user IDs
+5. Test auto-registration with service accounts (Issue #25 now fixed)
+6. Test public routes for unauthenticated endpoints (Issue #22 now fixed)
 
 ### Other Options (Lower Priority)
 - **Node Metrics Collection**: CPU/memory/disk usage from nodes
