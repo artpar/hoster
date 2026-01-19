@@ -1,19 +1,24 @@
 module github.com/artpar/hoster
 
-go 1.24.3
+go 1.24.0
+
+toolchain go1.24.3
 
 require (
 	github.com/compose-spec/compose-go/v2 v2.10.0
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.6.0
+	github.com/getkin/kin-openapi v0.133.0
 	github.com/go-chi/chi/v5 v5.2.4
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/uuid v1.6.0
+	github.com/gorilla/mux v1.8.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/manyminds/api2go v0.0.0-20220325145637-95b4fb838cf6
 	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
+	golang.org/x/crypto v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -29,7 +34,6 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/gedex/inflector v0.0.0-20170307190818-16278e9db813 // indirect
-	github.com/getkin/kin-openapi v0.133.0 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/gin-gonic/gin v1.6.2 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
@@ -41,7 +45,6 @@ require (
 	github.com/go-playground/validator/v10 v10.2.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/golang/protobuf v1.5.0 // indirect
-	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.9 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
@@ -88,7 +91,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.39.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.3 // indirect
-	golang.org/x/crypto v0.45.0 // indirect
 	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
