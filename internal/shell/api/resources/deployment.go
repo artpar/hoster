@@ -13,6 +13,7 @@ import (
 	"github.com/artpar/hoster/internal/core/auth"
 	coredeployment "github.com/artpar/hoster/internal/core/deployment"
 	"github.com/artpar/hoster/internal/core/domain"
+	"github.com/artpar/hoster/internal/core/proxy"
 	"github.com/artpar/hoster/internal/core/validation"
 	"github.com/artpar/hoster/internal/shell/billing"
 	"github.com/artpar/hoster/internal/shell/docker"
@@ -541,6 +542,31 @@ func (r DeploymentResource) StartDeployment(id string, req *http.Request) (api2g
 		"is_local", schedResult.IsLocal,
 		"score", schedResult.Score,
 	)
+
+	// Allocate a proxy port for this deployment (if not already allocated)
+	if deployment.ProxyPort == 0 {
+		usedPorts, err := r.Store.GetUsedProxyPorts(ctx, deployment.NodeID)
+		if err != nil {
+			r.Logger.Error("failed to get used proxy ports", "error", err)
+			return &Response{Code: http.StatusInternalServerError}, err
+		}
+
+		proxyPort, err := proxy.AllocatePort(usedPorts, proxy.DefaultPortRange())
+		if err != nil {
+			r.Logger.Error("failed to allocate proxy port", "error", err)
+			return &Response{Code: http.StatusInternalServerError}, api2go.NewHTTPError(
+				err,
+				"Failed to allocate proxy port: no ports available",
+				http.StatusServiceUnavailable,
+			)
+		}
+
+		deployment.ProxyPort = proxyPort
+		r.Logger.Info("allocated proxy port",
+			"deployment_id", deployment.ID,
+			"proxy_port", proxyPort,
+		)
+	}
 
 	// Execute the state transitions
 	for _, status := range startPath.Transitions {

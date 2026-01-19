@@ -132,6 +132,16 @@ func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.D
 
 	orderedServices := coredeployment.TopologicalSort(parsedSpec.Services)
 
+	// Determine which service is the "primary" service for proxy port binding.
+	// The primary service is the first service (in topological order) that has exposed ports.
+	primaryServiceName := ""
+	for _, svc := range orderedServices {
+		if len(svc.Ports) > 0 {
+			primaryServiceName = svc.Name
+			break
+		}
+	}
+
 	for _, svc := range orderedServices {
 		var containerID string
 		var err error
@@ -143,7 +153,8 @@ func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.D
 		} else {
 			// Create new container
 			containerName := coredeployment.ContainerName(deployment.ID, svc.Name)
-			spec := o.buildContainerSpec(deployment, svc, containerName, networkName, parsedSpec.Volumes, configMounts)
+			isPrimaryService := svc.Name == primaryServiceName
+			spec := o.buildContainerSpec(deployment, svc, containerName, networkName, parsedSpec.Volumes, configMounts, isPrimaryService)
 
 			containerID, err = o.docker.CreateContainer(spec)
 			if err != nil {
@@ -412,7 +423,8 @@ func (o *Orchestrator) createDeploymentVolume(ctx context.Context, deploymentID,
 
 // buildContainerSpec builds a ContainerSpec from a compose service.
 // configMounts maps container paths to host file paths for config file bind mounts.
-func (o *Orchestrator) buildContainerSpec(deployment *domain.Deployment, svc compose.Service, containerName, networkName string, volumes []compose.Volume, configMounts map[string]string) ContainerSpec {
+// isPrimaryService indicates if this service should use the deployment's ProxyPort.
+func (o *Orchestrator) buildContainerSpec(deployment *domain.Deployment, svc compose.Service, containerName, networkName string, volumes []compose.Volume, configMounts map[string]string, isPrimaryService bool) ContainerSpec {
 	spec := ContainerSpec{
 		Name:       containerName,
 		Image:      svc.Image,
@@ -434,12 +446,30 @@ func (o *Orchestrator) buildContainerSpec(deployment *domain.Deployment, svc com
 	}
 
 	// Port bindings
+	// If this is the primary service and deployment has a ProxyPort, bind the first
+	// exposed port to the ProxyPort on localhost (for App Proxy routing)
+	proxyPortUsed := false
 	for _, p := range svc.Ports {
+		hostPort := int(p.Published)
+		hostIP := p.HostIP
+
+		// Use ProxyPort for primary service's first exposed port
+		if isPrimaryService && deployment.ProxyPort > 0 && !proxyPortUsed {
+			hostPort = deployment.ProxyPort
+			hostIP = "127.0.0.1" // Bind to localhost only for security
+			proxyPortUsed = true
+			o.logger.Debug("binding service port to proxy port",
+				"service", svc.Name,
+				"container_port", p.Target,
+				"proxy_port", deployment.ProxyPort,
+			)
+		}
+
 		spec.Ports = append(spec.Ports, PortBinding{
 			ContainerPort: int(p.Target),
-			HostPort:      int(p.Published),
+			HostPort:      hostPort,
 			Protocol:      p.Protocol,
-			HostIP:        p.HostIP,
+			HostIP:        hostIP,
 		})
 	}
 

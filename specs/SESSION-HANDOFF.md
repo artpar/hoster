@@ -7,7 +7,7 @@
 
 ## CURRENT PROJECT STATE (January 19, 2026)
 
-### Status: Post-MVP, All Phases COMPLETE, Creator Worker Nodes ALL PHASES COMPLETE
+### Status: Post-MVP, All Phases COMPLETE, Creator Worker Nodes ALL PHASES COMPLETE, App Proxy COMPLETE
 
 **What's Done:**
 - MVP complete (core deployment loop works)
@@ -23,6 +23,7 @@
 - Phase 6 Integration bug fixes COMPLETE
 - **Creator Worker Nodes Feature - ALL 7 PHASES COMPLETE**
 - **Generic API/Hook factories implemented for code reuse**
+- **App Proxy - Built-in HTTP routing (no Traefik dependency) COMPLETE**
 
 **Frontend Build Status:**
 ```
@@ -58,6 +59,27 @@ All phases of the Creator Worker Nodes feature are now implemented. The feature 
 - JSON:API resources for nodes and SSH keys
 - Frontend UI for node management in Creator Dashboard
 - Background health checker worker for periodic node monitoring
+
+**App Proxy Feature: FULLY COMPLETE**
+
+Built-in HTTP reverse proxy for routing requests to deployed containers. No external dependencies (no Traefik, nginx, etc.). The feature includes:
+- Core proxy types (`internal/core/proxy/`): ProxyTarget, HostnameParser, ProxyError, PortRange
+- Shell proxy server (`internal/shell/proxy/`): HTTP server using `net/http/httputil.ReverseProxy`
+- Error page templates: not_found.html, stopped.html, unavailable.html
+- Database migration 006: Added `proxy_port` column to deployments
+- Store methods: `GetDeploymentByDomain`, `GetUsedProxyPorts`
+- Port allocation: Allocates ports from range 30000-39999 on deployment start
+- Container port binding: Binds primary service port to proxy port on localhost
+- Configuration: `ProxyConfig` with host, port, base_domain, timeouts
+- Default proxy address: `0.0.0.0:9091`
+
+**Proxy Architecture:**
+```
+User Request → APIGate (8080) → App Proxy (9091) → Container (30000-39999)
+                                    ↓
+                              DB Lookup by hostname
+                              (my-app.apps.localhost → deployment → port)
+```
 
 ---
 
