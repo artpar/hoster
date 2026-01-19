@@ -7,7 +7,7 @@
 
 ## CURRENT PROJECT STATE (January 19, 2026)
 
-### Status: Post-MVP, All Phases COMPLETE, Creator Worker Nodes ALL PHASES COMPLETE, App Proxy COMPLETE
+### Status: Post-MVP COMPLETE, Ready for Production Hardening (F014 Phases B-E)
 
 **What's Done:**
 - MVP complete (core deployment loop works)
@@ -24,6 +24,7 @@
 - **Creator Worker Nodes Feature - ALL 7 PHASES COMPLETE**
 - **Generic API/Hook factories implemented for code reuse**
 - **App Proxy - Built-in HTTP routing (no Traefik dependency) COMPLETE**
+- **F014 Phase A (App Proxy) - FULLY IMPLEMENTED with STC alignment**
 
 **Frontend Build Status:**
 ```
@@ -85,76 +86,47 @@ User Request → APIGate (8080) → App Proxy (9091) → Container (30000-39999)
 
 ## LAST SESSION SUMMARY (January 19, 2026)
 
-### What Was Accomplished: Phase 7 (Health Checker Worker) COMPLETE
+### What Was Accomplished: App Proxy STC Alignment + F014 Spec
 
-This session implemented the Health Checker Worker, completing all 7 phases of the Creator Worker Nodes feature.
+This session completed the STC (Spec → Test → Code) alignment for the App Proxy feature and added the comprehensive F014 production readiness spec.
 
-**1. Store Interface Extension:**
+**1. App Proxy STC Alignment:**
 
-Added `ListCheckableNodes(ctx context.Context) ([]domain.Node, error)` to Store interface:
-- Returns all nodes NOT in maintenance mode (online and offline)
-- Used by health checker to determine which nodes to check
-- Implemented in SQLite store with proper filtering
+Identified and implemented missing integration pieces from the App Proxy spec:
 
-**2. Health Checker Worker:**
+- **Port Allocation on Deployment Start** (`internal/shell/api/resources/deployment.go:246-269`):
+  - Allocates ports from range 30000-39999 using `proxy.AllocatePort()`
+  - Persists proxy port to deployment before starting containers
+  - Uses `store.GetUsedProxyPorts()` to avoid collisions
 
-Created `internal/shell/workers/health_checker.go`:
-- Configurable health check interval (default: 60 seconds)
-- Configurable timeout per node (default: 10 seconds)
-- Concurrent node checking with configurable max concurrency (default: 5)
-- Connects to nodes via SSH and pings Docker daemon
-- Updates node status (online/offline) and last_health_check timestamp
-- Records error messages for offline nodes
-- On-demand checking via CheckNodeNow() and CheckAllNow()
-- Graceful start/stop lifecycle management
+- **Container Port Binding in Orchestrator** (`internal/shell/docker/orchestrator.go:319-337`):
+  - Detects "primary service" (first service with exposed ports in topological order)
+  - Binds primary service's first exposed port to `deployment.ProxyPort`
+  - Binds to `127.0.0.1` only for security (prevents external access)
 
-**3. Configuration:**
+**2. F014 Production Readiness Spec:**
 
-Added `NodesConfig` to application configuration:
-- `enabled` - Enable/disable remote nodes (default: false)
-- `encryption_key` - 32-byte key for AES-256-GCM SSH key encryption
-- `health_check_interval` - Check interval (default: 60s)
-- `health_check_timeout` - Per-node timeout (default: 10s)
-- `health_check_max_concurrent` - Max concurrent checks (default: 5)
+Added `specs/features/F014-e2e-production-readiness.md`:
+- Comprehensive spec for transforming Hoster into a self-service production platform
+- **Phase A: App Proxy** - COMPLETE (implemented this and previous sessions)
+- **Phase B: APIGate Integration** - Full route configuration, frontend deployment, auth flow
+- **Phase C: Billing Integration** - Usage event reporting, plan limits enforcement
+- **Phase D: Landing Page & Documentation** - Marketing pages, user docs
+- **Phase E: Operational Readiness** - Health endpoints, metrics, structured logging
 
-Environment variables:
-- `HOSTER_NODES_ENABLED=true`
-- `HOSTER_NODES_ENCRYPTION_KEY=<32-byte-key>`
-- `HOSTER_NODES_HEALTH_CHECK_INTERVAL=60s`
+**3. SESSION-HANDOFF.md Updates:**
 
-**4. Server Integration:**
-
-Updated `cmd/hoster/server.go`:
-- Creates NodePool when nodes are enabled
-- Starts health checker on server start
-- Stops health checker and closes NodePool on shutdown
-- Validates encryption key is exactly 32 bytes
-
-**5. Tests:**
-
-Created `internal/shell/workers/health_checker_test.go`:
-- Configuration tests
-- Lifecycle (start/stop) tests
-- Run cycle tests
-- Concurrency limit tests
-- Node not found handling
-- Maintenance mode skipping
-
-Added SQLite store test for ListCheckableNodes.
+Updated to reflect App Proxy completion and point to F014 for next steps.
 
 **Files Created/Modified This Session:**
 ```
 # New files
-internal/shell/workers/health_checker.go       # Health checker worker
-internal/shell/workers/health_checker_test.go  # Health checker tests
+specs/features/F014-e2e-production-readiness.md  # Production readiness spec
 
 # Modified files
-internal/shell/store/store.go        # Added ListCheckableNodes interface
-internal/shell/store/sqlite.go       # Implemented ListCheckableNodes
-internal/shell/store/sqlite_test.go  # Added ListCheckableNodes test
-internal/shell/api/handler_test.go   # Added stub for ListCheckableNodes
-cmd/hoster/config.go                 # Added NodesConfig
-cmd/hoster/server.go                 # Integrated health checker
+internal/shell/docker/orchestrator.go      # Added proxy port binding
+internal/shell/api/resources/deployment.go # Added port allocation on start
+specs/SESSION-HANDOFF.md                   # Updated for App Proxy completion
 ```
 
 **All Tests Pass:** 500+ tests across all packages
@@ -163,33 +135,35 @@ cmd/hoster/server.go                 # Integrated health checker
 
 ## SUGGESTED NEXT STEPS
 
-With all Creator Worker Nodes phases complete, here are potential directions for future work:
+The App Proxy (F014 Phase A) is now COMPLETE. The next steps follow F014 for production readiness:
 
-### Option 1: Production Hardening
-- Add metrics/observability (Prometheus, OpenTelemetry)
-- Implement rate limiting
-- Add request validation middleware
-- Security audit of SSH key handling
+### Priority 1: F014 Phase B - APIGate Integration (CRITICAL PATH)
+- Configure APIGate routes for all traffic (landing, SPA, API, app proxy)
+- Frontend build for production (set `base: '/app/'` in vite.config.ts)
+- Full authentication flow (login, signup, password reset pages)
+- See: `specs/features/F014-e2e-production-readiness.md` → Phase B
 
-### Option 2: Node Metrics Collection (Phase 8)
-- Collect CPU/memory/disk usage from nodes periodically
-- Store historical metrics in database
-- Display metrics graphs in frontend
+### Priority 2: F014 Phase C - Billing Integration
+- Report usage events to APIGate on deployment create/start/stop/delete
+- Implement plan limits enforcement (max deployments per plan)
+- See: `specs/features/F014-e2e-production-readiness.md` → Phase C
 
-### Option 3: Enhanced Scheduling
-- Implement scheduling policies (round-robin, least-loaded, affinity)
-- Add deployment placement constraints
-- Support for deployment migration between nodes
+### Priority 3: F014 Phase D - Landing Page & Documentation
+- Static landing page for unauthenticated visitors
+- Self-service documentation (getting started, marketplace, API reference)
+- See: `specs/features/F014-e2e-production-readiness.md` → Phase D
 
-### Option 4: Multi-tenancy Improvements
-- Add organization/team support
-- Shared node pools between creators
-- Role-based access control refinements
+### Priority 4: F014 Phase E - Operational Readiness
+- Health endpoints (`/health`, `/health/ready`, `/health/live`)
+- Prometheus metrics endpoint
+- Request ID correlation in logs
+- See: `specs/features/F014-e2e-production-readiness.md` → Phase E
 
-### Option 5: User-Facing Features
-- WebSocket-based real-time updates for deployment status
-- Deployment logs streaming
-- Template version management
+### Other Options (Lower Priority)
+- **Node Metrics Collection**: CPU/memory/disk usage from nodes
+- **Enhanced Scheduling**: Round-robin, least-loaded, affinity policies
+- **WebSocket Updates**: Real-time deployment status updates
+- **Template Versioning**: Version management for templates
 
 ---
 
