@@ -526,3 +526,17 @@ What goes wrong if key decisions are forgotten:
 - **DO NOT** add Co-Authored-By lines or AI attribution to commits
 - **DO NOT** sign commits with Claude/Opus or any AI identity
 - Keep commit messages concise and focused on the "what" and "why"
+
+---
+
+## External Resources
+
+### APIGate Integration
+
+Hoster uses APIGate for authentication and billing (see ADR-005).
+
+- **APIGate Repository**: https://github.com/artpar/apigate
+- **APIGate Issues**: https://github.com/artpar/apigate/issues
+- **APIGate Wiki**: https://github.com/artpar/apigate/wiki
+
+When encountering APIGate-related issues during development or testing, report them at the issues link above. The `gh` CLI is available and logged in for creating issues.
