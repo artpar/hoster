@@ -119,57 +119,7 @@ internal/shell/api/setup.go               # Registered resources, added endpoint
 
 ---
 
-## PREVIOUS SESSION SUMMARY
-
-### What Was Accomplished: Phase 4 E2E Verification + Auth Middleware Fix
-
-That session completed E2E testing of Phase 4 (Scheduler Integration) and fixed auth middleware test failures.
-
-**1. Scheduler Integration E2E Verification:**
-
-During E2E testing, discovered that the PRODUCTION code path (`resources/deployment.go` via `setup.go`) was NOT using the scheduler - it had `deployment.NodeID = "local"` hardcoded. Fixed by adding scheduler integration to the production path.
-
-**Files Fixed for Scheduler:**
-| Component | File | Change |
-|-----------|------|--------|
-| Deployment Resource | `internal/shell/api/resources/deployment.go` | Added Scheduler field, updated StartDeployment/StopDeployment/Delete |
-| API Setup | `internal/shell/api/setup.go` | Added Scheduler to APIConfig |
-| Server | `cmd/hoster/server.go` | Created scheduler.Service |
-
-**E2E Verified Working:**
-- Create template → Publish → Create deployment → Start → Stop → Delete
-- Scheduler logs correctly appear in production path
-- Falls back to local Docker when no NodePool configured
-
-**2. Auth Middleware Fix:**
-
-Fixed 2 failing tests by clarifying auth mode semantics:
-- `mode="none"` now correctly skips auth extraction (unauthenticated)
-- Added new `mode="dev"` for auto-authenticating as dev-user
-- Changed default auth mode from "none" to "dev" for development
-
-**Auth Modes:**
-| Mode | Behavior |
-|------|----------|
-| `header` | Extract auth from APIGate headers (production) |
-| `dev` | Auto-authenticate as dev-user (local development) |
-| `none` | No auth extraction (unauthenticated requests) |
-
-### Files Modified This Session:
-```
-# Scheduler Integration (Production Path)
-internal/shell/api/resources/deployment.go  # Added Scheduler field
-internal/shell/api/setup.go                 # Added Scheduler to config
-cmd/hoster/server.go                        # Created scheduler.Service
-internal/shell/scheduler/service.go         # Scheduling service with I/O
-internal/shell/scheduler/service_test.go    # 9 tests for service
-
-# Auth Middleware Fix
-internal/shell/api/middleware/auth.go       # Fixed mode=none, added mode=dev
-cmd/hoster/config.go                        # Changed default to mode=dev
-```
-
-### Architecture Overview (Updated):
+### Architecture Overview:
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ PRODUCTION PATH (setup.go → resources/deployment.go)                      │
@@ -194,18 +144,15 @@ cmd/hoster/config.go                        # Changed default to mode=dev
 **Key Insight:** Production uses `setup.go` → `DeploymentResource` NOT `handler.go`.
 The handler.go path is primarily for tests and non-api2go endpoints.
 
-### Plan File Location:
-The detailed implementation plan is at: `/Users/artpar/.claude/plans/wondrous-forging-donut.md`
-
 ### Testing Environment Notes:
 - Backend runs on port 9090: `HOSTER_SERVER_PORT=9090 HOSTER_AUTH_MODE=dev ./bin/hoster`
 - Frontend dev server proxies to backend via vite.config.ts
 - Dev mode (`HOSTER_AUTH_MODE=dev`) auto-authenticates as `dev-user`
-- Note: `mode=none` now means unauthenticated (no auth context)
+- Auth modes: `header` (production), `dev` (local development), `none` (unauthenticated)
 
 ---
 
-## Creator Worker Nodes - Next Tasks
+## Creator Worker Nodes - Task Status
 
 ### Completed (Phase 1, 2 & 3):
 - [x] `specs/domain/node.md` - Node entity specification
@@ -239,9 +186,29 @@ The detailed implementation plan is at: `/Users/artpar/.claude/plans/wondrous-fo
 
 ### Phase 6 - Frontend Nodes Tab (NEXT):
 - [ ] `web/src/api/nodes.ts` - Node API client
-- [ ] `web/src/hooks/useNodes.ts` - TanStack Query hooks
-- [ ] `web/src/components/nodes/` - NodeCard, NodeForm, AddNodeDialog
-- [ ] Add "Nodes" tab to Creator Dashboard
+- [ ] `web/src/api/ssh-keys.ts` - SSH Key API client
+- [ ] `web/src/hooks/useNodes.ts` - TanStack Query hooks for nodes
+- [ ] `web/src/hooks/useSSHKeys.ts` - TanStack Query hooks for SSH keys
+- [ ] `web/src/components/nodes/NodeCard.tsx` - Node card component
+- [ ] `web/src/components/nodes/NodeForm.tsx` - Create/edit node form
+- [ ] `web/src/components/nodes/AddNodeDialog.tsx` - Add node dialog
+- [ ] `web/src/components/nodes/SSHKeyForm.tsx` - SSH key upload form
+- [ ] Add "Nodes" tab to Creator Dashboard (`CreatorDashboardPage.tsx`)
+
+**Backend API Endpoints (Already Implemented):**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/nodes` | List creator's nodes |
+| POST | `/api/v1/nodes` | Create new node |
+| GET | `/api/v1/nodes/:id` | Get node details |
+| PATCH | `/api/v1/nodes/:id` | Update node |
+| DELETE | `/api/v1/nodes/:id` | Delete node |
+| POST | `/api/v1/nodes/:id/maintenance` | Enter maintenance mode |
+| DELETE | `/api/v1/nodes/:id/maintenance` | Exit maintenance mode |
+| GET | `/api/v1/ssh_keys` | List creator's SSH keys |
+| POST | `/api/v1/ssh_keys` | Create SSH key (upload private key) |
+| GET | `/api/v1/ssh_keys/:id` | Get SSH key (fingerprint only) |
+| DELETE | `/api/v1/ssh_keys/:id` | Delete SSH key |
 
 ### Phase 7 - Health Checker Worker:
 - [ ] `internal/shell/workers/health_checker.go` - Periodic health check
@@ -357,7 +324,8 @@ Read the plan file for detailed implementation phases:
 - Phase 2: Database Layer (COMPLETE)
 - Phase 3: SSH Docker Client via Minion (COMPLETE)
 - Phase 4: Scheduler Integration (COMPLETE)
-- Phase 5: Node API Resource <- NEXT
+- Phase 5: Node API Resource (COMPLETE)
+- Phase 6: Frontend Nodes Tab <- NEXT
 
 ### Step 8: Check Current Status
 
