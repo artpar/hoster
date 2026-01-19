@@ -9,7 +9,7 @@
 
 **Vision**: Package creators define deployment templates (docker-compose + config + pricing), customers one-click deploy instances onto YOUR VPS infrastructure.
 
-**Status**: Prototype phase - validating core deployment loop.
+**Status**: MVP complete, deployed to production at https://emptychair.dev
 
 ---
 
@@ -433,6 +433,73 @@ make coverage       # Generate coverage report
 make fmt            # Format code
 make vet            # Vet code
 ```
+
+---
+
+## Production Deployment (emptychair.dev)
+
+### Architecture
+
+```
+                    ┌─────────────────────────────────────┐
+                    │      APIGate (Direct TLS)           │
+    Internet ──────►│  Port 80  → HTTP redirect           │
+                    │  Port 443 → TLS termination         │
+                    └─────────────────────────────────────┘
+                                      │
+                    ┌─────────────────┼─────────────────┐
+                    ▼                 ▼                 ▼
+              Hoster API        App Proxy         Portal
+            localhost:8080    localhost:9091    (built-in)
+```
+
+### Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| APIGate | 80, 443 | TLS termination, auth, billing, routing |
+| Hoster | 8080 | Deployment API |
+| App Proxy | 9091 | Routes `*.apps.emptychair.dev` to deployments |
+
+### Deployment Files (gitignored - `deploy/local/`)
+
+| File | Purpose |
+|------|---------|
+| `Makefile` | Management commands (`make status`, `make logs`, etc.) |
+| `emptychair.env` | Environment variables |
+| `infrastructure.md` | AWS/DNS details (sensitive) |
+
+### Management Commands
+
+```bash
+cd deploy/local
+make status         # Check service status
+make logs           # Tail all logs
+make logs-apigate   # Tail APIGate logs
+make logs-hoster    # Tail Hoster logs
+make restart        # Restart all services
+make shell          # SSH into server
+make settings       # Show APIGate settings
+make errors         # Show recent errors
+```
+
+### CI/CD
+
+- GitHub Actions builds Linux binaries on push to main
+- Workflow: `.github/workflows/build.yml`
+- Artifacts: `hoster-linux-amd64` (with CGO for SQLite)
+
+### Known Issues
+
+- **ACME auto-cert**: Has bugs (issue #32), using manual TLS mode
+- **Certificate renewal**: Using existing Let's Encrypt certs, need certbot for renewal
+
+### Deployment Process
+
+1. Push to main → GitHub Actions builds binary
+2. Download artifact: `gh run download --repo artpar/hoster --name hoster-linux-amd64`
+3. Upload to server: `scp` to `/opt/hoster/bin/hoster`
+4. Restart: `make restart`
 
 ---
 
