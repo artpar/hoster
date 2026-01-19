@@ -1,0 +1,42 @@
+[Unit]
+Description=APIGate Authentication and Billing Gateway
+Documentation=https://github.com/artpar/apigate
+After=network.target
+
+[Service]
+Type=simple
+User=apigate
+Group=apigate
+
+# Environment
+Environment=APIGATE_DATABASE_DSN=/var/lib/apigate/apigate.db
+Environment=APIGATE_SERVER_PORT=8082
+
+# Working directory
+WorkingDirectory=/opt/apigate
+
+# Start command
+ExecStart=/opt/apigate/apigate serve
+
+# Restart policy
+Restart=always
+RestartSec=5
+
+# Graceful shutdown
+TimeoutStopSec=30
+KillMode=mixed
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/apigate
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=apigate
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,43 @@
+[Unit]
+Description=Hoster Deployment Platform
+Documentation=https://github.com/artpar/hoster
+After=network.target docker.service apigate.service
+Requires=docker.service
+Wants=apigate.service
+
+[Service]
+Type=simple
+User=hoster
+Group=hoster
+
+# Environment file
+EnvironmentFile=/etc/hoster/.env
+
+# Working directory
+WorkingDirectory=/opt/hoster
+
+# Start command
+ExecStart=/opt/hoster/bin/hoster
+
+# Restart policy
+Restart=always
+RestartSec=5
+
+# Graceful shutdown
+TimeoutStopSec=30
+KillMode=mixed
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/hoster
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hoster
+
+[Install]
+WantedBy=multi-user.target
