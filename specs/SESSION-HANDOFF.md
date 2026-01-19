@@ -5,13 +5,13 @@
 
 ---
 
-## CURRENT PROJECT STATE (January 18, 2026)
+## CURRENT PROJECT STATE (January 19, 2026)
 
 ### Status: Post-MVP, Phases 0-6 COMPLETE, Creator Worker Nodes Feature IN PROGRESS
 
 **What's Done:**
 - MVP complete (core deployment loop works)
-- 500+ tests passing (backend)
+- All backend tests passing (500+ tests)
 - Phase -1 (ADR & Spec Updates) COMPLETE
 - Phase 0 (API Layer Migration) COMPLETE
 - Phase 1 (APIGate Auth Integration) COMPLETE
@@ -21,7 +21,8 @@
 - Phase 5 (Frontend Views) COMPLETE
 - Phase 5 Manual Testing COMPLETE (via Chrome DevTools MCP)
 - Phase 6 Integration bug fixes COMPLETE
-- **Creator Worker Nodes Feature - Phase 1, 2 & 3 COMPLETE**
+- **Creator Worker Nodes Feature - Phase 1, 2, 3 & 4 COMPLETE**
+- **Auth middleware tests fixed (mode=none vs mode=dev)**
 
 **Frontend Build Status:**
 ```
@@ -41,99 +42,101 @@ dist/assets/index-*.js          364.07 kB (gzip: 109.41 kB)
 - Phase 1 (Domain Model & Scheduler): COMPLETE
 - Phase 2 (Database Layer): COMPLETE
 - Phase 3 (SSH Docker Client via Minion): COMPLETE
-- Phase 4 (Scheduler Integration): PENDING
+- Phase 4 (Scheduler Integration): COMPLETE
 - Phase 5 (Node API Resource): PENDING
 - Phase 6 (Frontend Nodes Tab): PENDING
 - Phase 7 (Health Checker Worker): PENDING
 
-**Next Step: Creator Worker Nodes Phase 4**
-- Integrate NodePool with orchestrator
-- Replace `NodeID = "local"` with scheduler in handler
-- Create scheduling service with I/O
+**Next Step: Creator Worker Nodes Phase 5**
+- Create Node JSON:API resource
+- Create SSH Key resource
+- Add authorization checks (CanManageNode, CanViewNode)
 
 ---
 
-## LAST SESSION SUMMARY (January 18, 2026)
+## LAST SESSION SUMMARY (January 19, 2026)
 
-### What Was Accomplished: Creator Worker Nodes Feature - Phase 3
+### What Was Accomplished: Phase 4 E2E Verification + Auth Middleware Fix
 
-This session implemented the SSH Docker Client via Minion pattern, which allows the hoster backend to control Docker on remote VPS nodes by deploying a small minion binary that provides direct Docker SDK access.
+This session completed E2E testing of Phase 4 (Scheduler Integration) and fixed auth middleware test failures.
 
-**Phase 3 Completed - SSH Docker Client via Minion:**
+**1. Scheduler Integration E2E Verification:**
 
-| Component | File | Description |
-|-----------|------|-------------|
-| Minion Protocol | `internal/core/minion/protocol.go` | Response envelope, error codes, specs (20 tests) |
-| Minion Binary | `cmd/hoster-minion/` | Standalone binary with 18 Docker commands |
-| SSH Client | `internal/shell/docker/ssh_client.go` | Implements Client interface via SSH minion execution |
-| Node Pool | `internal/shell/docker/node_pool.go` | Connection pool with lazy initialization |
-| Binary Embedding | `internal/shell/docker/minion_embed.go` | Embedded Linux amd64/arm64 binaries |
+During E2E testing, discovered that the PRODUCTION code path (`resources/deployment.go` via `setup.go`) was NOT using the scheduler - it had `deployment.NodeID = "local"` hardcoded. Fixed by adding scheduler integration to the production path.
 
-**Minion Binary Commands (18 total):**
-- Container: create, start, stop, remove, inspect, list, logs, stats
-- Network: create, remove, connect, disconnect
-- Volume: create, remove
-- Image: pull, exists
-- Health: ping, version
+**Files Fixed for Scheduler:**
+| Component | File | Change |
+|-----------|------|--------|
+| Deployment Resource | `internal/shell/api/resources/deployment.go` | Added Scheduler field, updated StartDeployment/StopDeployment/Delete |
+| API Setup | `internal/shell/api/setup.go` | Added Scheduler to APIConfig |
+| Server | `cmd/hoster/server.go` | Created scheduler.Service |
 
-**Key Design Decisions:**
-- Minion pattern chosen over SSH tunneling for simplicity and robustness
-- JSON input/output over SSH exec for all commands
-- Minion binaries cross-compiled and embedded in hoster binary
-- Lazy client initialization in NodePool to reduce connection overhead
-- Auto-deployment of minion binary via EnsureMinion()
+**E2E Verified Working:**
+- Create template → Publish → Create deployment → Start → Stop → Delete
+- Scheduler logs correctly appear in production path
+- Falls back to local Docker when no NodePool configured
 
-**Build Commands Added:**
-```bash
-make build          # Build hoster with embedded minion binaries
-make build-fast     # Build hoster without rebuilding minion (dev)
-make build-minion   # Build only the minion binaries (Linux amd64/arm64)
+**2. Auth Middleware Fix:**
+
+Fixed 2 failing tests by clarifying auth mode semantics:
+- `mode="none"` now correctly skips auth extraction (unauthenticated)
+- Added new `mode="dev"` for auto-authenticating as dev-user
+- Changed default auth mode from "none" to "dev" for development
+
+**Auth Modes:**
+| Mode | Behavior |
+|------|----------|
+| `header` | Extract auth from APIGate headers (production) |
+| `dev` | Auto-authenticate as dev-user (local development) |
+| `none` | No auth extraction (unauthenticated requests) |
+
+### Files Modified This Session:
+```
+# Scheduler Integration (Production Path)
+internal/shell/api/resources/deployment.go  # Added Scheduler field
+internal/shell/api/setup.go                 # Added Scheduler to config
+cmd/hoster/server.go                        # Created scheduler.Service
+internal/shell/scheduler/service.go         # Scheduling service with I/O
+internal/shell/scheduler/service_test.go    # 9 tests for service
+
+# Auth Middleware Fix
+internal/shell/api/middleware/auth.go       # Fixed mode=none, added mode=dev
+cmd/hoster/config.go                        # Changed default to mode=dev
 ```
 
-### Files Created/Modified This Session:
+### Architecture Overview (Updated):
 ```
-# New Files (Phase 3 - Minion Protocol)
-internal/core/minion/protocol.go           # Response envelope, error codes, specs
-internal/core/minion/protocol_test.go      # 20 tests for protocol types
-
-# New Files (Phase 3 - Minion Binary)
-cmd/hoster-minion/main.go                  # Entry point, version info
-cmd/hoster-minion/commands.go              # Command dispatcher
-cmd/hoster-minion/container.go             # Container commands (7)
-cmd/hoster-minion/network.go               # Network commands (4)
-cmd/hoster-minion/volume.go                # Volume commands (2)
-cmd/hoster-minion/image.go                 # Image commands (2)
-cmd/hoster-minion/health.go                # Ping command
-
-# New Files (Phase 3 - SSH Client)
-internal/shell/docker/ssh_client.go        # SSHDockerClient implementing Client
-internal/shell/docker/node_pool.go         # Connection pool with lazy init
-internal/shell/docker/minion_embed.go      # Embedded minion binaries
-internal/shell/docker/binaries/.gitkeep    # Placeholder for built binaries
-
-# Modified Files
-Makefile                                   # Added build-minion, build-fast targets
-.gitignore                                 # Added minion binaries exclusion
+┌──────────────────────────────────────────────────────────────────────────┐
+│ PRODUCTION PATH (setup.go → resources/deployment.go)                      │
+│                                                                           │
+│ DeploymentResource                                                        │
+│  ├─ Scheduler (scheduler.Service)                                         │
+│  │   ├── store.ListOnlineNodes()                                         │
+│  │   ├── corescheduler.Schedule() (pure algorithm)                       │
+│  │   └── nodePool.GetClient() or local fallback                          │
+│  └─ docker.Orchestrator (created per-request with scheduled client)      │
+└──────────────────────────────────────────────────────────────────────────┘
+             │
+             │ For nodeID="local" → uses local Docker client
+             │ For nodeID="node-X" → uses SSHDockerClient from NodePool
+             ▼
+┌────────────────┐                      ┌────────────────┐
+│ Local Docker   │  OR                  │ Remote Node    │
+│ daemon         │                      │ via SSH+Minion │
+└────────────────┘                      └────────────────┘
 ```
+
+**Key Insight:** Production uses `setup.go` → `DeploymentResource` NOT `handler.go`.
+The handler.go path is primarily for tests and non-api2go endpoints.
 
 ### Plan File Location:
 The detailed implementation plan is at: `/Users/artpar/.claude/plans/wondrous-forging-donut.md`
 
-### Architecture Overview:
-```
-Hoster Backend                           Remote Node
-┌────────────────┐                      ┌────────────────┐
-│ NodePool       │     SSH exec/JSON    │ ~/.hoster/     │
-│ └─SSHDockerClient├──────────────────────│ minion        │
-│   (implements  │                      │ (Docker SDK)  │
-│    Client)     │                      └────────────────┘
-└────────────────┘
-```
-
 ### Testing Environment Notes:
-- Backend runs on port 9090: `HOSTER_SERVER_PORT=9090 HOSTER_AUTH_MODE=none ./bin/hoster`
+- Backend runs on port 9090: `HOSTER_SERVER_PORT=9090 HOSTER_AUTH_MODE=dev ./bin/hoster`
 - Frontend dev server proxies to backend via vite.config.ts
-- Dev mode uses `dev-user` as the authenticated user ID
+- Dev mode (`HOSTER_AUTH_MODE=dev`) auto-authenticates as `dev-user`
+- Note: `mode=none` now means unauthenticated (no auth context)
 
 ---
 
@@ -156,12 +159,12 @@ Hoster Backend                           Remote Node
 - [x] `internal/shell/docker/minion_embed.go` - Embedded minion binaries
 - [x] Makefile updates for minion build
 
-### Phase 4 - Scheduler Integration (NEXT):
-- [ ] Modify `internal/shell/docker/orchestrator.go` - Accept NodePool
-- [ ] Modify `internal/shell/api/handler.go` - Replace `NodeID = "local"` with scheduler
-- [ ] `internal/shell/scheduler/service.go` - Scheduling service with I/O
+### Phase 4 - Scheduler Integration (COMPLETE):
+- [x] `internal/shell/scheduler/service.go` - Scheduling service with I/O
+- [x] `internal/shell/scheduler/service_test.go` - 9 tests for scheduling service
+- [x] Modify `internal/shell/api/handler.go` - Replace `NodeID = "local"` with scheduler
 
-### Phase 5 - Node API Resource:
+### Phase 5 - Node API Resource (NEXT):
 - [ ] `internal/shell/api/resources/node.go` - Node JSON:API resource
 - [ ] `internal/shell/api/resources/ssh_key.go` - SSH Key resource
 - [ ] Authorization checks (CanManageNode, CanViewNode)
@@ -178,9 +181,9 @@ Hoster Backend                           Remote Node
 ### Verification Commands:
 ```bash
 # Backend
-make test      # All backend tests pass (2 pre-existing auth failures expected)
+make test      # All backend tests pass
 make build     # Build with embedded minion binaries
-HOSTER_SERVER_PORT=9090 HOSTER_AUTH_MODE=none make run  # Start backend on :9090
+HOSTER_SERVER_PORT=9090 HOSTER_AUTH_MODE=dev make run   # Start backend on :9090
 
 # Frontend
 cd web
@@ -285,7 +288,8 @@ Read the plan file for detailed implementation phases:
 - Phase 1: Domain Model & Scheduler (COMPLETE)
 - Phase 2: Database Layer (COMPLETE)
 - Phase 3: SSH Docker Client via Minion (COMPLETE)
-- Phase 4: Scheduler Integration <- NEXT
+- Phase 4: Scheduler Integration (COMPLETE)
+- Phase 5: Node API Resource <- NEXT
 
 ### Step 8: Check Current Status
 
