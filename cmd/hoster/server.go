@@ -141,13 +141,13 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 	if cfg.Billing.Enabled {
 		var billingClient billing.Client
 		if cfg.Billing.APIGateURL != "" {
-			billingClient = billing.NewAPIGateClient(billing.APIGateConfig{
-				BaseURL: cfg.Billing.APIGateURL,
-				APIKey:  cfg.Billing.APIKey,
-			})
+			billingClient = billing.NewAPIGateClient(billing.Config{
+				BaseURL:    cfg.Billing.APIGateURL,
+				ServiceKey: cfg.Billing.APIKey,
+			}, logger)
 			logger.Info("billing enabled", "apigate_url", cfg.Billing.APIGateURL)
 		} else {
-			billingClient = billing.NewNoOpClient()
+			billingClient = billing.NewNoopClient(logger)
 			logger.Warn("billing enabled but no APIGate URL configured, using no-op client")
 		}
 

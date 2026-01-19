@@ -183,6 +183,33 @@ func (s *stubStore) ListDeploymentsByCustomer(ctx context.Context, customerID st
 	return result, nil
 }
 
+func (s *stubStore) GetDeploymentByDomain(ctx context.Context, hostname string) (*domain.Deployment, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	for _, d := range s.deployments {
+		for _, dom := range d.Domains {
+			if dom.Hostname == hostname {
+				return d, nil
+			}
+		}
+	}
+	return nil, store.NewStoreError("GetDeploymentByDomain", "deployment", hostname, "not found", store.ErrNotFound)
+}
+
+func (s *stubStore) GetUsedProxyPorts(ctx context.Context, nodeID string) ([]int, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	var ports []int
+	for _, d := range s.deployments {
+		if d.NodeID == nodeID && d.ProxyPort > 0 {
+			ports = append(ports, d.ProxyPort)
+		}
+	}
+	return ports, nil
+}
+
 func (s *stubStore) WithTx(ctx context.Context, fn func(store.Store) error) error {
 	return fn(s)
 }

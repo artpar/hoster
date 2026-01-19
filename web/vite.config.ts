@@ -4,6 +4,9 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  // Production: served under /app/ via APIGate
+  // Development: served at root with proxy
+  base: process.env.NODE_ENV === 'production' ? '/app/' : '/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -14,6 +17,10 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:9090',
+        changeOrigin: true,
+      },
+      '/auth': {
+        target: 'http://localhost:8080',
         changeOrigin: true,
       },
     },

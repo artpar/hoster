@@ -12,6 +12,7 @@ import (
 	coredeployment "github.com/artpar/hoster/internal/core/deployment"
 	"github.com/artpar/hoster/internal/core/domain"
 	"github.com/artpar/hoster/internal/core/validation"
+	"github.com/artpar/hoster/internal/shell/billing"
 	"github.com/artpar/hoster/internal/shell/docker"
 	"github.com/artpar/hoster/internal/shell/scheduler"
 	"github.com/artpar/hoster/internal/shell/store"
@@ -30,6 +31,7 @@ type Handler struct {
 	docker       docker.Client
 	orchestrator *docker.Orchestrator
 	scheduler    *scheduler.Service
+	billing      billing.Client
 	logger       *slog.Logger
 	baseDomain   string
 	configDir    string
@@ -49,6 +51,7 @@ func NewHandler(s store.Store, d docker.Client, l *slog.Logger, baseDomain, conf
 		docker:       d,
 		orchestrator: docker.NewOrchestrator(d, l, configDir),
 		scheduler:    scheduler.NewService(s, nil, d, l), // nil NodePool for backward compat
+		billing:      billing.NewNoopClient(l),           // Default to no-op billing
 		logger:       l,
 		baseDomain:   baseDomain,
 		configDir:    configDir,
@@ -72,10 +75,17 @@ func NewHandlerWithScheduler(s store.Store, d docker.Client, sched *scheduler.Se
 		docker:       d,
 		orchestrator: docker.NewOrchestrator(d, l, configDir), // Default orchestrator with local client
 		scheduler:    sched,
+		billing:      billing.NewNoopClient(l), // Default to no-op billing
 		logger:       l,
 		baseDomain:   baseDomain,
 		configDir:    configDir,
 	}
+}
+
+// WithBilling sets a custom billing client and returns the handler for chaining.
+func (h *Handler) WithBilling(b billing.Client) *Handler {
+	h.billing = b
+	return h
 }
 
 // Routes returns the router with all routes configured.
@@ -484,6 +494,19 @@ func (h *Handler) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Emit billing event for deployment creation
+	meterEvent := domain.NewMeterEvent(
+		"evt_"+uuid.New().String()[:8],
+		deployment.CustomerID,
+		domain.EventDeploymentCreated,
+		deployment.ID,
+		"deployment",
+	).WithMetadata("template_id", deployment.TemplateID)
+	if err := h.billing.MeterUsage(r.Context(), meterEvent); err != nil {
+		h.logger.Warn("failed to meter deployment_created event", "error", err, "deployment_id", deployment.ID)
+		// Don't fail the request for billing errors
+	}
+
 	h.writeJSON(w, http.StatusCreated, h.deploymentToResponse(deployment))
 }
 
@@ -586,6 +609,19 @@ func (h *Handler) handleDeleteDeployment(w http.ResponseWriter, r *http.Request)
 		h.logger.Error("failed to delete deployment", "error", err)
 		h.writeError(w, http.StatusInternalServerError, "failed to delete deployment", "internal_error")
 		return
+	}
+
+	// Emit billing event for deployment deletion
+	meterEvent := domain.NewMeterEvent(
+		"evt_"+uuid.New().String()[:8],
+		deployment.CustomerID,
+		domain.EventDeploymentDeleted,
+		deployment.ID,
+		"deployment",
+	).WithMetadata("template_id", deployment.TemplateID)
+	if err := h.billing.MeterUsage(r.Context(), meterEvent); err != nil {
+		h.logger.Warn("failed to meter deployment_deleted event", "error", err, "deployment_id", deployment.ID)
+		// Don't fail the request for billing errors
 	}
 
 	h.logger.Info("deployment deleted", "deployment_id", id, "node_id", deployment.NodeID)
@@ -708,6 +744,20 @@ func (h *Handler) handleStartDeployment(w http.ResponseWriter, r *http.Request) 
 		"containers", len(containers),
 	)
 
+	// Emit billing event for deployment start
+	meterEvent := domain.NewMeterEvent(
+		"evt_"+uuid.New().String()[:8],
+		deployment.CustomerID,
+		domain.EventDeploymentStarted,
+		deployment.ID,
+		"deployment",
+	).WithMetadata("template_id", deployment.TemplateID).
+		WithMetadata("node_id", deployment.NodeID)
+	if err := h.billing.MeterUsage(r.Context(), meterEvent); err != nil {
+		h.logger.Warn("failed to meter deployment_started event", "error", err, "deployment_id", deployment.ID)
+		// Don't fail the request for billing errors
+	}
+
 	h.writeJSON(w, http.StatusOK, h.deploymentToResponse(deployment))
 }
 
@@ -779,6 +829,19 @@ func (h *Handler) handleStopDeployment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.Info("deployment stopped", "deployment_id", deployment.ID, "node_id", deployment.NodeID)
+
+	// Emit billing event for deployment stop
+	meterEvent := domain.NewMeterEvent(
+		"evt_"+uuid.New().String()[:8],
+		deployment.CustomerID,
+		domain.EventDeploymentStopped,
+		deployment.ID,
+		"deployment",
+	).WithMetadata("template_id", deployment.TemplateID)
+	if err := h.billing.MeterUsage(r.Context(), meterEvent); err != nil {
+		h.logger.Warn("failed to meter deployment_stopped event", "error", err, "deployment_id", deployment.ID)
+		// Don't fail the request for billing errors
+	}
 
 	h.writeJSON(w, http.StatusOK, h.deploymentToResponse(deployment))
 }
