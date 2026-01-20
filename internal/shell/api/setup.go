@@ -37,6 +37,9 @@ type APIConfig struct {
 
 	// Encryption key for SSH keys (required for node management)
 	EncryptionKey []byte
+
+	// Frontend configuration - serve static files from this directory
+	FrontendDir string // e.g., "/opt/hoster/web" - if empty, no static files served
 }
 
 // SetupAPI creates the complete API router with JSON:API resources and custom endpoints.
@@ -203,6 +206,10 @@ func SetupAPI(cfg APIConfig) http.Handler {
 	// api2go expects paths without the /api prefix (e.g., /v1/templates not /api/v1/templates)
 	// so we strip the /api prefix before passing to the api2go handler
 	customRouter.PathPrefix("/api").Handler(http.StripPrefix("/api", jsonAPI.Handler()))
+
+	// Serve embedded Web UI for all other paths (SPA pattern)
+	// This must be registered last to act as a catch-all
+	customRouter.PathPrefix("/").Handler(WebUIHandler())
 
 	return customRouter
 }

@@ -7,6 +7,7 @@ on:
 
 env:
   GO_VERSION: '1.22'
+  NODE_VERSION: '20'
 
 permissions:
   contents: write
@@ -43,6 +44,20 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build frontend
+        run: |
+          cd web
+          npm ci
+          npm run build
+          cp -r dist ../internal/shell/api/webui/
 
       - name: Set up Go
         uses: actions/setup-go@v5

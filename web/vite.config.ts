@@ -4,9 +4,8 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
-  // Production: served under /app/ via APIGate
-  // Development: served at root with proxy
-  base: process.env.NODE_ENV === 'production' ? '/app/' : '/',
+  // Served at root - Hoster serves its own embedded UI
+  base: '/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

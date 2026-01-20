@@ -5,16 +5,28 @@
 
 ---
 
-## CURRENT PROJECT STATE (January 19, 2026)
+## CURRENT PROJECT STATE (January 20, 2026)
 
-### Status: ✅ E2E Testing COMPLETE - Billing Flow Working!
+### Status: ✅ DEPLOYED TO PRODUCTION - emptychair.dev
+
+**Production Deployment:**
+- **URL**: https://emptychair.dev
+- **Server**: AWS EC2 (3.82.3.209)
+- **APIGate**: Handling TLS via ACME (auto-cert from Let's Encrypt)
+- **Hoster**: Running as systemd service
+
+**CI/CD Status:**
+- **GitHub Actions CI**: ✅ Passing (test, build, vet jobs)
+- **GitHub Releases**: ✅ v0.1.0 released with Linux amd64 binary
+- **Deployment method**: Download from GitHub releases (no server-side build needed)
 
 **Implementation Status:**
 - MVP complete (core deployment loop works)
 - All backend tests passing (500+ tests)
 - All frontend components built and working
-- **E2E Testing with real APIGate: FULLY COMPLETE**
+- **Production deployed with automatic SSL certificates** ✅
 - **Billing Integration: WORKING END-TO-END**
+- **CI/CD Pipeline: COMPLETE** ✅
 
 **What's Working:**
 - User signup/login via APIGate portal
@@ -24,13 +36,54 @@
 - Direct container access via allocated ports
 - **Billing events reported to APIGate /api/v1/meter** ✅
 - **Usage event storage and retrieval** ✅
+- **ACME auto-cert working** ✅ (Issue #31, #32 fixed)
 
 **APIGate Issues: ALL RESOLVED ✅**
 - All 9 issues (#20-#28) have been fixed by the APIGate team
+- Issues #29-#32 (TLS/ACME) also resolved
 - Full integration is now possible without workarounds
 - Auto-registration, service accounts, public routes all working
+- ACME automatic certificate management working
 
-### E2E Test Environment State
+### Production Management (emptychair.dev)
+
+**Deployment via Makefile (RECOMMENDED):**
+```bash
+cd deploy/local
+make deploy-release                    # Deploy latest release from GitHub
+make deploy-release VERSION=v0.1.0     # Deploy specific version
+```
+
+**Server Management via Makefile:**
+```bash
+cd deploy/local
+make status           # Show service status
+make logs             # Tail all logs
+make logs-apigate     # Tail APIGate logs only
+make logs-hoster      # Tail Hoster logs only
+make restart          # Restart both services
+make shell            # SSH into server
+make settings         # Show APIGate settings
+make certs            # Show stored certificates
+```
+
+**Production Architecture:**
+```
+Client → emptychair.dev:443 (APIGate/ACME) → Portal/API
+                                          → Hoster:8080
+                                          → App Proxy:9091 → Containers
+```
+
+**Service Files:**
+- APIGate: `/etc/systemd/system/apigate.service` (ACME mode, ports 80/443)
+- Hoster: `/etc/systemd/system/hoster.service` (port 8080)
+- Hoster env: `/etc/hoster/.env`
+- APIGate DB: `/var/lib/apigate/apigate.db`
+- Hoster DB: `/var/lib/hoster/hoster.db`
+
+---
+
+### E2E Test Environment State (Local)
 
 **Running Services (may need restart):**
 ```
@@ -153,7 +206,41 @@ User Request → APIGate (8080) → App Proxy (9091) → Container (30000-39999)
 
 ---
 
-## LAST SESSION SUMMARY (January 19, 2026)
+## LAST SESSION SUMMARY (January 20, 2026)
+
+### What Was Accomplished: CI/CD Pipeline + APIGate Admin API Fix
+
+This session fixed the APIGate integration bug and set up a complete CI/CD pipeline for Hoster.
+
+**Key Accomplishments:**
+
+1. **Fixed APIGate Admin API endpoint bug** - Hoster was calling `/api/upstreams` but APIGate uses `/admin/upstreams`
+   - Updated `internal/shell/apigate/client.go` to use `/admin/` prefix
+   - Updated tests in `client_test.go` and `registrar_test.go`
+
+2. **Set up GitHub Actions CI/CD** - Following APIGate's patterns:
+   - `.github/workflows/ci.yml` - Test, Build, Vet jobs on push/PR
+   - `.github/workflows/release.yml` - Build releases on version tags
+
+3. **Created v0.1.0 release** - First official release with Linux amd64 binary
+
+4. **Updated Makefile** - Added `deploy-release` target to download from GitHub releases
+
+5. **Deployed to production** - v0.1.0 running on emptychair.dev
+
+**Files Modified/Created:**
+```
+internal/shell/apigate/client.go          # Fixed /api/ → /admin/
+internal/shell/apigate/client_test.go     # Updated test expectations
+internal/shell/apigate/registrar_test.go  # Updated test mocks
+.github/workflows/ci.yml                  # NEW - CI workflow
+.github/workflows/release.yml             # NEW - Release workflow
+deploy/local/Makefile                     # Added deploy-release target
+```
+
+---
+
+## PREVIOUS SESSION SUMMARY (January 19, 2026)
 
 ### What Was Accomplished: Billing Integration Now Working!
 

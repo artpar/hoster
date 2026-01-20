@@ -1,0 +1,2 @@
+# Ignore built frontend files - they are copied during build
+dist/
