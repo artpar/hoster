@@ -7,13 +7,20 @@
 
 ## CURRENT PROJECT STATE (January 20, 2026)
 
-### Status: LOCAL E2E WORKING - READY FOR PRODUCTION DEPLOYMENT
+### Status: BOTH LOCAL E2E MODES WORKING - READY FOR PRODUCTION
 
-**Local Development - FULLY WORKING:**
-- Dev auth mode enabled (`HOSTER_AUTH_MODE=dev`)
-- Login/signup via `/auth/*` endpoints
-- Full E2E flow tested: signup → browse → deploy → access app
-- App proxy subdomain routing fixed (port stripping bug fixed)
+**Two Local Development Modes - BOTH WORKING:**
+
+1. **Standalone (Dev Auth Mode)** - Simple local development
+   - `HOSTER_AUTH_MODE=dev`
+   - In-memory session-based auth
+   - Good for quick UI testing
+
+2. **APIGate Integration (Header Auth)** - Production-like setup
+   - APIGate on port 8082, Hoster on 8080
+   - Header injection: X-User-ID, X-Plan-ID, X-Key-ID
+   - Full auth flow with real user UUIDs
+   - Verified working January 20, 2026
 
 **Production Deployment:**
 - **URL**: https://emptychair.dev
@@ -22,17 +29,18 @@
 - **Hoster**: Running as systemd service (v0.1.0 - backend only)
 
 **What's Working Locally:**
-- Dev auth mode with session-based login
-- Marketplace browsing
-- Template deployment
-- Container orchestration
-- App proxy routing via subdomain
-- All E2E flows verified
+- ✅ Dev auth mode with session-based login
+- ✅ APIGate integration with header injection
+- ✅ Marketplace browsing
+- ✅ Template deployment
+- ✅ Container orchestration
+- ✅ App proxy routing via subdomain
+- ✅ All E2E flows verified (both modes)
 
 **What Needs Production Work:**
 - CI workflows need verification (npm/rollup issues were being fixed)
-- Need release with embedded frontend
-- Production APIGate integration for real auth
+- Need release with embedded frontend (v0.2.0)
+- Production routing configuration verification
 
 ---
 
@@ -361,7 +369,48 @@ make shell            # SSH into server
 
 ## Session History
 
-### Session 3 (January 20, 2026) - CURRENT SESSION
+### Session 4 (January 20, 2026) - CURRENT SESSION
+
+**Goal:** Full APIGate + Hoster E2E integration testing
+
+**Accomplished:**
+1. Created Dockerfile for Hoster containerization
+2. Created docker-compose.local.yml for full E2E stack (APIGate + Hoster)
+3. Added RequestTransform support to APIGate client for header injection
+4. Updated registrar to configure X-User-ID/X-Plan-ID/X-Key-ID headers
+5. Added Makefile targets for local E2E management
+6. Created local-e2e-setup.sh and test-local-e2e.sh automation scripts
+7. Verified full APIGate integration E2E flow:
+   - User signup via APIGate portal ✅
+   - API key creation ✅
+   - Header injection working (customer_id = real user UUID) ✅
+   - Deployment creation via APIGate proxy ✅
+   - Deployment start ✅
+   - App accessible via subdomain proxy (my-nginx-app.apps.localhost:9091) ✅
+8. Updated documentation with comprehensive APIGate E2E instructions
+
+**Files Added/Changed:**
+- `Dockerfile` - NEW - Hoster container build
+- `deploy/docker-compose.local.yml` - NEW - Full E2E stack
+- `deploy/env.local` - NEW - Environment template
+- `internal/shell/apigate/client.go` - RequestTransform type added
+- `internal/shell/apigate/registrar.go` - Header injection config
+- `Makefile` - Local E2E targets
+- `scripts/local-e2e-setup.sh` - NEW - Setup automation
+- `scripts/test-local-e2e.sh` - NEW - E2E test automation
+- `docs/local-e2e-development.md` - NEW - Developer guide
+- `docs/screenshots/e2e-nginx-deployed.png` - NEW - E2E verification
+
+**Not Completed:**
+- Production deployment (CI needs verification first)
+- Production E2E testing
+
+**Known Limitation:**
+APIGate requires API key for ALL proxied routes. Browser access to Hoster frontend through APIGate needs API key in fetch requests.
+
+---
+
+### Session 3 (January 20, 2026)
 
 **Goal:** Make Hoster E2E usable locally
 
