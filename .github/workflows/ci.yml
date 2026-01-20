@@ -29,8 +29,8 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run tests
-        run: CGO_ENABLED=1 go test -race -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Run tests (skip Docker integration tests)
+        run: CGO_ENABLED=1 go test -race -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v /shell/docker)
 
   build:
     name: Build

@@ -28,8 +28,8 @@ jobs:
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y gcc
 
-      - name: Run tests
-        run: CGO_ENABLED=1 go test -race ./...
+      - name: Run tests (skip Docker integration tests)
+        run: CGO_ENABLED=1 go test -race $(go list ./... | grep -v /shell/docker)
 
   build-linux:
     name: Build Linux
