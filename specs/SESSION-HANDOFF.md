@@ -7,7 +7,13 @@
 
 ## CURRENT PROJECT STATE (January 20, 2026)
 
-### Status: CI FIXING IN PROGRESS - FRONTEND NOT YET DEPLOYED
+### Status: LOCAL E2E WORKING - READY FOR PRODUCTION DEPLOYMENT
+
+**Local Development - FULLY WORKING:**
+- Dev auth mode enabled (`HOSTER_AUTH_MODE=dev`)
+- Login/signup via `/auth/*` endpoints
+- Full E2E flow tested: signup → browse → deploy → access app
+- App proxy subdomain routing fixed (port stripping bug fixed)
 
 **Production Deployment:**
 - **URL**: https://emptychair.dev
@@ -15,44 +21,178 @@
 - **APIGate**: Handling TLS via ACME (auto-cert from Let's Encrypt)
 - **Hoster**: Running as systemd service (v0.1.0 - backend only)
 
-**CRITICAL ISSUE:**
-- Users visiting emptychair.dev see APIGate's default portal, NOT Hoster marketplace
-- Frontend is NOT embedded in the binary yet
-- CI workflows are failing due to npm/rollup native module issues
-- v0.2.0 tag exists but release failed - need to fix CI first, then delete and recreate tag
+**What's Working Locally:**
+- Dev auth mode with session-based login
+- Marketplace browsing
+- Template deployment
+- Container orchestration
+- App proxy routing via subdomain
+- All E2E flows verified
 
-**What's Working:**
-- Hoster backend v0.1.0 deployed and running
-- APIGate integration fixed (was using /api/ instead of /admin/ for admin endpoints)
-- API accessible at https://emptychair.dev/api/v1/...
-- Billing reporter running
-- App Proxy running on port 9091
+**What Needs Production Work:**
+- CI workflows need verification (npm/rollup issues were being fixed)
+- Need release with embedded frontend
+- Production APIGate integration for real auth
 
-**What's NOT Working:**
-- No frontend UI visible to users
-- CI workflows failing (npm/rollup issues)
-- No release with embedded frontend yet
+---
+
+## LOCAL DEVELOPMENT SETUP
+
+### Quick Start
+
+**Terminal 1: Start Hoster**
+```bash
+cd /Users/artpar/workspace/code/hoster
+HOSTER_AUTH_MODE=dev go run ./cmd/hoster
+```
+
+**Terminal 2: Start Frontend**
+```bash
+cd /Users/artpar/workspace/code/hoster/web
+npm run dev
+```
+
+**Access:**
+- Frontend: http://localhost:3000
+- API: http://localhost:8080
+- App Proxy: http://localhost:9091
+- Deployed apps: http://{name}.apps.localhost:9091
+
+**Note:** Add entries to `/etc/hosts` for app subdomains:
+```
+127.0.0.1 {deployment-name}.apps.localhost
+```
+
+### E2E Test Flow (Verified Working)
+
+1. Open http://localhost:3000
+2. Navigate to http://localhost:3000/login
+3. Login with any email/password (dev auth accepts anything)
+4. Browse marketplace at /marketplace
+5. Click on a template, click "Deploy Now"
+6. After deployment created, start it via API or UI
+7. Access deployed app at http://{name}.apps.localhost:9091
 
 ---
 
 ## IMMEDIATE NEXT STEPS (Priority Order)
 
-### 1. Fix CI Workflow (npm/rollup issue)
+### 1. Verify CI Workflow is Fixed
 
-The CI is failing because of npm optional dependency issues with rollup native modules.
+Check if the npm/rollup issue is resolved:
+```bash
+gh run list --repo artpar/hoster --limit 3
+```
 
-**Current error:**
+If still failing, see troubleshooting section below.
+
+### 2. Create New Release with Embedded Frontend
+
+Once CI passes:
+```bash
+# Delete old failed tag if exists
+git tag -d v0.2.0 2>/dev/null
+git push origin :refs/tags/v0.2.0 2>/dev/null
+
+# Create fresh release
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+### 3. Deploy to Production
+
+```bash
+cd deploy/local
+make deploy-release VERSION=v0.2.0
+```
+
+### 4. Test Production E2E
+
+1. Navigate to https://emptychair.dev
+2. Should see Hoster marketplace (not APIGate portal)
+3. Sign up / Log in via APIGate
+4. Browse templates
+5. Deploy a template
+6. Access deployed app at https://{name}.apps.emptychair.dev
+
+---
+
+## Files Changed This Session (Session 3)
+
+**Added dev auth mode:**
+- `internal/shell/api/dev_auth.go` - NEW - In-memory session auth endpoints
+- `internal/shell/api/setup.go` - Register dev auth routes when auth.mode=dev
+
+**Fixed app proxy:**
+- `internal/shell/proxy/server.go` - Strip port from Host header for domain matching
+
+**Updated frontend proxy:**
+- `web/vite.config.ts` - Proxy /auth and /api to Hoster for local dev
+
+**Commit:** `feat: Add dev auth mode for local E2E testing`
+
+---
+
+## Architecture
+
+### Local Development Mode
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Local Development Stack (Dev Auth Mode)                    │
+│                                                             │
+│  Frontend (localhost:3000)                                  │
+│    │                                                        │
+│    ├─ /api/* ──► Hoster API (localhost:8080)               │
+│    │                                                        │
+│    └─ /auth/* ──► Hoster Dev Auth (localhost:8080)         │
+│                                                             │
+│  Hoster (localhost:8080)                                    │
+│    ├─ /api/v1/* - Deployment API                           │
+│    └─ /auth/* - Dev auth endpoints (session-based)         │
+│                                                             │
+│  App Proxy (localhost:9091)                                 │
+│    └─ *.apps.localhost → Deployed containers               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Production Mode (APIGate Integration)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Production Stack (APIGate Auth)                            │
+│                                                             │
+│  Internet ───► APIGate (TLS termination)                   │
+│                    │                                        │
+│                    ├─ /portal/* → APIGate portal           │
+│                    ├─ /api/* → Hoster API (with X-User-ID) │
+│                    └─ /* → Hoster static files             │
+│                                                             │
+│  Hoster (auth.mode=header)                                 │
+│    └─ Trusts X-User-ID headers from APIGate                │
+│                                                             │
+│  App Proxy                                                  │
+│    └─ *.apps.emptychair.dev → Deployed containers          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Troubleshooting
+
+### CI npm/rollup Issue
+
+If CI fails with:
 ```
 Error: Cannot find module @rollup/rollup-linux-x64-gnu
 ```
 
-**Latest attempt (in progress):**
-- Added `rm -rf node_modules package-lock.json` before `npm install`
-- Pushed in latest commit on main
+**Option A: Clean install (already attempted)**
+```yaml
+- run: rm -rf node_modules package-lock.json && npm install
+```
 
-**If still failing, try these options:**
-
-**Option A: Pin rollup version**
+**Option B: Pin rollup version**
 ```json
 // In web/package.json, add:
 "overrides": {
@@ -60,82 +200,37 @@ Error: Cannot find module @rollup/rollup-linux-x64-gnu
 }
 ```
 
-**Option B: Use npm ci with regenerated lockfile**
-```bash
-cd web
-rm -rf node_modules package-lock.json
-npm install
-# Commit the new package-lock.json
+**Option C: Use different npm version**
+```yaml
+- uses: actions/setup-node@v4
+  with:
+    node-version: '20'
 ```
 
-**Option C: Remove unused vitest**
-```bash
-cd web
-npm uninstall vitest
-```
+### App Proxy Not Finding Apps
 
-### 2. Delete Failed v0.2.0 Tag and Create New Release
+1. Check deployment has a domain assigned:
+   ```bash
+   curl http://localhost:8080/api/v1/deployments/{id} | jq '.data.attributes.domains'
+   ```
 
-The v0.2.0 tag was created before CI was fixed. Once CI passes:
+2. Ensure /etc/hosts has the subdomain entry
 
-```bash
-# Delete the failed tag
-git tag -d v0.2.0
-git push origin :refs/tags/v0.2.0
+3. Verify app proxy is running on port 9091
 
-# Create fresh release
-git tag v0.2.0
-git push origin v0.2.0
-```
+### Dev Auth Session Issues
 
-### 3. Deploy and Test End-to-End
-
-Once release succeeds:
-```bash
-cd deploy/local
-make deploy-release VERSION=v0.2.0
-```
-
-Test as a real user:
-1. Navigate to https://emptychair.dev
-2. Should see Hoster marketplace (not APIGate portal)
-3. Sign up / Log in
-4. Browse templates
-5. Deploy a template
-6. Access deployed app
-
----
-
-## Files Changed This Session
-
-**Fixed APIGate admin API:**
-- `internal/shell/apigate/client.go` - Changed /api/ to /admin/ prefix
-- `internal/shell/apigate/client_test.go` - Updated test expectations
-- `internal/shell/apigate/registrar_test.go` - Updated test mocks
-
-**Added embedded frontend (following APIGate pattern):**
-- `internal/shell/api/webui.go` - NEW - Serves embedded static files with SPA fallback
-- `internal/shell/api/webui/.gitignore` - Ignores dist/ (generated during build)
-- `internal/shell/api/setup.go` - Added WebUIHandler() to serve UI at root path
-
-**CI/CD Workflows:**
-- `.github/workflows/ci.yml` - NEW - Test, Build, Vet jobs with frontend build
-- `.github/workflows/release.yml` - NEW - Release on version tags
-
-**Frontend config:**
-- `web/vite.config.ts` - Changed base from /app/ to / (served at root)
-
-**Makefile:**
-- `deploy/local/Makefile` - Added deploy-release target
+Dev auth stores sessions in memory. Restarting Hoster clears all sessions.
+Just log in again after restart.
 
 ---
 
 ## Production Management
 
-**Deployment via Makefile (RECOMMENDED):**
+**Deployment via Makefile:**
 ```bash
 cd deploy/local
-make deploy-release                    # Deploy latest release from GitHub
+make deploy-release                    # Deploy latest release
 make deploy-release VERSION=v0.2.0     # Deploy specific version
 ```
 
@@ -149,120 +244,49 @@ make restart          # Restart both services
 make shell            # SSH into server
 ```
 
-**Service Locations:**
-- Hoster binary: `/opt/hoster/bin/hoster`
-- Hoster env: `/etc/hoster/.env`
-- Hoster DB: `/var/lib/hoster/hoster.db`
-- APIGate DB: `/var/lib/apigate/apigate.db`
-
----
-
-## Architecture: Embedded Frontend
-
-Following APIGate's pattern for embedded UI:
-
-```
-internal/shell/api/
-├── setup.go           # Mounts WebUIHandler() at PathPrefix("/")
-├── webui.go           # Embedded UI handler (SPA pattern)
-└── webui/
-    ├── .gitignore     # Ignores dist/
-    └── dist/          # Copied from web/dist during build (NOT committed)
-```
-
-**Build Process (in CI):**
-1. `cd web && npm install && npm run build`
-2. `cp -r dist ../internal/shell/api/webui/`
-3. `go build ./cmd/hoster` (embeds webui/dist via //go:embed)
-
-**Local Development:**
-- Frontend: `cd web && npm run dev` (Vite dev server on :3000)
-- Backend: `make run` (Hoster on :8080)
-- Vite proxies /api to backend
-
-**Local Testing (with embedded frontend):**
-```bash
-# Build frontend
-cd web && npm install && npm run build
-cp -r dist ../internal/shell/api/webui/
-
-# Build and run Hoster
-cd .. && go build -o /tmp/hoster ./cmd/hoster
-/tmp/hoster
-
-# Visit http://localhost:8080
-```
-
----
-
-## Key Technical Decisions Made
-
-1. **Embed frontend into binary** - Like APIGate, no separate nginx/static file server needed
-2. **Use npm install (not npm ci)** - Avoids lockfile sync issues across npm versions
-3. **Clean node_modules before install** - Fixes rollup native module resolution
-4. **Base path = /** - Frontend served at root, not under /app/
-
----
-
-## What NOT to Do
-
-1. **DON'T use ssh commands directly** - Use Makefile targets
-2. **DON'T push without testing locally** - Build and verify before pushing
-3. **DON'T skip STC methodology** - Spec first, then test, then code
-4. **DON'T create multiple broken commits** - Test CI locally if possible
-5. **DON'T keep checking GitHub Actions repeatedly** - Check once, fix if needed
-6. **DON'T create tags before CI is green** - Wait for CI to pass first
-
----
-
-## Verification Commands
-
-**Check CI status:**
-```bash
-gh run list --repo artpar/hoster --limit 5
-gh run view <run-id> --repo artpar/hoster --log-failed
-```
-
-**Check production:**
-```bash
-cd deploy/local
-make status
-curl -s https://emptychair.dev/ | head -20
-curl -s https://emptychair.dev/api/v1/templates | jq .
-```
-
 ---
 
 ## Session History
 
-### Session 2 (January 20, 2026) - Current Session
+### Session 3 (January 20, 2026) - CURRENT SESSION
 
-**Goal:** Deploy Hoster with working frontend to emptychair.dev
+**Goal:** Make Hoster E2E usable locally
 
 **Accomplished:**
-1. Fixed APIGate admin API bug (/api/ → /admin/)
-2. Set up GitHub Actions CI/CD workflows
-3. Created v0.1.0 release (backend only)
-4. Deployed v0.1.0 to production
-5. Created embedded frontend handler (webui.go following APIGate pattern)
-6. Updated CI workflows to build frontend
+1. Created dev auth mode (`internal/shell/api/dev_auth.go`)
+   - Session-based auth with in-memory storage
+   - Endpoints: /auth/login, /auth/register, /auth/me, /auth/logout
+2. Fixed app proxy port stripping bug
+   - Browsers send `Host: name.apps.localhost:9091` with port
+   - DB stores hostname without port
+   - Fixed by stripping port before domain lookup
+3. Verified full E2E flow locally:
+   - Login ✅
+   - Browse marketplace ✅
+   - Deploy template ✅
+   - Start deployment ✅
+   - Access via subdomain ✅
 
 **Not Completed:**
-1. CI workflows still failing (npm/rollup issues) - fix in progress
-2. No release with embedded frontend deployed
-3. End-to-end user testing not done
+- Production deployment (CI needs verification)
+- Production E2E testing
 
-**Lessons Learned:**
-- Test CI locally before pushing
-- Follow STC - don't cowboy code
-- Use Makefile for deployments, not raw SSH
-- Don't create tags before CI passes
+### Session 2 (January 20, 2026)
+
+**Accomplished:**
+- Fixed APIGate admin API bug (/api/ → /admin/)
+- Set up GitHub Actions CI/CD workflows
+- Created v0.1.0 release (backend only)
+- Deployed v0.1.0 to production
+- Created embedded frontend handler
+
+**Issues:**
+- CI workflows failing (npm/rollup issues)
 
 ### Session 1 (Earlier)
 
 - Initial Hoster development
 - Backend implementation complete
-- APIGate integration set up (with bug in admin API path)
 
 ---
 
@@ -275,13 +299,13 @@ curl -s https://emptychair.dev/api/v1/templates | jq .
 
 **Production:**
 - URL: https://emptychair.dev
-- Server: ubuntu@emptychair.dev (SSH key: ~/Downloads/emptychair-key.pem)
+- Server: ubuntu@emptychair.dev
 
 **Local Dev Ports:**
 - Hoster API: 8080
 - App Proxy: 9091
-- Frontend dev: 3000 or 5173/5174
-- APIGate (if running): 8082
+- Frontend dev: 3000
+- APIGate (optional): 8082
 
 ---
 
@@ -290,7 +314,12 @@ curl -s https://emptychair.dev/api/v1/templates | jq .
 1. [ ] Read CLAUDE.md completely
 2. [ ] Read this SESSION-HANDOFF.md
 3. [ ] Check CI status: `gh run list --repo artpar/hoster --limit 3`
-4. [ ] If CI failing, fix the npm/rollup issue (see options above)
-5. [ ] Once CI green, delete old v0.2.0 tag and create new release
-6. [ ] Deploy: `cd deploy/local && make deploy-release VERSION=v0.2.0`
-7. [ ] Test end-to-end as a user at https://emptychair.dev
+4. [ ] If CI failing, fix the issue (see troubleshooting)
+5. [ ] If CI passing, create release and deploy
+6. [ ] Test end-to-end on production
+
+**For local development:**
+1. [ ] Start Hoster: `HOSTER_AUTH_MODE=dev go run ./cmd/hoster`
+2. [ ] Start frontend: `cd web && npm run dev`
+3. [ ] Open http://localhost:3000
+4. [ ] Test E2E flow (login → browse → deploy → access)
