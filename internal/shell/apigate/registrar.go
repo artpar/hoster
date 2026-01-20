@@ -99,6 +99,7 @@ func (r *Registrar) RegisterAppProxy(ctx context.Context) error {
 
 // RegisterHosterAPI registers the Hoster API upstream and route with APIGate.
 // This is optional - only needed if Hoster API should also go through APIGate.
+// The route includes request transforms to inject auth headers from APIGate context.
 func (r *Registrar) RegisterHosterAPI(ctx context.Context) error {
 	if r.config.HosterAPIURL == "" {
 		r.logger.Debug("skipping Hoster API registration - URL not configured")
@@ -122,7 +123,9 @@ func (r *Registrar) RegisterHosterAPI(ctx context.Context) error {
 
 	r.logger.Info("hoster API upstream configured", "upstream_id", upstreamID)
 
-	// 2. Create/update route for API
+	// 2. Create/update route for API with header injection
+	// APIGate transform context provides: userID, planID, keyID
+	// These are injected as X-User-ID, X-Plan-ID, X-Key-ID headers for Hoster auth middleware
 	err = r.client.EnsureRoute(ctx, Route{
 		Name:        "hoster-api",
 		PathPattern: "/api/*",
@@ -130,12 +133,22 @@ func (r *Registrar) RegisterHosterAPI(ctx context.Context) error {
 		UpstreamID:  upstreamID,
 		Priority:    50,
 		Enabled:     true,
+		RequestTransform: &RequestTransform{
+			SetHeaders: map[string]string{
+				"X-User-ID": "userID", // User's unique identifier from APIGate auth
+				"X-Plan-ID": "planID", // User's subscription plan ID
+				"X-Key-ID":  "keyID",  // API key identifier used for authentication
+			},
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("ensure hoster api route: %w", err)
 	}
 
-	r.logger.Info("hoster API route configured", "upstream_id", upstreamID)
+	r.logger.Info("hoster API route configured with header injection",
+		"upstream_id", upstreamID,
+		"headers", []string{"X-User-ID", "X-Plan-ID", "X-Key-ID"},
+	)
 
 	return nil
 }

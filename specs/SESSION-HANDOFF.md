@@ -38,7 +38,7 @@
 
 ## LOCAL DEVELOPMENT SETUP
 
-### Quick Start
+### Option A: Standalone (Dev Auth Mode)
 
 **Terminal 1: Start Hoster**
 ```bash
@@ -63,7 +63,67 @@ npm run dev
 127.0.0.1 {deployment-name}.apps.localhost
 ```
 
-### E2E Test Flow (Verified Working)
+### Option B: Full Production-Like Setup (APIGate + Hoster)
+
+This setup mirrors production with APIGate handling user authentication and Hoster receiving user context via headers.
+
+**Terminal 1: Start APIGate**
+```bash
+cd /Users/artpar/workspace/code/apigate
+./apigate --config=/tmp/apigate-temp.yaml
+```
+
+Config file (`/tmp/apigate-temp.yaml`):
+```yaml
+database:
+  dsn: "/path/to/apigate.db"
+server:
+  port: 8082
+```
+
+**Terminal 2: Start Hoster**
+```bash
+cd /Users/artpar/workspace/code/hoster
+HOSTER_AUTH_MODE=header HOSTER_SERVER_PORT=8080 \
+  HOSTER_APP_PROXY_ENABLED=true HOSTER_APP_PROXY_ADDRESS=0.0.0.0:9091 \
+  HOSTER_APP_PROXY_BASE_DOMAIN=apps.localhost ./hoster
+```
+
+**APIGate Configuration (via admin UI at http://localhost:8082):**
+
+1. **Create Admin User:**
+   - Complete setup wizard at http://localhost:8082
+   - Create admin account
+
+2. **Create Upstream:**
+   - Name: `hoster-api`
+   - URL: `http://localhost:8080`
+
+3. **Create Route with Header Injection:**
+   - Name: `Default Route`
+   - Path Pattern: `/*`
+   - Match Type: Prefix
+   - Target Upstream: `hoster-api`
+   - Set Headers (Request Transform):
+     ```
+     X-User-ID=userID
+     X-Plan-ID=planID
+     X-Key-ID=keyID
+     ```
+
+4. **Create Test User via Portal:**
+   - Go to http://localhost:8082/portal/
+   - Sign up with email/password
+   - Create an API key
+
+**Access:**
+- APIGate Portal: http://localhost:8082/portal
+- APIGate Admin: http://localhost:8082/dashboard
+- Hoster API (via APIGate): http://localhost:8082/api/v1/*
+- App Proxy: http://localhost:9091
+- Deployed apps: http://{name}.apps.localhost:9091
+
+### E2E Test Flow (Standalone - Dev Auth)
 
 1. Open http://localhost:3000
 2. Navigate to http://localhost:3000/login
@@ -72,6 +132,59 @@ npm run dev
 5. Click on a template, click "Deploy Now"
 6. After deployment created, start it via API or UI
 7. Access deployed app at http://{name}.apps.localhost:9091
+
+### E2E Test Flow (APIGate Integration - Verified Working January 20, 2026)
+
+**Setup Summary:**
+- APIGate running on port 8082
+- Hoster running on port 8080 (header auth mode)
+- Routes configured to inject X-User-ID from APIGate auth context
+
+**API Testing (requires API key):**
+```javascript
+// From browser console at http://localhost:8082/portal/dashboard
+const apiKey = 'ak_your_api_key_here';
+
+// List templates
+const resp = await fetch('http://localhost:8082/api/v1/templates', {
+  headers: { 'X-API-Key': apiKey, 'Accept': 'application/vnd.api+json' }
+});
+console.log(await resp.json());
+
+// Create deployment
+const deploy = await fetch('http://localhost:8082/api/v1/deployments', {
+  method: 'POST',
+  headers: {
+    'X-API-Key': apiKey,
+    'Content-Type': 'application/vnd.api+json',
+    'Accept': 'application/vnd.api+json'
+  },
+  body: JSON.stringify({
+    data: { type: 'deployments', attributes: { name: 'my-app', template_id: 'tmpl_xxx' }}
+  })
+});
+console.log(await deploy.json());
+
+// Start deployment
+const start = await fetch('http://localhost:8082/api/v1/deployments/depl_xxx/start', {
+  method: 'POST',
+  headers: { 'X-API-Key': apiKey }
+});
+console.log(await start.json());
+```
+
+**Verified Flow (January 20, 2026):**
+1. ✅ User signup via APIGate portal
+2. ✅ API key creation
+3. ✅ Header injection working (X-User-ID = real user UUID)
+4. ✅ Deployment creation with correct customer_id
+5. ✅ Deployment start
+6. ✅ App accessible via subdomain proxy (http://my-nginx-app.apps.localhost:9091)
+
+**Limitation:** Browser access to Hoster frontend through APIGate requires API key. APIGate doesn't currently support public routes. Options:
+- Access Hoster frontend directly (port 8080) in dev mode
+- Use API key in all fetch requests from frontend
+- File feature request for APIGate public routes
 
 ---
 

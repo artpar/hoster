@@ -1,0 +1,88 @@
+# Hoster Local E2E Development Stack
+# Runs APIGate + Hoster together for full production-like E2E testing
+#
+# Usage:
+#   docker-compose -f deploy/docker-compose.local.yml up -d
+#   docker-compose -f deploy/docker-compose.local.yml logs -f
+#   docker-compose -f deploy/docker-compose.local.yml down
+
+version: '3.8'
+
+services:
+  apigate:
+    image: artpar/apigate:latest
+    container_name: apigate-local
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+    volumes:
+      - apigate_data:/data
+    environment:
+      - APIGATE_DATABASE_DSN=/data/apigate.db
+      - APIGATE_SERVER_PORT=8082
+      - APIGATE_SERVER_HOST=0.0.0.0
+      - APIGATE_LOGGING_LEVEL=info
+      - APIGATE_UPSTREAM_URL=http://hoster:8080
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - hoster_network
+
+  hoster:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: hoster-local
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # API (also accessible via APIGate at :8082)
+      - "9091:9091"   # App Proxy
+    volumes:
+      - hoster_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # Server
+      - HOSTER_SERVER_PORT=8080
+      - HOSTER_DATA_DIR=/data
+
+      # Auth - trust headers from APIGate
+      - HOSTER_AUTH_MODE=header
+
+      # APIGate integration
+      - HOSTER_APIGATE_ENABLED=true
+      - HOSTER_APIGATE_URL=http://apigate:8082
+      - HOSTER_APIGATE_AUTO_REGISTER=true
+
+      # App Proxy
+      - HOSTER_APP_PROXY_ENABLED=true
+      - HOSTER_APP_PROXY_ADDRESS=0.0.0.0:9091
+      - HOSTER_APP_PROXY_BASE_DOMAIN=apps.localhost
+
+      # Logging
+      - HOSTER_LOG_LEVEL=info
+    depends_on:
+      apigate:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - hoster_network
+
+volumes:
+  apigate_data:
+    driver: local
+  hoster_data:
+    driver: local
+
+networks:
+  hoster_network:
+    name: hoster_local_network
+    driver: bridge

@@ -81,17 +81,25 @@ type UpstreamsResponse struct {
 // Route Types
 // =============================================================================
 
+// RequestTransform defines how to transform requests before forwarding.
+// Header values are Expr expressions evaluated with auth context (userID, planID, keyID).
+type RequestTransform struct {
+	SetHeaders    map[string]string `json:"set_headers,omitempty"`    // Headers to set (key=header name, value=Expr expression)
+	DeleteHeaders []string          `json:"delete_headers,omitempty"` // Headers to delete
+}
+
 // Route represents an APIGate route.
 type Route struct {
-	ID            string `json:"id,omitempty"`
-	Name          string `json:"name"`
-	HostPattern   string `json:"host_pattern,omitempty"`
-	HostMatchType string `json:"host_match_type,omitempty"` // exact, wildcard, regex
-	PathPattern   string `json:"path_pattern"`
-	MatchType     string `json:"match_type"` // exact, prefix, regex
-	UpstreamID    string `json:"upstream_id"`
-	Priority      int    `json:"priority,omitempty"`
-	Enabled       bool   `json:"enabled"`
+	ID               string            `json:"id,omitempty"`
+	Name             string            `json:"name"`
+	HostPattern      string            `json:"host_pattern,omitempty"`
+	HostMatchType    string            `json:"host_match_type,omitempty"` // exact, wildcard, regex
+	PathPattern      string            `json:"path_pattern"`
+	MatchType        string            `json:"match_type"` // exact, prefix, regex
+	UpstreamID       string            `json:"upstream_id"`
+	Priority         int               `json:"priority,omitempty"`
+	Enabled          bool              `json:"enabled"`
+	RequestTransform *RequestTransform `json:"request_transform,omitempty"` // Optional request transformation
 }
 
 // RouteResponse wraps a route in JSON:API format.

@@ -4,6 +4,7 @@
 VERSION ?= 1.0.0
 
 .PHONY: all build build-minion test test-unit test-integration test-e2e test-e2e-short test-all coverage run clean help
+.PHONY: local-e2e-up local-e2e-down local-e2e-logs local-e2e-setup local-e2e-test
 
 # Default target
 all: test build
@@ -87,7 +88,50 @@ fmt:
 vet:
 	go vet ./...
 
+# =============================================================================
+# Local E2E Development (APIGate + Hoster)
+# =============================================================================
+
+# Start local E2E stack (APIGate + Hoster via docker-compose)
+local-e2e-up:
+	@echo "Starting local E2E stack..."
+	@if command -v docker compose &> /dev/null; then \
+		docker compose -f deploy/docker-compose.local.yml up -d; \
+	else \
+		docker-compose -f deploy/docker-compose.local.yml up -d; \
+	fi
+
+# Stop local E2E stack
+local-e2e-down:
+	@echo "Stopping local E2E stack..."
+	@if command -v docker compose &> /dev/null; then \
+		docker compose -f deploy/docker-compose.local.yml down; \
+	else \
+		docker-compose -f deploy/docker-compose.local.yml down; \
+	fi
+
+# View logs from local E2E stack
+local-e2e-logs:
+	@if command -v docker compose &> /dev/null; then \
+		docker compose -f deploy/docker-compose.local.yml logs -f; \
+	else \
+		docker-compose -f deploy/docker-compose.local.yml logs -f; \
+	fi
+
+# Run full local E2E setup (builds images, starts services)
+local-e2e-setup:
+	@echo "Running local E2E setup..."
+	./scripts/local-e2e-setup.sh
+
+# Run local E2E tests
+local-e2e-test:
+	@echo "Running local E2E tests..."
+	./scripts/test-local-e2e.sh
+
+# =============================================================================
 # Help
+# =============================================================================
+
 help:
 	@echo "Hoster Makefile"
 	@echo ""
@@ -108,3 +152,10 @@ help:
 	@echo "  make deps             - Download dependencies"
 	@echo "  make fmt              - Format code"
 	@echo "  make vet              - Vet code"
+	@echo ""
+	@echo "Local E2E Development (APIGate + Hoster):"
+	@echo "  make local-e2e-setup  - Full setup (build + start services)"
+	@echo "  make local-e2e-up     - Start local E2E stack"
+	@echo "  make local-e2e-down   - Stop local E2E stack"
+	@echo "  make local-e2e-logs   - View logs from local E2E stack"
+	@echo "  make local-e2e-test   - Run local E2E tests"
