@@ -9,7 +9,7 @@
 
 **Vision**: Package creators define deployment templates (docker-compose + config + pricing), customers one-click deploy instances onto YOUR VPS infrastructure.
 
-**Status**: MVP complete, deployed to production at https://emptychair.dev
+**Status**: Backend deployed to production at https://emptychair.dev. Frontend embedding in progress (CI issues being fixed).
 
 ---
 
@@ -333,6 +333,17 @@ These are intentional limitations documented in specs:
 - [x] internal/shell/api/handler.go - HTTP API handlers
 - [x] tests/e2e/ - E2E testing infrastructure
 - [x] Docker integration (create/start/stop/restart/delete containers)
+- [x] internal/shell/apigate/client.go - Fixed admin API prefix (/admin/ instead of /api/)
+- [x] internal/shell/api/webui.go - Embedded frontend handler (following APIGate pattern)
+- [x] .github/workflows/ci.yml - CI workflow with frontend build
+- [x] .github/workflows/release.yml - Release workflow for versioned releases
+- [x] v0.1.0 released and deployed to production (backend only)
+
+### IN PROGRESS
+- [ ] Fix CI npm/rollup issues - see specs/SESSION-HANDOFF.md for details
+- [ ] Create v0.2.0 release with embedded frontend
+- [ ] Deploy v0.2.0 to production
+- [ ] End-to-end user testing
 
 ### Test Counts (January 18, 2026)
 | Suite | Count | Status |
@@ -436,6 +447,35 @@ make vet            # Vet code
 
 ---
 
+## Embedded Frontend Architecture
+
+Following APIGate's pattern, the frontend is embedded into the Go binary using `//go:embed`.
+
+```
+internal/shell/api/
+├── setup.go           # Mounts WebUIHandler() at PathPrefix("/")
+├── webui.go           # Embedded UI handler (SPA pattern)
+└── webui/
+    ├── .gitignore     # Ignores dist/
+    └── dist/          # Copied from web/dist during build (NOT committed)
+```
+
+**Key Files:**
+- `internal/shell/api/webui.go` - Handler using `//go:embed all:webui/dist`
+- `web/vite.config.ts` - Base path set to `/` (served at root)
+
+**Build Process:**
+1. `cd web && npm install && npm run build`
+2. `cp -r dist ../internal/shell/api/webui/`
+3. `go build ./cmd/hoster` (embeds webui/dist via //go:embed)
+
+**Local Development:**
+- Frontend: `cd web && npm run dev` (Vite dev server on :3000 or :5173)
+- Backend: `make run` (Hoster on :8080)
+- Vite proxies /api to backend
+
+---
+
 ## Production Deployment (emptychair.dev)
 
 ### Architecture
@@ -485,21 +525,33 @@ make errors         # Show recent errors
 
 ### CI/CD
 
-- GitHub Actions builds Linux binaries on push to main
-- Workflow: `.github/workflows/build.yml`
-- Artifacts: `hoster-linux-amd64` (with CGO for SQLite)
+**Workflows:**
+- `.github/workflows/ci.yml` - Runs on push to main and PRs (test, build, vet)
+- `.github/workflows/release.yml` - Runs on version tags (v*), creates GitHub releases
 
-### Known Issues
+**Build Process:**
+1. Build frontend: `cd web && npm install && npm run build`
+2. Copy to embed dir: `cp -r dist ../internal/shell/api/webui/`
+3. Build Go binary with embedded frontend
 
-- **ACME auto-cert**: Has bugs (issue #32), using manual TLS mode
-- **Certificate renewal**: Using existing Let's Encrypt certs, need certbot for renewal
+**Current Issue (January 2026):**
+- CI failing with `@rollup/rollup-linux-x64-gnu` module error
+- Fix attempt: `rm -rf node_modules package-lock.json` before `npm install`
+- See `specs/SESSION-HANDOFF.md` for detailed troubleshooting steps
 
 ### Deployment Process
 
-1. Push to main → GitHub Actions builds binary
-2. Download artifact: `gh run download --repo artpar/hoster --name hoster-linux-amd64`
-3. Upload to server: `scp` to `/opt/hoster/bin/hoster`
-4. Restart: `make restart`
+**Via Makefile (RECOMMENDED):**
+```bash
+cd deploy/local
+make deploy-release                    # Deploy latest GitHub release
+make deploy-release VERSION=v0.2.0     # Deploy specific version
+```
+
+**Manual (if needed):**
+1. Tag a release: `git tag v0.2.0 && git push origin v0.2.0`
+2. Wait for GitHub release to be created
+3. Deploy: `make deploy-release VERSION=v0.2.0`
 
 ---
 
