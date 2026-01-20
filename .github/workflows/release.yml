@@ -20,6 +20,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build frontend
+        run: |
+          cd web
+          rm -rf node_modules package-lock.json
+          npm install
+          npm run build
+          cp -r dist ../internal/shell/api/webui/
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
