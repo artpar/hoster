@@ -14,16 +14,15 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      // Proxy API calls to Hoster backend
+      // For local dev: proxy directly to Hoster (uses dev auth)
+      // In production: APIGate handles auth + routing
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
-      // Proxy auth calls to APIGate (when running)
       '/auth': {
-        target: 'http://localhost:8082',
+        target: 'http://localhost:8080',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/auth/, '/portal/api'),
       },
     },
   },

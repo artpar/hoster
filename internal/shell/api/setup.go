@@ -101,6 +101,14 @@ func SetupAPI(cfg APIConfig) http.Handler {
 	customRouter.Use(requestIDMiddleware)
 	customRouter.Use(recoveryMiddleware(cfg.Logger))
 
+	// Register dev auth endpoints BEFORE auth middleware
+	// These endpoints need to be accessible without authentication
+	if cfg.AuthMode == "dev" {
+		cfg.Logger.Info("registering dev auth endpoints (auth.mode=dev)")
+		devAuth := NewDevAuthHandlers(cfg.Logger)
+		devAuth.RegisterRoutes(customRouter)
+	}
+
 	// Add auth middleware (following ADR-005: APIGate Integration)
 	authMW := middleware.NewAuthMiddleware(middleware.AuthConfig{
 		Mode:         cfg.AuthMode,

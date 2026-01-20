@@ -106,8 +106,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Strip port from hostname for matching (browsers include port in Host header)
+	hostnameWithoutPort := hostname
+	if idx := strings.LastIndex(hostname, ":"); idx != -1 {
+		hostnameWithoutPort = hostname[:idx]
+	}
+
 	s.logger.Debug("proxy request",
 		"hostname", hostname,
+		"hostname_stripped", hostnameWithoutPort,
 		"path", r.URL.Path,
 		"method", r.Method,
 	)
@@ -119,8 +126,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Resolve target from database
-	target, err := s.resolveTarget(ctx, slug, hostname)
+	// 2. Resolve target from database (use hostname without port for matching)
+	target, err := s.resolveTarget(ctx, slug, hostnameWithoutPort)
 	if err != nil {
 		var proxyErr proxy.ProxyError
 		if errors.As(err, &proxyErr) {
