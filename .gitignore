@@ -39,3 +39,4 @@ node_modules/
 web/dist/
 web/.vite/
 deploy/local/
+apigate.db*

@@ -49,7 +49,7 @@ func NewHandler(s store.Store, d docker.Client, l *slog.Logger, baseDomain, conf
 	return &Handler{
 		store:        s,
 		docker:       d,
-		orchestrator: docker.NewOrchestrator(d, l, configDir),
+		orchestrator: docker.NewOrchestrator(d, l, configDir, s),
 		scheduler:    scheduler.NewService(s, nil, d, l), // nil NodePool for backward compat
 		billing:      billing.NewNoopClient(l),           // Default to no-op billing
 		logger:       l,
@@ -73,7 +73,7 @@ func NewHandlerWithScheduler(s store.Store, d docker.Client, sched *scheduler.Se
 	return &Handler{
 		store:        s,
 		docker:       d,
-		orchestrator: docker.NewOrchestrator(d, l, configDir), // Default orchestrator with local client
+		orchestrator: docker.NewOrchestrator(d, l, configDir, s), // Default orchestrator with local client
 		scheduler:    sched,
 		billing:      billing.NewNoopClient(l), // Default to no-op billing
 		logger:       l,
@@ -599,7 +599,7 @@ func (h *Handler) handleDeleteDeployment(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Create orchestrator with the node's client
-	orchestrator := docker.NewOrchestrator(client, h.logger, h.configDir)
+	orchestrator := docker.NewOrchestrator(client, h.logger, h.configDir, h.store)
 
 	// Remove all Docker resources (containers, network, volumes)
 	if err := orchestrator.RemoveDeployment(r.Context(), deployment); err != nil {
@@ -710,7 +710,7 @@ func (h *Handler) handleStartDeployment(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Create orchestrator with the scheduled node's client
-	orchestrator := docker.NewOrchestrator(schedResult.Client, h.logger, h.configDir)
+	orchestrator := docker.NewOrchestrator(schedResult.Client, h.logger, h.configDir, h.store)
 
 	// Start containers using orchestrator
 	containers, err := orchestrator.StartDeployment(r.Context(), deployment, template.ComposeSpec, template.ConfigFiles)
@@ -802,7 +802,7 @@ func (h *Handler) handleStopDeployment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create orchestrator with the node's client
-	orchestrator := docker.NewOrchestrator(client, h.logger, h.configDir)
+	orchestrator := docker.NewOrchestrator(client, h.logger, h.configDir, h.store)
 
 	// Stop containers using orchestrator
 	if err := orchestrator.StopDeployment(r.Context(), deployment); err != nil {

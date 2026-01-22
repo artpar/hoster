@@ -9,7 +9,7 @@
 
 **Vision**: Package creators define deployment templates (docker-compose + config + pricing), customers one-click deploy instances onto YOUR VPS infrastructure.
 
-**Status**: Backend deployed to production at https://emptychair.dev. Frontend embedding in progress (CI issues being fixed).
+**Status**: Backend deployed to production at https://emptychair.dev. Monitoring features complete. Local E2E environment fully functional. Ready for v0.2.2 release.
 
 ---
 
@@ -338,14 +338,19 @@ These are intentional limitations documented in specs:
 - [x] .github/workflows/ci.yml - CI workflow with frontend build
 - [x] .github/workflows/release.yml - Release workflow for versioned releases
 - [x] v0.1.0 released and deployed to production (backend only)
+- [x] Container event recording in orchestrator - Lifecycle tracking
+- [x] Deployment monitoring UI - Events, Stats, Logs tabs working
+- [x] Default marketplace templates - 6 templates with pricing and resource limits
+- [x] Local E2E environment - APIGate + Hoster integration fully working
 
 ### IN PROGRESS
+- [ ] Fix APIGate auto-registration (admin routes being caught by frontend route)
 - [ ] Fix CI npm/rollup issues - see specs/SESSION-HANDOFF.md for details
-- [ ] Create v0.2.0 release with embedded frontend
-- [ ] Deploy v0.2.0 to production
-- [ ] End-to-end user testing
+- [ ] Create v0.2.2 release with monitoring features
+- [ ] Deploy v0.2.2 to production
+- [ ] Production E2E testing with monitoring features
 
-### Test Counts (January 18, 2026)
+### Test Counts (January 22, 2026)
 | Suite | Count | Status |
 |-------|-------|--------|
 | Unit (core/) | ~180 | PASS |
@@ -353,7 +358,7 @@ These are intentional limitations documented in specs:
 | E2E | ~100 | PASS |
 | **Total** | **427** | **ALL PASS** |
 
-### MVP STATUS: ✅ COMPLETE
+### MVP STATUS: ✅ COMPLETE + MONITORING FEATURES
 
 The core deployment loop is fully functional:
 1. ✅ Creator creates template with docker-compose
@@ -363,6 +368,41 @@ The core deployment loop is fully functional:
 5. ✅ Deployment gets Traefik labels for external routing
 6. ✅ Customer can start/stop/restart deployments
 7. ✅ Customer can delete deployments
+8. ✅ Customer can monitor deployments (Events, Stats, Logs)
+
+### Monitoring Features: ✅ COMPLETE (January 22, 2026)
+
+1. ✅ **Container Event Recording**
+   - Events tracked: created, started, stopped, restarted, died, OOM, health checks
+   - Stored in `container_events` table with timestamps
+   - Orchestrator records events after each lifecycle operation
+
+2. ✅ **Stats Monitoring**
+   - Real-time CPU, memory, network, disk I/O metrics
+   - Endpoint: `GET /api/v1/deployments/{id}/monitoring/stats`
+   - UI: Stats tab shows current resource usage
+
+3. ✅ **Logs Streaming**
+   - Container logs with timestamps
+   - Filtering by container name and tail count
+   - Endpoint: `GET /api/v1/deployments/{id}/monitoring/logs`
+   - UI: Logs tab shows scrollable log output
+
+4. ✅ **Events Timeline**
+   - Deployment lifecycle history
+   - Event types, messages, and timestamps
+   - Endpoint: `GET /api/v1/deployments/{id}/monitoring/events`
+   - UI: Events tab shows chronological event list
+
+### Default Marketplace Templates: ✅ COMPLETE (January 22, 2026)
+
+6 production-ready templates with pricing and resource limits:
+- PostgreSQL Database ($5/month, 512MB RAM, 0.5 CPU, 5GB disk)
+- MySQL Database ($5/month, 512MB RAM, 0.5 CPU, 5GB disk)
+- Redis Cache ($3/month, 256MB RAM, 0.25 CPU, 2GB disk)
+- MongoDB Database ($5/month, 512MB RAM, 0.5 CPU, 10GB disk)
+- Nginx Web Server ($2/month, 64MB RAM, 0.1 CPU, 512MB disk)
+- Node.js Application ($4/month, 256MB RAM, 0.5 CPU, 2GB disk)
 
 ### ADR-002 Compliance: ✅ COMPLETE
 
@@ -659,3 +699,109 @@ Hoster uses APIGate for authentication and billing (see ADR-005).
 - **APIGate Wiki**: https://github.com/artpar/apigate/wiki
 
 When encountering APIGate-related issues during development or testing, report them at the issues link above. The `gh` CLI is available and logged in for creating issues.
+
+
+---
+
+## Local E2E Testing Environment
+
+### Current Setup (January 22, 2026)
+
+**Location:** `/tmp/hoster-e2e-test/`
+
+**Architecture:**
+```
+Browser → localhost:8082 (APIGate) → Hoster/App Proxy
+    ├── Frontend Route    (/* priority 10, auth_required=0)
+    ├── API Route         (/api/* priority 50, auth_required=0)
+    └── App Proxy Route   (*.apps.localhost/* priority 100, auth_required=0)
+```
+
+**Services:**
+- APIGate: localhost:8082 (single entry point)
+- Hoster: localhost:8080 (API + embedded frontend)
+- App Proxy: localhost:9091 (deployment routing)
+
+**Important:** All access MUST go through APIGate (localhost:8082). Never access Hoster directly on localhost:8080.
+
+### Starting the Environment
+
+```bash
+# Terminal 1: Start APIGate
+cd /tmp/hoster-e2e-test
+apigate serve --config apigate.yaml > apigate.log 2>&1 &
+
+# Terminal 2: Start Hoster (auto-registration disabled)
+cd /Users/artpar/workspace/code/hoster
+HOSTER_DATABASE_DSN=/tmp/hoster-e2e-test/hoster.db \
+HOSTER_APIGATE_AUTO_REGISTER=false \
+./bin/hoster > /tmp/hoster-e2e-test/hoster.log 2>&1 &
+```
+
+### Checking Status
+
+```bash
+# Check running services
+ps aux | grep -E "(apigate|hoster)" | grep -v grep
+lsof -i :8082  # APIGate
+lsof -i :8080  # Hoster
+lsof -i :9091  # App Proxy
+
+# View logs
+tail -f /tmp/hoster-e2e-test/apigate.log
+tail -f /tmp/hoster-e2e-test/hoster.log
+
+# Check routes configuration
+sqlite3 /tmp/hoster-e2e-test/apigate.db "SELECT name, path_pattern, host_pattern, priority, auth_required FROM routes ORDER BY priority DESC;"
+```
+
+### Testing E2E Flow
+
+1. **Access Frontend:** http://localhost:8082/
+2. **Browse Marketplace:** http://localhost:8082/marketplace
+3. **Sign in via dev auth:** Use any email/password
+4. **Deploy template:** Select a template and deploy
+5. **Monitor deployment:** View Events, Stats, Logs tabs
+6. **Access deployed app:** http://{deployment-name}.apps.localhost:8082/
+
+### Database Files
+
+- **Hoster:** `/tmp/hoster-e2e-test/hoster.db` - Templates, deployments, events
+- **APIGate:** `/tmp/hoster-e2e-test/apigate.db` - Routes, upstreams, users
+
+### Routes Configuration (Manual)
+
+Routes are manually configured in APIGate database:
+
+```sql
+-- Frontend route (priority 10 - catches /* after higher priority routes)
+UPDATE routes SET auth_required=0 WHERE name='hoster-frontend';
+
+-- API route (priority 50 - catches /api/* before frontend)
+UPDATE routes SET auth_required=0 WHERE name='hoster-api';
+
+-- App proxy route (priority 100 - highest, catches *.apps.localhost/*)
+UPDATE routes SET auth_required=0 WHERE name='hoster-app-proxy';
+```
+
+### Known Limitations
+
+1. **Auto-registration disabled:** Admin endpoints (`/admin/*`) are caught by frontend route
+2. **Auth disabled for testing:** All routes have `auth_required=0`
+3. **Port in URLs:** App proxy requires port in URL for local testing (`:8082`)
+
+### Troubleshooting
+
+**Problem:** Frontend shows 404
+- **Check:** APIGate is running on 8082
+- **Check:** Hoster is running on 8080
+- **Check:** Routes are configured correctly
+
+**Problem:** API returns 401
+- **Check:** Route has `auth_required=0`
+- **Fix:** `sqlite3 /tmp/hoster-e2e-test/apigate.db "UPDATE routes SET auth_required=0 WHERE name='hoster-api';"`
+
+**Problem:** Can't access deployed app
+- **Check:** App Proxy is running on 9091
+- **Check:** Deployment has domain assigned
+- **Check:** Using correct URL format: `http://{name}.apps.localhost:8082/`

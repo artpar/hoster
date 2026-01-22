@@ -5,11 +5,37 @@
 
 ---
 
-## CURRENT PROJECT STATE (January 20, 2026)
+## CURRENT PROJECT STATE (January 22, 2026)
 
-### Status: BOTH LOCAL E2E MODES WORKING - READY FOR PRODUCTION
+### Status: LOCAL E2E ENVIRONMENT FULLY FUNCTIONAL - MONITORING COMPLETE
 
-**Two Local Development Modes - BOTH WORKING:**
+**Local E2E Testing Environment - FULLY WORKING:**
+
+- **APIGate** (localhost:8082) - Single entry point for all traffic
+- **Hoster Backend** (localhost:8080) - API + embedded frontend
+- **App Proxy** (localhost:9091) - Routes deployed apps via subdomain
+- **Database**: `/tmp/hoster-e2e-test/hoster.db` (Hoster), `/tmp/hoster-e2e-test/apigate.db` (APIGate)
+- **Routes configured**: Frontend (/*), API (/api/*), App Proxy (*.apps.localhost/*)
+- **Auto-registration**: Disabled (using manual route configuration)
+- **Auth**: Disabled for testing (`auth_required=0` on all routes)
+
+**New Features Completed:**
+
+1. **Deployment Monitoring** (January 22, 2026)
+   - ✅ Container event recording (lifecycle tracking)
+   - ✅ Stats tab (CPU, memory, network, disk I/O)
+   - ✅ Logs tab (container logs with filtering)
+   - ✅ Events tab (deployment history timeline)
+
+2. **Default Marketplace Templates** (January 22, 2026)
+   - ✅ PostgreSQL Database ($5/month, 512MB RAM, 0.5 CPU)
+   - ✅ MySQL Database ($5/month, 512MB RAM, 0.5 CPU)
+   - ✅ Redis Cache ($3/month, 256MB RAM, 0.25 CPU)
+   - ✅ MongoDB Database ($5/month, 512MB RAM, 0.5 CPU)
+   - ✅ Nginx Web Server ($2/month, 64MB RAM, 0.1 CPU)
+   - ✅ Node.js Application ($4/month, 256MB RAM, 0.5 CPU)
+
+**Local Development Modes:**
 
 1. **Standalone (Dev Auth Mode)** - Simple local development
    - `HOSTER_AUTH_MODE=dev`
@@ -45,6 +71,59 @@
 ---
 
 ## LOCAL DEVELOPMENT SETUP
+
+### Current E2E Test Environment (January 22, 2026)
+
+**Location:** `/tmp/hoster-e2e-test/`
+
+**Running Services:**
+```bash
+# Check if services are running
+ps aux | grep -E "(apigate|hoster)" | grep -v grep
+lsof -i :8082  # APIGate
+lsof -i :8080  # Hoster
+lsof -i :9091  # App Proxy
+```
+
+**Start Services:**
+```bash
+# Terminal 1: Start APIGate
+cd /tmp/hoster-e2e-test
+apigate serve --config apigate.yaml > apigate.log 2>&1 &
+
+# Terminal 2: Start Hoster (without auto-registration)
+cd /Users/artpar/workspace/code/hoster
+HOSTER_DATABASE_DSN=/tmp/hoster-e2e-test/hoster.db \
+HOSTER_APIGATE_AUTO_REGISTER=false \
+./bin/hoster > /tmp/hoster-e2e-test/hoster.log 2>&1 &
+```
+
+**Access:**
+- **Frontend:** http://localhost:8082/ (via APIGate)
+- **Marketplace:** http://localhost:8082/marketplace
+- **API:** http://localhost:8082/api/v1/* (via APIGate)
+- **Deployed Apps:** http://{name}.apps.localhost:8082/
+
+**Routes Configuration (in APIGate database):**
+```sql
+-- Check routes
+sqlite3 /tmp/hoster-e2e-test/apigate.db "SELECT name, path_pattern, host_pattern, priority, auth_required FROM routes ORDER BY priority DESC;"
+
+-- Expected output:
+-- hoster-app-proxy | /* | *.apps.localhost | 100 | 0
+-- hoster-api       | /api/* |              | 50  | 0
+-- hoster-frontend  | /*     |              | 10  | 0
+```
+
+**Logs:**
+```bash
+tail -f /tmp/hoster-e2e-test/apigate.log   # APIGate logs
+tail -f /tmp/hoster-e2e-test/hoster.log    # Hoster logs
+```
+
+**Important:** All traffic MUST go through APIGate (localhost:8082). Never access Hoster directly on localhost:8080 during E2E testing.
+
+---
 
 ### Option A: Standalone (Dev Auth Mode)
 
@@ -198,7 +277,29 @@ console.log(await start.json());
 
 ## IMMEDIATE NEXT STEPS (Priority Order)
 
-### 1. Verify CI Workflow is Fixed
+### 1. Complete APIGate Auto-Registration Fix
+
+**Current Issue:** Auto-registration fails with 401 when accessing `/admin/upstreams` through APIGate proxy.
+
+**Root Cause:** Hoster frontend route (`/*`, priority 10) catches all requests including `/admin/*`, proxying them to Hoster instead of APIGate's built-in admin endpoints.
+
+**Solution Options:**
+
+**Option A: Higher Priority Admin Route (RECOMMENDED)**
+- Add admin route to APIGate with higher priority (priority 5)
+- Path: `/admin/*`, upstream: `apigate-internal` (direct to APIGate)
+- This prevents frontend route from catching admin requests
+
+**Option B: Exclude Pattern in Frontend Route**
+- Modify Hoster frontend route to exclude `/admin/*`
+- Requires APIGate route pattern support (check if available)
+
+**Option C: Keep Manual Configuration (CURRENT)**
+- Continue using manually configured routes
+- Disable auto-registration (`HOSTER_APIGATE_AUTO_REGISTER=false`)
+- Simple and working for testing
+
+### 2. Verify CI Workflow is Fixed
 
 Check if the npm/rollup issue is resolved:
 ```bash
@@ -207,34 +308,39 @@ gh run list --repo artpar/hoster --limit 3
 
 If still failing, see troubleshooting section below.
 
-### 2. Create New Release with Embedded Frontend
+### 3. Create New Release with Embedded Frontend
 
 Once CI passes:
 ```bash
+# Commit any remaining changes
+git add -A
+git commit -m "feat: Complete monitoring and default templates"
+
 # Delete old failed tag if exists
 git tag -d v0.2.0 2>/dev/null
 git push origin :refs/tags/v0.2.0 2>/dev/null
 
 # Create fresh release
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.2.2
+git push origin v0.2.2
 ```
 
-### 3. Deploy to Production
+### 4. Deploy to Production
 
 ```bash
 cd deploy/local
-make deploy-release VERSION=v0.2.0
+make deploy-release VERSION=v0.2.2
 ```
 
-### 4. Test Production E2E
+### 5. Test Production E2E
 
 1. Navigate to https://emptychair.dev
 2. Should see Hoster marketplace (not APIGate portal)
 3. Sign up / Log in via APIGate
-4. Browse templates
+4. Browse templates (should see 7 templates with pricing)
 5. Deploy a template
-6. Access deployed app at https://{name}.apps.emptychair.dev
+6. Monitor deployment (Events, Stats, Logs tabs)
+7. Access deployed app at https://{name}.apps.emptychair.dev
 
 ---
 
@@ -369,7 +475,82 @@ make shell            # SSH into server
 
 ## Session History
 
-### Session 4 (January 20, 2026) - CURRENT SESSION
+### Session 5 (January 22, 2026) - CURRENT SESSION
+
+**Goal:** Complete monitoring features and prepare for production deployment
+
+**Accomplished:**
+
+1. **Deployment Monitoring Implementation:**
+   - Added container event recording to orchestrator (`internal/shell/docker/orchestrator.go`)
+   - Created StoreInterface to avoid circular dependencies
+   - Added `recordEvent()` method to track lifecycle events
+   - Updated all NewOrchestrator() call sites (9 locations) to pass store parameter
+   - Events recorded: container_created, container_started, container_stopped, container_restarted
+   - Verified Events tab showing deployment history in UI
+
+2. **Monitoring Tabs Testing:**
+   - Stats tab: CPU, memory, network, disk I/O metrics working
+   - Logs tab: Container logs with timestamps and filtering working
+   - Events tab: Deployment lifecycle events timeline working
+
+3. **Default Marketplace Templates:**
+   - Created migration `007_default_templates.up.sql` with 6 templates
+   - Templates include resource limits (CPU/RAM/disk) and pricing
+   - Published PostgreSQL template to marketplace
+   - Verified 7 templates total visible in marketplace (6 default + 1 test)
+
+4. **Local E2E Environment Setup:**
+   - Created `/tmp/hoster-e2e-test/` test environment
+   - Set up APIGate (localhost:8082) and Hoster (localhost:8080)
+   - Manually configured routes in APIGate database:
+     - `hoster-frontend`: Priority 10, path `/*`, auth_required=0
+     - `hoster-api`: Priority 50, path `/api/*`, auth_required=0
+     - `hoster-app-proxy`: Priority 100, path `/*`, host `*.apps.localhost`, auth_required=0
+   - Disabled auto-registration to use existing routes
+   - Verified full E2E flow through APIGate
+
+5. **Browser-Based E2E Testing:**
+   - Used Chrome DevTools MCP for testing
+   - Frontend accessible at `http://localhost:8082/`
+   - API working at `http://localhost:8082/api/v1/templates`
+   - Marketplace showing all 7 templates
+   - All network requests going through APIGate (verified)
+
+**Files Changed:**
+- `internal/shell/docker/orchestrator.go` - Added event recording infrastructure
+- `internal/shell/api/handler.go` - Updated NewOrchestrator calls (5 locations)
+- `internal/shell/api/resources/deployment.go` - Updated NewOrchestrator calls (4 locations)
+- `internal/shell/store/migrations/007_default_templates.up.sql` - NEW - Default templates
+- `internal/shell/store/migrations/007_default_templates.down.sql` - NEW - Rollback migration
+
+**Not Completed:**
+- APIGate auto-registration (401 errors when accessing admin endpoints through proxy)
+- Production deployment (needs CI fixes first)
+- APIGate per-route auth feature request (currently all routes require auth unless manually disabled)
+
+**Known Issues:**
+- APIGate admin endpoints (`/admin/*`) are being caught by Hoster frontend route
+- Auto-registration requires direct access to APIGate admin API (not through proxy)
+- Solution: Disabled auto-registration, using manually configured routes
+
+**Testing Architecture Verified:**
+```
+Browser → localhost:8082 (APIGate ONLY)
+              ↓
+  ┌───────────┴────────────┐
+  ▼                        ▼
+Frontend/*            API/api/*           App Proxy/*.apps.localhost/*
+Priority 10           Priority 50         Priority 100
+auth_required=0       auth_required=0     auth_required=0
+  ↓                        ↓                   ↓
+localhost:8080        localhost:8080      localhost:9091
+(Hoster)              (Hoster API)        (App Proxy)
+```
+
+---
+
+### Session 4 (January 20, 2026)
 
 **Goal:** Full APIGate + Hoster E2E integration testing
 

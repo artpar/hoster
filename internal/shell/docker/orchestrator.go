@@ -13,22 +13,32 @@ import (
 	"github.com/artpar/hoster/internal/core/compose"
 	coredeployment "github.com/artpar/hoster/internal/core/deployment"
 	"github.com/artpar/hoster/internal/core/domain"
+	"github.com/artpar/hoster/internal/core/monitoring"
+	"github.com/google/uuid"
 )
 
 // =============================================================================
 // Orchestrator - Manages Deployment Lifecycle
 // =============================================================================
 
+// StoreInterface defines the minimal storage interface needed by Orchestrator.
+// This is a subset of store.Store to avoid circular dependencies.
+type StoreInterface interface {
+	CreateContainerEvent(ctx context.Context, event *domain.ContainerEvent) error
+}
+
 // Orchestrator manages the lifecycle of deployments using Docker.
 type Orchestrator struct {
 	docker    Client
 	logger    *slog.Logger
 	configDir string // Base directory for storing config files
+	store     StoreInterface
 }
 
 // NewOrchestrator creates a new orchestrator.
 // configDir is the base directory for storing deployment config files.
-func NewOrchestrator(docker Client, logger *slog.Logger, configDir string) *Orchestrator {
+// store is optional - if nil, events will not be recorded.
+func NewOrchestrator(docker Client, logger *slog.Logger, configDir string, store StoreInterface) *Orchestrator {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -39,6 +49,7 @@ func NewOrchestrator(docker Client, logger *slog.Logger, configDir string) *Orch
 		docker:    docker,
 		logger:    logger,
 		configDir: configDir,
+		store:     store,
 	}
 }
 
@@ -147,8 +158,10 @@ func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.D
 		var err error
 
 		// Check if container already exists (restart case)
+		isRestart := false
 		if existing, found := existingByService[svc.Name]; found {
 			containerID = existing.ID
+			isRestart = true
 			o.logger.Debug("using existing container", "service", svc.Name, "container_id", containerID[:12])
 		} else {
 			// Create new container
@@ -164,6 +177,7 @@ func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.D
 				return nil, fmt.Errorf("failed to create container %s: %w", svc.Name, err)
 			}
 			o.logger.Debug("created container", "service", svc.Name, "container_id", containerID[:12])
+			o.recordEvent(ctx, deployment.ID, domain.EventContainerCreated, svc.Name)
 		}
 
 		createdContainers[svc.Name] = containerID
@@ -178,6 +192,13 @@ func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.D
 			}
 		}
 		o.logger.Debug("started container", "service", svc.Name, "container_id", containerID[:12])
+
+		// Record event: restarted if existing, started if new
+		if isRestart {
+			o.recordEvent(ctx, deployment.ID, domain.EventContainerRestarted, svc.Name)
+		} else {
+			o.recordEvent(ctx, deployment.ID, domain.EventContainerStarted, svc.Name)
+		}
 
 		// Get container info
 		info, err := o.docker.InspectContainer(containerID)
@@ -291,10 +312,13 @@ func (o *Orchestrator) StopDeployment(ctx context.Context, deployment *domain.De
 	timeout := 10 * time.Second
 	for _, c := range containers {
 		if c.Status == ContainerStatusRunning {
+			serviceName := c.Labels[LabelService]
 			o.logger.Debug("stopping container", "container_id", c.ID[:12], "name", c.Name)
 			if err := o.docker.StopContainer(c.ID, &timeout); err != nil {
 				o.logger.Warn("failed to stop container", "container_id", c.ID[:12], "error", err)
 				// Continue stopping others
+			} else {
+				o.recordEvent(ctx, deployment.ID, domain.EventContainerStopped, serviceName)
 			}
 		}
 	}
@@ -702,4 +726,39 @@ func (o *Orchestrator) CleanupConfigFiles(deploymentID string) error {
 	}
 	o.logger.Debug("cleaned up config files", "deployment_id", deploymentID)
 	return nil
+}
+
+// =============================================================================
+// Event Recording
+// =============================================================================
+
+// recordEvent records a container lifecycle event to the database.
+// Failures are logged but do not fail the operation - events are observability.
+func (o *Orchestrator) recordEvent(ctx context.Context, deploymentID string, eventType domain.ContainerEventType, containerName string) {
+	if o.store == nil {
+		return // Event recording disabled
+	}
+
+	event := domain.NewContainerEvent(
+		uuid.New().String(),
+		deploymentID,
+		eventType,
+		containerName,
+		monitoring.ContainerEventMessage(eventType, containerName),
+	)
+
+	if err := o.store.CreateContainerEvent(ctx, &event); err != nil {
+		o.logger.Warn("failed to record container event",
+			"error", err,
+			"deployment_id", deploymentID,
+			"event_type", eventType,
+			"container", containerName,
+		)
+	} else {
+		o.logger.Debug("recorded container event",
+			"deployment_id", deploymentID,
+			"event_type", eventType,
+			"container", containerName,
+		)
+	}
 }

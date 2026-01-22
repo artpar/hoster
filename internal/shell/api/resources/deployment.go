@@ -178,7 +178,7 @@ func NewDeploymentResource(s store.Store, d docker.Client, sched *scheduler.Serv
 	return &DeploymentResource{
 		Store:        s,
 		Docker:       d,
-		Orchestrator: docker.NewOrchestrator(d, l, configDir),
+		Orchestrator: docker.NewOrchestrator(d, l, configDir, s),
 		Scheduler:    sched,
 		Logger:       l,
 		BaseDomain:   baseDomain,
@@ -432,7 +432,7 @@ func (r DeploymentResource) Delete(id string, req api2go.Request) (api2go.Respon
 	}
 
 	// Create orchestrator with the node's client
-	orchestrator := docker.NewOrchestrator(client, r.Logger, r.ConfigDir)
+	orchestrator := docker.NewOrchestrator(client, r.Logger, r.ConfigDir, r.Store)
 
 	// Remove all Docker resources
 	if err := orchestrator.RemoveDeployment(ctx, deployment); err != nil {
@@ -588,7 +588,7 @@ func (r DeploymentResource) StartDeployment(id string, req *http.Request) (api2g
 	}
 
 	// Create orchestrator with the scheduled node's client
-	orchestrator := docker.NewOrchestrator(schedResult.Client, r.Logger, r.ConfigDir)
+	orchestrator := docker.NewOrchestrator(schedResult.Client, r.Logger, r.ConfigDir, r.Store)
 
 	// Start containers using orchestrator
 	containers, err := orchestrator.StartDeployment(ctx, deployment, template.ComposeSpec, template.ConfigFiles)
@@ -696,7 +696,7 @@ func (r DeploymentResource) StopDeployment(id string, req *http.Request) (api2go
 	}
 
 	// Create orchestrator with the node's client
-	orchestrator := docker.NewOrchestrator(client, r.Logger, r.ConfigDir)
+	orchestrator := docker.NewOrchestrator(client, r.Logger, r.ConfigDir, r.Store)
 
 	// Stop containers using orchestrator
 	if err := orchestrator.StopDeployment(ctx, deployment); err != nil {
