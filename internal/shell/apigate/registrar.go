@@ -153,6 +153,53 @@ func (r *Registrar) RegisterHosterAPI(ctx context.Context) error {
 	return nil
 }
 
+// RegisterHosterFrontend registers a public route for Hoster's web UI.
+// This allows unauthenticated access to the marketplace and other public pages.
+// The route has lowest priority so API routes match first.
+func (r *Registrar) RegisterHosterFrontend(ctx context.Context) error {
+	if r.config.HosterAPIURL == "" {
+		r.logger.Debug("skipping Hoster frontend registration - URL not configured")
+		return nil
+	}
+
+	r.logger.Info("registering Hoster frontend (public) with APIGate",
+		"apigate_url", r.config.APIGateURL,
+		"hoster_url", r.config.HosterAPIURL,
+	)
+
+	// Ensure upstream exists (reuse hoster-api upstream)
+	upstreamID, err := r.client.EnsureUpstream(ctx, Upstream{
+		Name:            "hoster-api",
+		BaseURL:         r.config.HosterAPIURL,
+		HealthCheckPath: "/health",
+	})
+	if err != nil {
+		return fmt.Errorf("ensure hoster upstream: %w", err)
+	}
+
+	// Create public route for frontend (no API key required)
+	authRequired := false
+	err = r.client.EnsureRoute(ctx, Route{
+		Name:         "hoster-frontend",
+		PathPattern:  "/*",
+		MatchType:    "prefix",
+		UpstreamID:   upstreamID,
+		Priority:     10, // Lowest priority - API (50) and app-proxy (100) match first
+		Enabled:      true,
+		AuthRequired: &authRequired, // PUBLIC - no API key needed
+	})
+	if err != nil {
+		return fmt.Errorf("ensure hoster frontend route: %w", err)
+	}
+
+	r.logger.Info("hoster frontend route configured (public)",
+		"upstream_id", upstreamID,
+		"auth_required", false,
+	)
+
+	return nil
+}
+
 // RegisterAll registers all Hoster services with APIGate.
 func (r *Registrar) RegisterAll(ctx context.Context) error {
 	// Register app proxy (required if proxy is enabled)
@@ -162,9 +209,14 @@ func (r *Registrar) RegisterAll(ctx context.Context) error {
 		}
 	}
 
-	// Register Hoster API (optional)
+	// Register Hoster API (authenticated, with header injection)
 	if err := r.RegisterHosterAPI(ctx); err != nil {
 		return fmt.Errorf("register hoster api: %w", err)
+	}
+
+	// Register Hoster frontend (public, no auth required)
+	if err := r.RegisterHosterFrontend(ctx); err != nil {
+		return fmt.Errorf("register hoster frontend: %w", err)
 	}
 
 	return nil

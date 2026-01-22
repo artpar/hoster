@@ -99,6 +99,7 @@ type Route struct {
 	UpstreamID       string            `json:"upstream_id"`
 	Priority         int               `json:"priority,omitempty"`
 	Enabled          bool              `json:"enabled"`
+	AuthRequired     *bool             `json:"auth_required,omitempty"` // If false, route is public (no API key needed). Default: true
 	RequestTransform *RequestTransform `json:"request_transform,omitempty"` // Optional request transformation
 }
 
