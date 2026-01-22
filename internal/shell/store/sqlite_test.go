@@ -25,6 +25,21 @@ func setupTestStore(t *testing.T) Store {
 	return store
 }
 
+// setupEmptyTestStore creates a test store and clears all default templates
+// Use this for tests that expect an empty database
+func setupEmptyTestStore(t *testing.T) *SQLiteStore {
+	t.Helper()
+	store, err := NewSQLiteStore(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		store.Close()
+	})
+	// Clear default templates created by migrations
+	_, err = store.db.Exec("DELETE FROM templates")
+	require.NoError(t, err)
+	return store
+}
+
 func createTestTemplate(t *testing.T, store Store) *domain.Template {
 	t.Helper()
 	template, err := domain.NewTemplate(
@@ -419,7 +434,7 @@ func TestTemplate_EmptyVariables(t *testing.T) {
 // =============================================================================
 
 func TestListTemplates_WithPagination(t *testing.T) {
-	store := setupTestStore(t)
+	store := setupEmptyTestStore(t)
 	ctx := context.Background()
 
 	// Create 5 templates
@@ -472,7 +487,7 @@ func TestListDeployments_WithPagination(t *testing.T) {
 }
 
 func TestListTemplates_EmptyResult(t *testing.T) {
-	store := setupTestStore(t)
+	store := setupEmptyTestStore(t)
 	ctx := context.Background()
 
 	templates, err := store.ListTemplates(ctx, DefaultListOptions())
@@ -596,7 +611,7 @@ func TestWithTx_ContextCancellation(t *testing.T) {
 
 // TestWithTx_AllTemplateOperations exercises all template operations within a transaction.
 func TestWithTx_AllTemplateOperations(t *testing.T) {
-	store := setupTestStore(t)
+	store := setupEmptyTestStore(t)
 	ctx := context.Background()
 
 	var templateID, templateSlug string
