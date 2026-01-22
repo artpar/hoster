@@ -136,7 +136,7 @@ func TestClient_GetUpstreamByName_NotFound(t *testing.T) {
 
 func TestClient_UpdateUpstream(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, http.MethodPut, r.Method)
 		assert.Equal(t, "/admin/upstreams/upstream-123", r.URL.Path)
 
 		json.NewEncoder(w).Encode(UpstreamResponse{
@@ -311,7 +311,7 @@ func TestClient_EnsureUpstream_Update(t *testing.T) {
 			})
 			return
 		}
-		if r.Method == http.MethodPatch {
+		if r.Method == http.MethodPut {
 			updateCalled = true
 			json.NewEncoder(w).Encode(UpstreamResponse{
 				Data: struct {
@@ -396,7 +396,7 @@ func TestClient_EnsureRoute_Update(t *testing.T) {
 			})
 			return
 		}
-		if r.Method == http.MethodPatch {
+		if r.Method == http.MethodPut {
 			updateCalled = true
 			json.NewEncoder(w).Encode(RouteResponse{
 				Data: struct {

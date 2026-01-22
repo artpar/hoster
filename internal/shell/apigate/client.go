@@ -199,7 +199,7 @@ func (c *Client) UpdateUpstream(ctx context.Context, id string, upstream Upstrea
 		return nil, fmt.Errorf("marshal upstream: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.baseURL+"/admin/upstreams/"+id, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.baseURL+"/admin/upstreams/"+id, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -303,7 +303,7 @@ func (c *Client) UpdateRoute(ctx context.Context, id string, route Route) (*Rout
 		return nil, fmt.Errorf("marshal route: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.baseURL+"/admin/routes/"+id, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.baseURL+"/admin/routes/"+id, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
