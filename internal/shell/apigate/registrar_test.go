@@ -286,7 +286,8 @@ func TestRegistrar_RegisterAll(t *testing.T) {
 	// Should have made requests for:
 	// - App proxy: GET upstreams, POST upstream, GET routes, POST route
 	// - Hoster API: GET upstreams, POST upstream, GET routes, POST route
-	assert.Equal(t, 8, requestCount)
+	// - Hoster frontend: GET upstreams, POST upstream, GET routes, POST route
+	assert.Equal(t, 12, requestCount)
 }
 
 func TestRegistrar_RegisterAll_AppProxyOnly(t *testing.T) {
