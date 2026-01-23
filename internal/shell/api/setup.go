@@ -101,21 +101,39 @@ func SetupAPI(cfg APIConfig) http.Handler {
 	customRouter.Use(requestIDMiddleware)
 	customRouter.Use(recoveryMiddleware(cfg.Logger))
 
-	// Register dev auth endpoints BEFORE auth middleware
-	// These endpoints need to be accessible without authentication
+	// Create dev auth handlers if in dev mode (needed for session lookup)
+	var devAuth *DevAuthHandlers
 	if cfg.AuthMode == "dev" {
 		cfg.Logger.Info("registering dev auth endpoints (auth.mode=dev)")
-		devAuth := NewDevAuthHandlers(cfg.Logger)
+		devAuth = NewDevAuthHandlers(cfg.Logger)
 		devAuth.RegisterRoutes(customRouter)
 	}
 
 	// Add auth middleware (following ADR-005: APIGate Integration)
-	authMW := middleware.NewAuthMiddleware(middleware.AuthConfig{
+	authConfig := middleware.AuthConfig{
 		Mode:         cfg.AuthMode,
 		RequireAuth:  cfg.AuthRequire,
 		SharedSecret: cfg.AuthSharedSecret,
 		Logger:       cfg.Logger,
-	})
+	}
+
+	// In dev mode, pass the session lookup function so the middleware
+	// can get the actual user ID from the dev session
+	if devAuth != nil {
+		authConfig.DevSessionLookup = func(sessionID string) *middleware.DevSession {
+			session := devAuth.LookupSession(sessionID)
+			if session == nil {
+				return nil
+			}
+			return &middleware.DevSession{
+				UserID: session.UserID,
+				Email:  session.Email,
+				Name:   session.Name,
+			}
+		}
+	}
+
+	authMW := middleware.NewAuthMiddleware(authConfig)
 	customRouter.Use(authMW.Handler)
 
 	// Health endpoints

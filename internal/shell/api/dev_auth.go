@@ -73,6 +73,15 @@ func NewDevAuthHandlers(logger *slog.Logger) *DevAuthHandlers {
 	}
 }
 
+// LookupSession looks up a session by session ID.
+// Returns nil if the session is not found.
+// This is used by the auth middleware to get the actual user ID from the session.
+func (h *DevAuthHandlers) LookupSession(sessionID string) *DevSession {
+	h.sessionMu.RLock()
+	defer h.sessionMu.RUnlock()
+	return h.sessions[sessionID]
+}
+
 // RegisterRoutes registers dev auth routes on the router.
 // These routes are registered without the auth middleware so they're always accessible.
 func (h *DevAuthHandlers) RegisterRoutes(router *mux.Router) {

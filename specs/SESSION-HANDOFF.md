@@ -7,7 +7,7 @@
 
 ## CURRENT PROJECT STATE (January 22, 2026)
 
-### Status: LOCAL E2E ENVIRONMENT FULLY FUNCTIONAL - MONITORING COMPLETE
+### Status: LOCAL E2E ENVIRONMENT FULLY FUNCTIONAL - ALL FEATURES WORKING
 
 **Local E2E Testing Environment - FULLY WORKING:**
 
@@ -18,6 +18,22 @@
 - **Routes configured**: Frontend (/*), API (/api/*), App Proxy (*.apps.localhost/*)
 - **Auto-registration**: Disabled (using manual route configuration)
 - **Auth**: Disabled for testing (`auth_required=0` on all routes)
+- **Subdomain Routing**: ✅ WORKING (requires APIGate commit 5d72804 or later)
+
+**IMPORTANT - APIGate Version Requirement:**
+App proxy subdomain routing requires APIGate with fix from issue #41 (commit `5d72804`).
+This fix addresses:
+1. Host header extraction from `r.Host` (Go stores it separately from `r.Header`)
+2. Host header preservation when proxying to upstream
+3. Public route detection before API key check
+4. Priority route middleware for host-based patterns
+
+To update APIGate:
+```bash
+cd /Users/artpar/workspace/code/apigate
+git pull  # Must include commit 5d72804 or later
+go build -o bin/apigate ./cmd/apigate
+```
 
 **New Features Completed:**
 
@@ -60,13 +76,15 @@
 - ✅ Marketplace browsing
 - ✅ Template deployment
 - ✅ Container orchestration
-- ✅ App proxy routing via subdomain
+- ✅ App proxy routing via subdomain (through APIGate - requires commit 5d72804+)
+- ✅ Deployment monitoring (Events, Stats, Logs)
 - ✅ All E2E flows verified (both modes)
 
 **What Needs Production Work:**
 - CI workflows need verification (npm/rollup issues were being fixed)
 - Need release with embedded frontend (v0.2.0)
 - Production routing configuration verification
+- Ensure production APIGate has host-based routing fix (commit 5d72804+)
 
 ---
 
@@ -445,6 +463,28 @@ Error: Cannot find module @rollup/rollup-linux-x64-gnu
 
 3. Verify app proxy is running on port 9091
 
+### Subdomain Routing Through APIGate Not Working
+
+**Symptom:** Requests to `http://{name}.apps.localhost:8082/` return Hoster homepage instead of deployed app.
+
+**Cause:** APIGate version is missing host-based routing fix.
+
+**Solution:** Update APIGate to commit `5d72804` or later:
+```bash
+cd /Users/artpar/workspace/code/apigate
+git pull
+go build -o bin/apigate ./cmd/apigate
+# Restart APIGate
+```
+
+**Verification:**
+```bash
+# Should return nginx welcome page (or your deployed app)
+curl -H "Host: nginx-web-server-mkpnwv4e.apps.localhost" http://localhost:8082/
+```
+
+**Reference:** GitHub issue https://github.com/artpar/apigate/issues/41
+
 ### Dev Auth Session Issues
 
 Dev auth stores sessions in memory. Restarting Hoster clears all sessions.
@@ -477,7 +517,7 @@ make shell            # SSH into server
 
 ### Session 5 (January 22, 2026) - CURRENT SESSION
 
-**Goal:** Complete monitoring features and prepare for production deployment
+**Goal:** Complete monitoring features, fix subdomain routing, and prepare for production deployment
 
 **Accomplished:**
 
@@ -517,6 +557,17 @@ make shell            # SSH into server
    - Marketplace showing all 7 templates
    - All network requests going through APIGate (verified)
 
+6. **APIGate Subdomain Routing Fix (Issue #41):**
+   - Identified 4 bugs preventing host-based routing in APIGate
+   - Filed comprehensive GitHub issue: https://github.com/artpar/apigate/issues/41
+   - Issues identified:
+     1. Host header not extracted from `r.Host` (Go stores it separately)
+     2. Chi router routes taking precedence over database routes with host patterns
+     3. Host header not preserved when proxying to upstream
+     4. Public route detection happening after API key check
+   - Fix merged in APIGate commit `5d72804`
+   - Verified subdomain routing working: `curl -H "Host: nginx-web-server-mkpnwv4e.apps.localhost" http://localhost:8082/` returns nginx welcome page
+
 **Files Changed:**
 - `internal/shell/docker/orchestrator.go` - Added event recording infrastructure
 - `internal/shell/api/handler.go` - Updated NewOrchestrator calls (5 locations)
@@ -524,10 +575,20 @@ make shell            # SSH into server
 - `internal/shell/store/migrations/007_default_templates.up.sql` - NEW - Default templates
 - `internal/shell/store/migrations/007_default_templates.down.sql` - NEW - Rollback migration
 
+**APIGate Changes (in artpar/apigate repo, NOT hoster):**
+- `adapters/http/handler.go` - Host header extraction + priority middleware
+- `adapters/http/upstream.go` - Host header preservation in all Forward methods
+- `app/proxy.go` - Public route detection improvements
+
+**E2E Test Results - ALL PASSING:**
+- ✅ Frontend access through APIGate (redirects to /login)
+- ✅ API access through APIGate (returns 7 templates without auth)
+- ✅ App proxy subdomain routing (nginx welcome page via `*.apps.localhost`)
+- ✅ Billing disabled (by design for local testing)
+
 **Not Completed:**
 - APIGate auto-registration (401 errors when accessing admin endpoints through proxy)
 - Production deployment (needs CI fixes first)
-- APIGate per-route auth feature request (currently all routes require auth unless manually disabled)
 
 **Known Issues:**
 - APIGate admin endpoints (`/admin/*`) are being caught by Hoster frontend route

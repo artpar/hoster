@@ -14,6 +14,17 @@ import (
 // Auth Configuration
 // =============================================================================
 
+// DevSession represents a dev session for session lookup.
+type DevSession struct {
+	UserID string
+	Email  string
+	Name   string
+}
+
+// DevSessionLookup is a function that looks up a dev session by session ID.
+// Returns nil if the session is not found.
+type DevSessionLookup func(sessionID string) *DevSession
+
 // AuthConfig holds configuration for the auth middleware.
 type AuthConfig struct {
 	// Mode determines how authentication is handled.
@@ -32,6 +43,10 @@ type AuthConfig struct {
 
 	// Logger for auth middleware logging.
 	Logger *slog.Logger
+
+	// DevSessionLookup is used in "dev" mode to look up sessions from the dev auth handler.
+	// If nil in dev mode, falls back to hardcoded "dev-user".
+	DevSessionLookup DevSessionLookup
 }
 
 // =============================================================================
@@ -70,10 +85,25 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 			return
 		}
 
-		// In "dev" mode, set a default dev user context (for local development)
+		// In "dev" mode, check for dev session cookie first
 		if m.config.Mode == "dev" {
+			userID := "dev-user" // fallback
+
+			// Try to get user ID from dev session cookie
+			if m.config.DevSessionLookup != nil {
+				if cookie, err := r.Cookie("hoster_dev_session"); err == nil {
+					if session := m.config.DevSessionLookup(cookie.Value); session != nil {
+						userID = session.UserID
+						m.config.Logger.Debug("dev auth: using session user",
+							"user_id", userID,
+							"email", session.Email,
+						)
+					}
+				}
+			}
+
 			devCtx := auth.Context{
-				UserID:        "dev-user",
+				UserID:        userID,
 				PlanID:        "dev-plan",
 				PlanLimits:    auth.DefaultPlanLimits(),
 				Authenticated: true,
