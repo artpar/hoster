@@ -130,6 +130,8 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		AuthMode:         cfg.Auth.Mode,
 		AuthRequire:      cfg.Auth.RequireAuth,
 		AuthSharedSecret: cfg.Auth.SharedSecret,
+		// Encryption key for SSH keys (required for node management)
+		EncryptionKey: encryptionKey,
 	})
 
 	// Create HTTP server

@@ -9,6 +9,7 @@ import { DeployDialog } from '@/components/templates/DeployDialog';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { AlertDialog } from '@/components/ui/AlertDialog';
 
 export function TemplateDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -16,6 +17,7 @@ export function TemplateDetailPage() {
   const isAuthenticated = useIsAuthenticated();
   const { data: template, isLoading, error } = useTemplate(id ?? '');
   const [deployDialogOpen, setDeployDialogOpen] = useState(false);
+  const [signInAlertOpen, setSignInAlertOpen] = useState(false);
 
   if (isLoading) {
     return <LoadingPage />;
@@ -31,7 +33,7 @@ export function TemplateDetailPage() {
 
   const handleDeployClick = () => {
     if (!isAuthenticated) {
-      alert('Please sign in to deploy');
+      setSignInAlertOpen(true);
       return;
     }
     setDeployDialogOpen(true);
@@ -191,6 +193,15 @@ export function TemplateDetailPage() {
         open={deployDialogOpen}
         onOpenChange={setDeployDialogOpen}
         onSuccess={handleDeploySuccess}
+      />
+
+      {/* Sign In Alert */}
+      <AlertDialog
+        open={signInAlertOpen}
+        onOpenChange={setSignInAlertOpen}
+        title="Sign In Required"
+        description="Please sign in to deploy this template."
+        buttonLabel="OK"
       />
     </div>
   );

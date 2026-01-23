@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Edit, Trash2, Send } from 'lucide-react';
 import type { Template } from '@/api/types';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { usePublishTemplate, useDeleteTemplate } from '@/hooks/useTemplates';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 interface TemplateCardProps {
   template: Template;
@@ -12,6 +14,7 @@ interface TemplateCardProps {
 export function TemplateCard({ template, showActions = false }: TemplateCardProps) {
   const publishTemplate = usePublishTemplate();
   const deleteTemplate = useDeleteTemplate();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const handlePublish = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -19,12 +22,14 @@ export function TemplateCard({ template, showActions = false }: TemplateCardProp
     await publishTemplate.mutateAsync(template.id);
   };
 
-  const handleDelete = async (e: React.MouseEvent) => {
+  const handleDeleteClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (confirm('Are you sure you want to delete this template?')) {
-      await deleteTemplate.mutateAsync(template.id);
-    }
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    await deleteTemplate.mutateAsync(template.id);
   };
 
   return (
@@ -76,7 +81,7 @@ export function TemplateCard({ template, showActions = false }: TemplateCardProp
             Edit
           </button>
           <button
-            onClick={handleDelete}
+            onClick={handleDeleteClick}
             disabled={deleteTemplate.isPending}
             className="inline-flex items-center gap-1 rounded-md border border-destructive px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
           >
@@ -85,6 +90,16 @@ export function TemplateCard({ template, showActions = false }: TemplateCardProp
           </button>
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title="Delete Template"
+        description="Are you sure you want to delete this template? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleDeleteConfirm}
+      />
     </Link>
   );
 }

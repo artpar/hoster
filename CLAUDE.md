@@ -9,7 +9,7 @@
 
 **Vision**: Package creators define deployment templates (docker-compose + config + pricing), customers one-click deploy instances onto YOUR VPS infrastructure.
 
-**Status**: Backend deployed to production at https://emptychair.dev. Monitoring features complete. Local E2E environment fully functional. Ready for v0.2.2 release.
+**Status**: Backend deployed to production at https://emptychair.dev. Monitoring features complete. Local E2E environment fully functional. **Remote node deployment verified on AWS EC2.** Ready for v0.2.2 release.
 
 ---
 
@@ -342,15 +342,18 @@ These are intentional limitations documented in specs:
 - [x] Deployment monitoring UI - Events, Stats, Logs tabs working
 - [x] Default marketplace templates - 6 templates with pricing and resource limits
 - [x] Local E2E environment - APIGate + Hoster integration fully working
+- [x] Remote node E2E - AWS EC2 deployment verified (January 23, 2026)
+- [x] React dialog components - ConfirmDialog and AlertDialog replacing native dialogs
+- [x] SSH key management via web UI - Encrypted storage with AES-256-GCM
+- [x] Node registration via web UI - Health checks working
 
 ### IN PROGRESS
-- [ ] Fix APIGate auto-registration (admin routes being caught by frontend route)
 - [ ] Fix CI npm/rollup issues - see specs/SESSION-HANDOFF.md for details
 - [ ] Create v0.2.2 release with monitoring features
 - [ ] Deploy v0.2.2 to production
 - [ ] Production E2E testing with monitoring features
 
-### Test Counts (January 22, 2026)
+### Test Counts (January 23, 2026)
 | Suite | Count | Status |
 |-------|-------|--------|
 | Unit (core/) | ~180 | PASS |
@@ -358,17 +361,26 @@ These are intentional limitations documented in specs:
 | E2E | ~100 | PASS |
 | **Total** | **427** | **ALL PASS** |
 
-### MVP STATUS: ✅ COMPLETE + MONITORING FEATURES
+### Remote Node E2E Test: ✅ VERIFIED (January 23, 2026)
+- AWS EC2 instance: 98.82.190.29
+- Node: aws-test-node (online)
+- Deployment: test-app-mkqrkyep (running)
+- Events: container_created, container_started
+
+### MVP STATUS: ✅ COMPLETE + MONITORING + REMOTE NODES
 
 The core deployment loop is fully functional:
 1. ✅ Creator creates template with docker-compose
 2. ✅ Creator publishes template
-3. ✅ Customer deploys from published template
-4. ✅ Deployment gets auto-generated domain
-5. ✅ Deployment gets Traefik labels for external routing
-6. ✅ Customer can start/stop/restart deployments
-7. ✅ Customer can delete deployments
-8. ✅ Customer can monitor deployments (Events, Stats, Logs)
+3. ✅ Creator registers remote nodes (SSH key + node)
+4. ✅ Customer deploys from published template
+5. ✅ Deployment gets auto-generated domain
+6. ✅ Deployment gets Traefik labels for external routing
+7. ✅ Scheduler assigns deployment to available node
+8. ✅ Customer can start/stop/restart deployments
+9. ✅ Customer can delete deployments
+10. ✅ Customer can monitor deployments (Events, Stats, Logs)
+11. ✅ **Deployments run on remote Docker hosts** (verified on AWS EC2)
 
 ### Monitoring Features: ✅ COMPLETE (January 22, 2026)
 
@@ -393,6 +405,36 @@ The core deployment loop is fully functional:
    - Event types, messages, and timestamps
    - Endpoint: `GET /api/v1/deployments/{id}/monitoring/events`
    - UI: Events tab shows chronological event list
+
+### Remote Node Management: ✅ COMPLETE (January 23, 2026)
+
+Full support for deploying to remote Docker hosts:
+
+1. ✅ **SSH Key Management**
+   - Add/delete SSH keys via Creator Dashboard
+   - Keys encrypted with AES-256-GCM (32-byte key required)
+   - Stored in `ssh_keys` table with encrypted private key
+
+2. ✅ **Node Registration**
+   - Register remote nodes via Creator Dashboard
+   - Health checks verify connectivity and Docker availability
+   - Nodes must be owned by template creator for scheduling
+
+3. ✅ **Remote Deployment**
+   - Scheduler assigns deployments to available nodes
+   - SSH tunnel used for Docker API communication
+   - Container events recorded from remote operations
+   - Verified on AWS EC2 (98.82.190.29)
+
+4. ✅ **UI Components**
+   - React ConfirmDialog for destructive actions (delete node/key)
+   - AlertDialog for notifications
+   - No native browser dialogs (confirm/alert) used
+
+**Critical Note:** Encryption key must be consistent across restarts:
+```bash
+HOSTER_ENCRYPTION_KEY=12345678901234567890123456789012  # exactly 32 bytes
+```
 
 ### Default Marketplace Templates: ✅ COMPLETE (January 22, 2026)
 

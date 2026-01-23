@@ -26,6 +26,7 @@ import { Select } from '@/components/ui/Select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 import { Badge } from '@/components/ui/Badge';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 type StatusFilter = 'all' | 'draft' | 'published' | 'deprecated';
 
@@ -47,6 +48,8 @@ export function CreatorDashboardPage() {
   const [addSSHKeyDialogOpen, setAddSSHKeyDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [deleteSSHKeyDialog, setDeleteSSHKeyDialog] = useState<{ open: boolean; id: string; name: string }>({ open: false, id: '', name: '' });
+  const [deleteNodeDialog, setDeleteNodeDialog] = useState<{ open: boolean; id: string; name: string }>({ open: false, id: '', name: '' });
 
   // Filter templates created by this user
   const myTemplates = useMemo(() => {
@@ -332,11 +335,7 @@ export function CreatorDashboardPage() {
                         ({key.attributes.fingerprint.substring(0, 12)}...)
                       </span>
                       <button
-                        onClick={() => {
-                          if (confirm(`Delete SSH key "${key.attributes.name}"?`)) {
-                            deleteSSHKey.mutate(key.id);
-                          }
-                        }}
+                        onClick={() => setDeleteSSHKeyDialog({ open: true, id: key.id, name: key.attributes.name })}
                         className="ml-1 text-muted-foreground hover:text-destructive"
                       >
                         &times;
@@ -371,11 +370,7 @@ export function CreatorDashboardPage() {
                   node={node}
                   onEnterMaintenance={(id) => enterMaintenance.mutate(id)}
                   onExitMaintenance={(id) => exitMaintenance.mutate(id)}
-                  onDelete={(id) => {
-                    if (confirm(`Delete node "${node.attributes.name}"? This cannot be undone.`)) {
-                      deleteNode.mutate(id);
-                    }
-                  }}
+                  onDelete={(id) => setDeleteNodeDialog({ open: true, id, name: node.attributes.name })}
                   isDeleting={deleteNode.isPending}
                   isUpdating={enterMaintenance.isPending || exitMaintenance.isPending}
                 />
@@ -537,6 +532,28 @@ export function CreatorDashboardPage() {
           // Optionally re-open the Add Node dialog
           setAddNodeDialogOpen(true);
         }}
+      />
+
+      {/* Delete SSH Key Confirmation */}
+      <ConfirmDialog
+        open={deleteSSHKeyDialog.open}
+        onOpenChange={(open) => setDeleteSSHKeyDialog((prev) => ({ ...prev, open }))}
+        title="Delete SSH Key"
+        description={`Delete SSH key "${deleteSSHKeyDialog.name}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => deleteSSHKey.mutate(deleteSSHKeyDialog.id)}
+      />
+
+      {/* Delete Node Confirmation */}
+      <ConfirmDialog
+        open={deleteNodeDialog.open}
+        onOpenChange={(open) => setDeleteNodeDialog((prev) => ({ ...prev, open }))}
+        title="Delete Node"
+        description={`Delete node "${deleteNodeDialog.name}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => deleteNode.mutate(deleteNodeDialog.id)}
       />
     </div>
   );

@@ -32,6 +32,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 import { Badge } from '@/components/ui/Badge';
 import { Select } from '@/components/ui/Select';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 export function DeploymentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -53,6 +54,9 @@ export function DeploymentDetailPage() {
   const { data: events, isLoading: eventsLoading } = useDeploymentEvents(id ?? '', {
     limit: 50,
   });
+
+  // Delete confirmation dialog
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const startDeployment = useStartDeployment();
   const stopDeployment = useStopDeployment();
@@ -78,14 +82,16 @@ export function DeploymentDetailPage() {
     await stopDeployment.mutateAsync(deployment.id);
   };
 
-  const handleDelete = async () => {
-    if (confirm('Are you sure you want to delete this deployment?')) {
-      await deleteDeployment.mutateAsync(deployment.id);
-      navigate('/deployments');
-    }
+  const handleDeleteClick = () => {
+    setDeleteDialogOpen(true);
   };
 
-  const canStart = ['stopped', 'failed'].includes(deployment.attributes.status);
+  const handleDeleteConfirm = async () => {
+    await deleteDeployment.mutateAsync(deployment.id);
+    navigate('/deployments');
+  };
+
+  const canStart = ['pending', 'stopped', 'failed'].includes(deployment.attributes.status);
   const canStop = ['running', 'starting'].includes(deployment.attributes.status);
 
   const formatBytes = (bytes: number) => {
@@ -163,7 +169,7 @@ export function DeploymentDetailPage() {
                 </Button>
               )}
               <Button
-                onClick={handleDelete}
+                onClick={handleDeleteClick}
                 disabled={deleteDeployment.isPending}
                 variant="destructive"
                 size="sm"
@@ -497,6 +503,16 @@ export function DeploymentDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title="Delete Deployment"
+        description="Are you sure you want to delete this deployment? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleDeleteConfirm}
+      />
     </div>
   );
 }
