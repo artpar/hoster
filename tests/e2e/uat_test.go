@@ -102,7 +102,7 @@ func TestUAT_Customer_DeploysWordPress(t *testing.T) {
 
 	// Step 3: Customer clicks "Deploy"
 	t.Log("UAT: Customer clicks Deploy button...")
-	deployment := CreateDeployment(t, wordpressTemplate.ID, "uat-customer-1", variables)
+	deployment := CreateDeployment(t, wordpressTemplate.ID, variables)
 	t.Logf("UAT: Deployment created: %s (status: %s)", deployment.ID, deployment.Status)
 
 	// Step 4: Customer starts the deployment
@@ -156,10 +156,9 @@ func TestUAT_Admin_MonitorsDeployments(t *testing.T) {
 	PublishTemplate(t, template.ID)
 
 	// Create multiple customer deployments
-	customers := []string{"customer-a", "customer-b", "customer-c"}
 	var deployments []*DeploymentResponse
-	for _, customer := range customers {
-		d := CreateDeployment(t, template.ID, customer, nil)
+	for i := 0; i < 3; i++ {
+		d := CreateDeployment(t, template.ID, nil)
 		StartDeployment(t, d.ID)
 		deployments = append(deployments, d)
 	}
@@ -192,7 +191,7 @@ func TestUAT_Customer_HandlesDeploymentFailure(t *testing.T) {
 	PublishTemplate(t, template.ID)
 
 	// Step 1: Customer creates and starts deployment
-	deployment := CreateDeployment(t, template.ID, "uat-failure-customer", nil)
+	deployment := CreateDeployment(t, template.ID, nil)
 	StartDeployment(t, deployment.ID)
 
 	// Step 2: Customer checks status (in this case, it should be running)
@@ -228,7 +227,7 @@ func TestUAT_FullPlatformJourney(t *testing.T) {
 
 	// === Phase 2: Customer deploys ===
 	t.Log("UAT Phase 2: Customer deploys from template")
-	deployment := CreateDeployment(t, template.ID, "uat-journey-customer", map[string]string{
+	deployment := CreateDeployment(t, template.ID, map[string]string{
 		"DB_PASSWORD":      "journeypass",
 		"DB_ROOT_PASSWORD": "journeyroot",
 	})

@@ -46,7 +46,7 @@ func TestE2E_Keycloak_DeploymentWithSecrets(t *testing.T) {
 		"DB_PASSWORD":    "keycloakdbpass",
 		"ADMIN_PASSWORD": "superadminpass123",
 	}
-	deployment := CreateDeployment(t, template.ID, "customer-kc-1", variables)
+	deployment := CreateDeployment(t, template.ID, variables)
 	require.NotEmpty(t, deployment.ID)
 
 	// Verify secrets stored
@@ -111,7 +111,7 @@ func TestE2E_Keycloak_LongRunningDeployment(t *testing.T) {
 		"DB_PASSWORD":    "longrundbpass",
 		"ADMIN_PASSWORD": "longrunAdmin",
 	}
-	deployment := CreateDeployment(t, template.ID, "customer-longrun-1", variables)
+	deployment := CreateDeployment(t, template.ID, variables)
 
 	// Start and verify running
 	deployment = StartDeployment(t, deployment.ID)

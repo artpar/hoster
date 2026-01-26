@@ -941,12 +941,12 @@ func TestCreateDeployment_Success(t *testing.T) {
 
 	body := jsonBody(t, CreateDeploymentRequest{
 		TemplateID: "tmpl_123",
-		CustomerID: "customer-1",
 		Name:       "My Deployment",
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments", body)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "customer-1") // Auth via header
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)
@@ -964,12 +964,12 @@ func TestCreateDeployment_MissingTemplateID(t *testing.T) {
 	h, _, _ := newTestHandler()
 
 	body := jsonBody(t, CreateDeploymentRequest{
-		CustomerID: "customer-1",
-		Name:       "My Deployment",
+		Name: "My Deployment",
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments", body)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "customer-1") // Auth via header
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)
@@ -981,6 +981,7 @@ func TestCreateDeployment_MissingTemplateID(t *testing.T) {
 }
 
 func TestCreateDeployment_MissingCustomerID(t *testing.T) {
+	// This test is now testing unauthenticated requests (no X-User-ID header)
 	h, s, _ := newTestHandler()
 
 	template := createTestTemplate("tmpl_123", "Test Template")
@@ -994,14 +995,15 @@ func TestCreateDeployment_MissingCustomerID(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments", body)
 	req.Header.Set("Content-Type", "application/json")
+	// No X-User-ID header = unauthenticated
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
 	resp := parseResponse[ErrorResponse](t, w.Body)
-	assert.Equal(t, "validation_error", resp.Code)
+	assert.Equal(t, "auth_required", resp.Code)
 }
 
 func TestCreateDeployment_TemplateNotFound(t *testing.T) {
@@ -1009,12 +1011,12 @@ func TestCreateDeployment_TemplateNotFound(t *testing.T) {
 
 	body := jsonBody(t, CreateDeploymentRequest{
 		TemplateID: "nonexistent",
-		CustomerID: "customer-1",
 		Name:       "My Deployment",
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments", body)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "customer-1") // Auth via header
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)
@@ -1034,12 +1036,12 @@ func TestCreateDeployment_TemplateNotPublished(t *testing.T) {
 
 	body := jsonBody(t, CreateDeploymentRequest{
 		TemplateID: "tmpl_123",
-		CustomerID: "customer-1",
 		Name:       "My Deployment",
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments", body)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "customer-1") // Auth via header
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)
@@ -1055,6 +1057,7 @@ func TestCreateDeployment_InvalidJSON(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments", bytes.NewReader([]byte("invalid")))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "customer-1") // Auth via header
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)

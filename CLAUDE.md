@@ -666,6 +666,9 @@ make deploy-release VERSION=v0.2.0     # Deploy specific version
 | Add features not in spec | Update spec first, then implement |
 | Use different libraries | Use the ones listed in this file |
 | Implement "NOT Supported" items | Check spec, these are intentional |
+| **Use direct DB queries on APIGate** | **Use APIGate API/UI. If API doesn't exist, report bug on github.com/artpar/apigate/issues** |
+| Modify production via sqlite3 commands | Use self-service APIs or admin UI |
+| Skip checking for APIGate releases | Always `gh release list --repo artpar/apigate` before debugging |
 
 ---
 

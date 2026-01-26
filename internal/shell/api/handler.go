@@ -9,9 +9,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/artpar/hoster/internal/core/auth"
 	coredeployment "github.com/artpar/hoster/internal/core/deployment"
 	"github.com/artpar/hoster/internal/core/domain"
 	"github.com/artpar/hoster/internal/core/validation"
+	apimiddleware "github.com/artpar/hoster/internal/shell/api/middleware"
 	"github.com/artpar/hoster/internal/shell/billing"
 	"github.com/artpar/hoster/internal/shell/docker"
 	"github.com/artpar/hoster/internal/shell/scheduler"
@@ -35,6 +37,7 @@ type Handler struct {
 	logger       *slog.Logger
 	baseDomain   string
 	configDir    string
+	authMW       *apimiddleware.AuthMiddleware
 }
 
 // NewHandler creates a new API handler.
@@ -46,6 +49,12 @@ func NewHandler(s store.Store, d docker.Client, l *slog.Logger, baseDomain, conf
 	if configDir == "" {
 		configDir = "/var/lib/hoster/configs"
 	}
+	// Create auth middleware with header mode (production APIGate integration)
+	authMW := apimiddleware.NewAuthMiddleware(apimiddleware.AuthConfig{
+		Mode:        "header", // Extract auth from X-User-ID headers
+		RequireAuth: false,    // Don't enforce auth globally (checked per-handler)
+		Logger:      l,
+	})
 	return &Handler{
 		store:        s,
 		docker:       d,
@@ -55,6 +64,7 @@ func NewHandler(s store.Store, d docker.Client, l *slog.Logger, baseDomain, conf
 		logger:       l,
 		baseDomain:   baseDomain,
 		configDir:    configDir,
+		authMW:       authMW,
 	}
 }
 
@@ -70,6 +80,12 @@ func NewHandlerWithScheduler(s store.Store, d docker.Client, sched *scheduler.Se
 	if sched == nil {
 		sched = scheduler.NewService(s, nil, d, l)
 	}
+	// Create auth middleware with header mode (production APIGate integration)
+	authMW := apimiddleware.NewAuthMiddleware(apimiddleware.AuthConfig{
+		Mode:        "header", // Extract auth from X-User-ID headers
+		RequireAuth: false,    // Don't enforce auth globally (checked per-handler)
+		Logger:      l,
+	})
 	return &Handler{
 		store:        s,
 		docker:       d,
@@ -79,6 +95,7 @@ func NewHandlerWithScheduler(s store.Store, d docker.Client, sched *scheduler.Se
 		logger:       l,
 		baseDomain:   baseDomain,
 		configDir:    configDir,
+		authMW:       authMW,
 	}
 }
 
@@ -98,6 +115,7 @@ func (h *Handler) Routes() http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(h.jsonContentType)
 	r.Use(h.requestIDHeader)
+	r.Use(h.authMW.Handler) // Extract auth context from headers
 
 	// Health endpoints (Kubernetes-style)
 	r.Get("/health", h.handleHealth)           // Basic health check
@@ -435,6 +453,15 @@ func (h *Handler) handlePublishTemplate(w http.ResponseWriter, r *http.Request) 
 // =============================================================================
 
 func (h *Handler) handleCreateDeployment(w http.ResponseWriter, r *http.Request) {
+	// Extract auth context (added by auth middleware)
+	authCtx := auth.FromContext(r.Context())
+
+	// Check authorization
+	if !authCtx.Authenticated {
+		h.writeError(w, http.StatusUnauthorized, "authentication required", "auth_required")
+		return
+	}
+
 	var req CreateDeploymentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeError(w, http.StatusBadRequest, "invalid JSON", "validation_error")
@@ -444,10 +471,6 @@ func (h *Handler) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 	// Validate required fields
 	if req.TemplateID == "" {
 		h.writeError(w, http.StatusBadRequest, "template_id is required", "validation_error")
-		return
-	}
-	if req.CustomerID == "" {
-		h.writeError(w, http.StatusBadRequest, "customer_id is required", "validation_error")
 		return
 	}
 
@@ -480,7 +503,7 @@ func (h *Handler) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 		Name:            name,
 		TemplateID:      template.ID,
 		TemplateVersion: template.Version,
-		CustomerID:      req.CustomerID,
+		CustomerID:      authCtx.UserID, // Use authenticated user ID from auth context
 		Status:          domain.StatusPending,
 		Variables:       req.Variables,
 		CreatedAt:       now,

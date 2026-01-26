@@ -326,19 +326,27 @@ func ListTemplates(t *testing.T) []TemplateResponse {
 }
 
 // CreateDeployment creates a deployment via the API.
-func CreateDeployment(t *testing.T, templateID, customerID string, variables map[string]string) *DeploymentResponse {
+// Uses "test-user" as the authenticated user ID (sent via X-User-ID header).
+func CreateDeployment(t *testing.T, templateID string, variables map[string]string) *DeploymentResponse {
 	t.Helper()
 
-	body := map[string]any{
+	// Build request body (current format - JSON:API migration is ADR-003)
+	payload := map[string]any{
 		"template_id": templateID,
-		"customer_id": customerID,
 	}
 	if variables != nil {
-		body["variables"] = variables
+		payload["variables"] = variables
 	}
-	jsonBody, _ := json.Marshal(body)
+	jsonBody, _ := json.Marshal(payload)
 
-	resp, err := testClient.Post(baseURL+"/api/v1/deployments", "application/json", bytes.NewReader(jsonBody))
+	req, err := http.NewRequest("POST", baseURL+"/api/v1/deployments", bytes.NewReader(jsonBody))
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "test-user") // Auth via header
+
+	resp, err := testClient.Do(req)
 	if err != nil {
 		t.Fatalf("Failed to create deployment: %v", err)
 	}

@@ -39,7 +39,7 @@ func TestE2E_WordPress_DeploymentWithAllVariables(t *testing.T) {
 		"DB_PASSWORD":      "wppassword123",
 		"DB_ROOT_PASSWORD": "rootpass456",
 	}
-	deployment := CreateDeployment(t, template.ID, "customer-wp-1", variables)
+	deployment := CreateDeployment(t, template.ID, variables)
 	require.NotEmpty(t, deployment.ID)
 	assert.Equal(t, "pending", deployment.Status)
 
@@ -78,7 +78,7 @@ func TestE2E_WordPress_MultipleDeployments(t *testing.T) {
 			"DB_PASSWORD":      "password" + string(rune('A'+i)),
 			"DB_ROOT_PASSWORD": "root" + string(rune('A'+i)),
 		}
-		d := CreateDeployment(t, template.ID, "customer-multi-"+string(rune('1'+i)), variables)
+		d := CreateDeployment(t, template.ID, variables)
 		deployments = append(deployments, d)
 	}
 
@@ -116,7 +116,7 @@ func TestE2E_WordPress_StopRestartCycle(t *testing.T) {
 		"DB_PASSWORD":      "cyclepass",
 		"DB_ROOT_PASSWORD": "cycleroot",
 	}
-	deployment := CreateDeployment(t, template.ID, "customer-cycle-1", variables)
+	deployment := CreateDeployment(t, template.ID, variables)
 
 	// Start
 	deployment = StartDeployment(t, deployment.ID)

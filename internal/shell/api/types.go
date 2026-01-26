@@ -51,9 +51,9 @@ type UpdateTemplateRequest struct {
 // CreateDeploymentRequest is the request body for creating a deployment.
 type CreateDeploymentRequest struct {
 	TemplateID string            `json:"template_id"`
-	CustomerID string            `json:"customer_id"`
 	Name       string            `json:"name,omitempty"`
 	Variables  map[string]string `json:"variables,omitempty"`
+	// CustomerID removed - now extracted from auth context (X-User-ID header)
 }
 
 // =============================================================================

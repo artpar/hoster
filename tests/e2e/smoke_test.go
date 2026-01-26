@@ -61,7 +61,7 @@ func TestE2E_NginxSimple_DeploymentLifecycle(t *testing.T) {
 	PublishTemplate(t, template.ID)
 
 	// Create deployment
-	deployment := CreateDeployment(t, template.ID, "customer-smoke-1", nil)
+	deployment := CreateDeployment(t, template.ID, nil)
 	require.NotEmpty(t, deployment.ID)
 	assert.Equal(t, "pending", deployment.Status)
 
@@ -125,7 +125,7 @@ func TestE2E_DeploymentWithVariables(t *testing.T) {
 		"DB_PASSWORD":      "test_password_123",
 		"DB_ROOT_PASSWORD": "root_password_456",
 	}
-	deployment := CreateDeployment(t, template.ID, "customer-vars-1", variables)
+	deployment := CreateDeployment(t, template.ID, variables)
 	require.NotEmpty(t, deployment.ID)
 	assert.Equal(t, "pending", deployment.Status)
 
@@ -154,7 +154,7 @@ func TestE2E_CannotStartAlreadyRunning(t *testing.T) {
 	PublishTemplate(t, template.ID)
 
 	// Create and start deployment
-	deployment := CreateDeployment(t, template.ID, "customer-conflict-1", nil)
+	deployment := CreateDeployment(t, template.ID, nil)
 	StartDeployment(t, deployment.ID)
 
 	// Try to start again - should get conflict
