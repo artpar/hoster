@@ -199,9 +199,10 @@ export function TemplateDetailPage() {
       <AlertDialog
         open={signInAlertOpen}
         onOpenChange={setSignInAlertOpen}
-        title="Sign In Required"
-        description="Please sign in to deploy this template."
-        buttonLabel="OK"
+        title="Authentication Required"
+        description="You need to sign in to deploy templates. Your session may have expired. Please sign in to continue."
+        buttonLabel="Sign In"
+        onConfirm={() => navigate('/login')}
       />
     </div>
   );

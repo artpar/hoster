@@ -14,6 +14,7 @@ interface AlertDialogProps {
   title: string;
   description?: string;
   buttonLabel?: string;
+  onConfirm?: () => void | Promise<void>;
 }
 
 export function AlertDialog({
@@ -22,7 +23,15 @@ export function AlertDialog({
   title,
   description,
   buttonLabel = 'OK',
+  onConfirm,
 }: AlertDialogProps) {
+  const handleConfirm = () => {
+    if (onConfirm) {
+      onConfirm();
+    }
+    onOpenChange(false);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -31,7 +40,7 @@ export function AlertDialog({
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
         <DialogFooter>
-          <Button onClick={() => onOpenChange(false)}>{buttonLabel}</Button>
+          <Button onClick={handleConfirm}>{buttonLabel}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

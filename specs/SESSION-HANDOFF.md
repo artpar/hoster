@@ -5,9 +5,9 @@
 
 ---
 
-## CURRENT PROJECT STATE (January 23, 2026)
+## CURRENT PROJECT STATE (January 27, 2026)
 
-### Status: REMOTE NODE E2E COMPLETE - READY FOR PRODUCTION DEPLOYMENT
+### Status: PRIVACY FIX & AUTH UX IMPROVEMENTS - READY FOR v0.2.5
 
 **Local E2E Testing Environment - FULLY WORKING:**
 
@@ -97,11 +97,12 @@ go build -o bin/apigate ./cmd/apigate
 **What Needs Production Work:**
 - ✅ Local E2E fully functional
 - ✅ Remote node deployment working (verified on AWS EC2)
+- 🔴 **BLOCKED:** APIGate session cookie bug (issue #54) - signup/login doesn't set cookies
+- ✅ Critical privacy bug FIXED - deployment list now filtered by authenticated user
+- ✅ Auth UX improvements complete - user profile in header, better error messages
+- Need release v0.2.5 after APIGate fix is deployed
+- Production manual testing required (ALL journeys in specs/user-journeys.md)
 - CI workflows need verification (npm/rollup issues were being fixed)
-- Need release with embedded frontend (v0.2.2)
-- Production routing configuration verification
-- Ensure production APIGate has host-based routing fix (commit 5d72804+)
-- Test multi-node deployment scenarios in production
 
 ---
 
@@ -520,7 +521,111 @@ make shell            # SSH into server
 
 ## Session History
 
-### Session 6 (January 23, 2026) - CURRENT SESSION
+### Session 7 (January 27, 2026) - CURRENT SESSION
+
+**Goal:** Fix production authentication & UX issues discovered via manual testing
+
+**Context:** Manual testing on production (https://emptychair.dev) revealed critical issues that unit tests didn't catch:
+
+**Issues Found:**
+1. **APIGate Session Cookie Bug (BLOCKING)** - Filed: https://github.com/artpar/apigate/issues/54
+   - User signs up successfully but no `Set-Cookie` header in response
+   - Next `/auth/me` call returns 401 "Valid session or API key required"
+   - User appears logged out immediately after signup
+   - **EXTERNAL DEPENDENCY - WAITING FOR FIX**
+
+2. **Privacy Bug (CRITICAL)** - Deployment list not filtered by user
+   - `handleListDeployments()` accepted optional `customer_id` parameter
+   - If not provided, returned ALL deployments (privacy violation)
+   - Users could see other users' deployments
+   - **FIXED IN THIS SESSION**
+
+3. **Poor Auth UX** - User doesn't know if logged in
+   - Header always showed "Sign in via APIGate" (no user profile)
+   - No indication of authentication state
+   - "Sign In Required" dialog not helpful
+   - **FIXED IN THIS SESSION**
+
+**Accomplished:**
+
+1. **Created User Journeys Documentation:**
+   - File: `specs/user-journeys.md`
+   - 10 comprehensive user journeys covering all critical flows
+   - Testing protocol with Chrome DevTools MCP automation
+   - Test report template for production testing
+   - Emphasis on manual testing before deployment
+
+2. **Fixed Critical Privacy Bug:**
+   - File: `internal/shell/api/handler.go` lines 555-598
+   - Updated `handleListDeployments()` to ALWAYS filter by authenticated user
+   - Added authentication check - 401 for unauthenticated requests
+   - Template filtering now works in-memory after privacy enforcement
+   - **CRITICAL:** Users can now ONLY see their own deployments
+
+3. **Improved Auth UX - Header Component:**
+   - File: `web/src/components/layout/Header.tsx`
+   - Shows user profile (name/email) with user icon when authenticated
+   - Added "Sign Out" button with logout functionality
+   - "Sign In" button for unauthenticated users
+   - Clear visual indication of auth state
+
+4. **Improved Auth UX - Better Error Messages:**
+   - File: `web/src/pages/marketplace/TemplateDetailPage.tsx`
+   - Changed dialog title from "Sign In Required" to "Authentication Required"
+   - Added context: "Your session may have expired. Please sign in to continue."
+   - "Sign In" button navigates to login page
+   - File: `web/src/components/ui/AlertDialog.tsx`
+   - Added `onConfirm` callback support for custom actions
+
+5. **Added Session Recovery:**
+   - File: `web/src/stores/authStore.ts`
+   - Window focus event listener checks auth state
+   - Automatically calls `checkAuth()` when window regains focus (if unauthenticated)
+   - Helps recover sessions that may have been restored by APIGate
+
+6. **Updated CLAUDE.md with Testing Requirements:**
+   - Added "Production Testing (MANDATORY)" section
+   - Documents requirement to test ALL user journeys before deployment
+   - Added "No-Bypass Policy (CRITICAL)" section
+   - Lists forbidden actions (workarounds, skipping tests, etc.)
+   - Lists required actions (fix root cause, wait for proper fixes)
+   - **Bottom line:** If it's not production-ready, don't deploy it
+
+**Files Changed:**
+- `specs/user-journeys.md` - NEW - Comprehensive user journey documentation
+- `internal/shell/api/handler.go` - CRITICAL - Privacy enforcement in deployment list
+- `web/src/components/layout/Header.tsx` - User profile display + sign out
+- `web/src/components/ui/AlertDialog.tsx` - Added onConfirm support
+- `web/src/pages/marketplace/TemplateDetailPage.tsx` - Better auth error messages
+- `web/src/stores/authStore.ts` - Session recovery on window focus
+- `CLAUDE.md` - Production testing requirements + no-bypass policy
+
+**Key Insights:**
+- **Unit tests are necessary but not sufficient** - Must test as actual user
+- Manual testing on production caught issues that unit tests missed
+- Privacy bugs are critical - enforce filtering at API level, not client level
+- UX issues (like "always looks logged out") break user trust
+- Never bypass broken components - wait for proper fixes
+
+**Blocked By:**
+- APIGate issue #54 - Session cookies not set after signup/login
+- Cannot complete full E2E auth testing until APIGate fix is deployed
+
+**Next Steps:**
+1. Wait for APIGate issue #54 fix
+2. Test signup/login flow with session cookies
+3. Complete all user journeys from `specs/user-journeys.md`
+4. Create v0.2.5 release with privacy fix + auth UX improvements
+5. Deploy to production and test ALL journeys manually
+
+**DO NOT:**
+- Deploy to production before APIGate fix
+- Bypass auth issues with workarounds
+- Skip manual testing "just this once"
+
+---
+
+### Session 6 (January 23, 2026)
 
 **Goal:** Complete E2E testing with remote AWS EC2 node via web UI
 

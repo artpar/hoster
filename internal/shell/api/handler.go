@@ -553,6 +553,16 @@ func (h *Handler) handleGetDeployment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleListDeployments(w http.ResponseWriter, r *http.Request) {
+	// CRITICAL: Extract auth context to enforce privacy
+	// Users MUST only see their own deployments (never others')
+	authCtx := auth.FromContext(r.Context())
+
+	// Privacy check: Unauthenticated users cannot list deployments
+	if !authCtx.Authenticated {
+		h.writeError(w, http.StatusUnauthorized, "authentication required", "auth_required")
+		return
+	}
+
 	opts := store.DefaultListOptions()
 
 	if limit := r.URL.Query().Get("limit"); limit != "" {
@@ -569,19 +579,27 @@ func (h *Handler) handleListDeployments(w http.ResponseWriter, r *http.Request) 
 	var deployments []domain.Deployment
 	var err error
 
-	// Filter by template or customer if provided
-	if templateID := r.URL.Query().Get("template_id"); templateID != "" {
-		deployments, err = h.store.ListDeploymentsByTemplate(r.Context(), templateID, opts)
-	} else if customerID := r.URL.Query().Get("customer_id"); customerID != "" {
-		deployments, err = h.store.ListDeploymentsByCustomer(r.Context(), customerID, opts)
-	} else {
-		deployments, err = h.store.ListDeployments(r.Context(), opts)
-	}
+	// ALWAYS filter by authenticated user's ID (privacy enforcement)
+	// The customer_id parameter is ignored to prevent users from listing other users' deployments
+	customerID := authCtx.UserID
 
+	// Get all deployments for the authenticated user (privacy enforced)
+	deployments, err = h.store.ListDeploymentsByCustomer(r.Context(), customerID, opts)
 	if err != nil {
 		h.logger.Error("failed to list deployments", "error", err)
 		h.writeError(w, http.StatusInternalServerError, "failed to list deployments", "internal_error")
 		return
+	}
+
+	// Apply optional template filter in memory (after privacy filter)
+	if templateID := r.URL.Query().Get("template_id"); templateID != "" {
+		filtered := make([]domain.Deployment, 0, len(deployments))
+		for _, d := range deployments {
+			if d.TemplateID == templateID {
+				filtered = append(filtered, d)
+			}
+		}
+		deployments = filtered
 	}
 
 	resp := ListDeploymentsResponse{

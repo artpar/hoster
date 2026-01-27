@@ -294,6 +294,109 @@ make coverage       # Generate coverage report
 
 ---
 
+## Production Testing (MANDATORY)
+
+**CRITICAL: Unit tests mean nothing if actual user experience is broken.**
+
+### Before ANY Production Deployment
+
+You MUST test as a real non-technical user on production (https://emptychair.dev):
+
+1. **Complete all user journeys** in `specs/user-journeys.md`
+2. **Use Chrome DevTools MCP** for manual testing automation
+3. **Document results** in a test report
+4. **Take screenshots** of critical flows
+5. **Verify no regressions** from previous version
+
+### User Journey Testing
+
+See `specs/user-journeys.md` for complete testing protocol. Key journeys to verify:
+
+- ✅ Journey 1: New User Signup & First Deployment
+- ✅ Journey 2: Returning User Login
+- ✅ Journey 3: Deploy Additional Template
+- ✅ Journey 4: Deployment Lifecycle Management
+- ✅ Journey 5: Exceed Plan Limits
+- ✅ Journey 6: Creator Template Publishing
+- ✅ Journey 7: Auth Persistence
+- ✅ Journey 8: Multi-User Privacy (CRITICAL - privacy enforcement)
+- ✅ Journey 9: Node Registration & Remote Deployment
+- ✅ Journey 10: Session Recovery After Expiry
+
+### Test Report Template
+
+```markdown
+## Production Test Report - v{VERSION}
+
+**Date:** {YYYY-MM-DD}
+**Environment:** https://emptychair.dev
+
+### Journey Results
+- [ ] All journeys from specs/user-journeys.md tested
+- [ ] No critical issues found
+- [ ] Privacy enforcement verified (Journey 8)
+- [ ] Auth persistence working (Journey 7)
+
+### Issues Found
+- None / {List issues}
+
+### Recommendation
+- [ ] PASS - Ready for production
+- [ ] FAIL - Blocking issues, DO NOT DEPLOY
+```
+
+### Never Deploy Without This
+
+If you deploy to production without manual user testing:
+1. You WILL break the user experience
+2. You WILL waste time debugging later
+3. You WILL lose user trust
+
+**Unit tests are necessary but not sufficient.**
+
+---
+
+## No-Bypass Policy (CRITICAL)
+
+**NEVER skip, bypass, or workaround any part of the system.**
+
+### Forbidden Actions:
+- ❌ Don't use dev auth in production as a "temporary" workaround
+- ❌ Don't create session bridges or auth hacks
+- ❌ Don't skip manual testing "just this once"
+- ❌ Don't deploy without testing all user journeys
+- ❌ Don't comment out failing tests to make CI pass
+- ❌ Don't disable security checks temporarily
+- ❌ Don't mock external dependencies in production
+- ❌ Don't skip integration tests because they're slow
+
+### Required Actions:
+- ✅ Fix the root cause, not the symptom
+- ✅ Wait for proper fixes from dependencies (like APIGate)
+- ✅ Test every user journey before deployment
+- ✅ Run full test suite (unit + integration + E2E)
+- ✅ Manual production testing ALWAYS
+- ✅ Document why something doesn't work
+- ✅ Block deployment if tests fail
+
+### If Something Is Broken:
+1. **Identify root cause** - Don't guess or workaround
+2. **File issue** - Document the problem properly
+3. **Wait for fix** - Don't bypass broken components
+4. **Test fix** - Verify it actually works
+5. **Deploy** - Only when everything works end-to-end
+
+### Why This Matters:
+- Bypasses create technical debt
+- Workarounds hide real problems
+- Skipping tests breaks user experience
+- Users will leave if UX is broken
+- Trust is hard to rebuild
+
+**Bottom line:** If it's not production-ready, don't deploy it.
+
+---
+
 ## What's NOT Supported (BY DESIGN)
 
 These are intentional limitations documented in specs:

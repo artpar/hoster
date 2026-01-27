@@ -254,3 +254,16 @@ export const usePlanLimits = () => useAuthStore((state) => state.planLimits);
 export const useUser = () => useAuthStore((state) => state.user);
 export const useAuthLoading = () => useAuthStore((state) => state.isLoading);
 export const useAuthError = () => useAuthStore((state) => state.error);
+
+// Session recovery: Check auth when window regains focus
+// This helps recover sessions that may have been restored by APIGate
+if (typeof window !== 'undefined') {
+  window.addEventListener('focus', () => {
+    const state = useAuthStore.getState();
+    // Only check if we think we're unauthenticated
+    // This avoids spamming the server when already authenticated
+    if (!state.isAuthenticated) {
+      state.checkAuth();
+    }
+  });
+}

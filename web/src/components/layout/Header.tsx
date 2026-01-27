@@ -1,9 +1,18 @@
-import { Link } from 'react-router-dom';
-import { Box, User } from 'lucide-react';
-import { useIsAuthenticated } from '@/stores/authStore';
+import { Link, useNavigate } from 'react-router-dom';
+import { Box, User, LogOut } from 'lucide-react';
+import { useIsAuthenticated, useUser, useAuthStore } from '@/stores/authStore';
+import { Button } from '@/components/ui/Button';
 
 export function Header() {
   const isAuthenticated = useIsAuthenticated();
+  const user = useUser();
+  const logout = useAuthStore((state) => state.logout);
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/');
+  };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -40,13 +49,29 @@ export function Header() {
 
         <div className="ml-auto flex items-center gap-2">
           {isAuthenticated ? (
-            <button className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
-              <User className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 text-sm">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <User className="h-4 w-4" />
+                </div>
+                <span className="font-medium">
+                  {user?.name || user?.email || 'User'}
+                </span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleLogout}
+                className="gap-1"
+              >
+                <LogOut className="h-4 w-4" />
+                Sign Out
+              </Button>
+            </div>
           ) : (
-            <span className="text-sm text-muted-foreground">
-              Sign in via APIGate
-            </span>
+            <Link to="/login">
+              <Button variant="ghost" size="sm">Sign In</Button>
+            </Link>
           )}
         </div>
       </div>
