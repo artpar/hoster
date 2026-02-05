@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { Button, Input, Label, Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui';
@@ -11,6 +11,11 @@ export function LoginPage() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  // Clear any stale errors when component mounts
+  useEffect(() => {
+    clearError();
+  }, [clearError]);
 
   // Get the redirect path from location state, default to /marketplace
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/marketplace';
