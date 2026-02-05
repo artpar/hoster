@@ -1100,9 +1100,10 @@ func TestListDeployments_Success(t *testing.T) {
 	h, s, _ := newTestHandler()
 
 	s.deployments["depl_1"] = createTestDeployment("depl_1", "tmpl_123", "customer-1")
-	s.deployments["depl_2"] = createTestDeployment("depl_2", "tmpl_123", "customer-2")
+	s.deployments["depl_2"] = createTestDeployment("depl_2", "tmpl_123", "customer-1")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/deployments", nil)
+	req.Header.Set("X-User-ID", "customer-1") // Auth via header
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)
@@ -1117,6 +1118,7 @@ func TestListDeployments_Empty(t *testing.T) {
 	h, _, _ := newTestHandler()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/deployments", nil)
+	req.Header.Set("X-User-ID", "customer-1") // Auth via header
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)
@@ -1134,6 +1136,7 @@ func TestListDeployments_FilterByTemplate(t *testing.T) {
 	s.deployments["depl_2"] = createTestDeployment("depl_2", "tmpl_456", "customer-1")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/deployments?template_id=tmpl_123", nil)
+	req.Header.Set("X-User-ID", "customer-1") // Auth via header
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)
@@ -1152,6 +1155,7 @@ func TestListDeployments_FilterByCustomer(t *testing.T) {
 	s.deployments["depl_2"] = createTestDeployment("depl_2", "tmpl_123", "customer-2")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/deployments?customer_id=customer-1", nil)
+	req.Header.Set("X-User-ID", "customer-1") // Auth via header
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)
@@ -1170,6 +1174,7 @@ func TestDeleteDeployment_Success(t *testing.T) {
 	s.deployments[deployment.ID] = deployment
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/deployments/depl_123", nil)
+	req.Header.Set("X-User-ID", "customer-1") // Auth via header
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)
