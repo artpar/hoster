@@ -840,11 +840,23 @@ What goes wrong if key decisions are forgotten:
 
 ### APIGate Integration
 
-Hoster uses APIGate for authentication and billing (see ADR-005).
+**CRITICAL: APIGate is the front-facing server. Hoster sits behind it. All traffic goes through APIGate.**
+
+```
+Internet → APIGate (:8082, front-facing) → Hoster (:8080, backend)
+```
+
+**Separation of concerns:**
+- **APIGate = Billing/Quota.** Only deployment CRUD is billable. NOT responsible for auth.
+- **Hoster = Auth + Business Logic.** Token-based auth on every API endpoint. Owns user identity.
+
+**Full architecture spec:** `specs/architecture/apigate-integration.md`
 
 - **APIGate Repository**: https://github.com/artpar/apigate
 - **APIGate Issues**: https://github.com/artpar/apigate/issues
 - **APIGate Wiki**: https://github.com/artpar/apigate/wiki
+
+**Route pattern rules:** Prefix routes MUST use `/*` wildcard (e.g., `/api/*` not `/api/`).
 
 When encountering APIGate-related issues during development or testing, report them at the issues link above. The `gh` CLI is available and logged in for creating issues.
 
@@ -853,16 +865,18 @@ When encountering APIGate-related issues during development or testing, report t
 
 ## Local E2E Testing Environment
 
-### Current Setup (January 22, 2026)
+### Current Setup (February 6, 2026)
 
 **Location:** `/tmp/hoster-e2e-test/`
 
 **Architecture:**
 ```
-Browser → localhost:8082 (APIGate) → Hoster/App Proxy
-    ├── Frontend Route    (/* priority 10, auth_required=0)
-    ├── API Route         (/api/* priority 50, auth_required=0)
-    └── App Proxy Route   (*.apps.localhost/* priority 100, auth_required=0)
+Browser → APIGate (:8082, front-facing) → Hoster (:8080, backend)
+
+Routes (priority order):
+    ├── hoster-billing   (/api/v1/deployments* priority 55, auth_required=1) ← billing
+    ├── hoster-api       (/api/* priority 50, auth_required=0) ← pass-through
+    └── hoster-front     (/* priority 10, auth_required=0) ← SPA
 ```
 
 **Services:**
@@ -917,26 +931,19 @@ sqlite3 /tmp/hoster-e2e-test/apigate.db "SELECT name, path_pattern, host_pattern
 - **Hoster:** `/tmp/hoster-e2e-test/hoster.db` - Templates, deployments, events
 - **APIGate:** `/tmp/hoster-e2e-test/apigate.db` - Routes, upstreams, users
 
-### Routes Configuration (Manual)
+### Routes Configuration
 
-Routes are manually configured in APIGate database:
+Routes are configured via APIGate module API (`/mod/route`). See `specs/architecture/apigate-integration.md` for full details.
 
-```sql
--- Frontend route (priority 10 - catches /* after higher priority routes)
-UPDATE routes SET auth_required=0 WHERE name='hoster-frontend';
-
--- API route (priority 50 - catches /api/* before frontend)
-UPDATE routes SET auth_required=0 WHERE name='hoster-api';
-
--- App proxy route (priority 100 - highest, catches *.apps.localhost/*)
-UPDATE routes SET auth_required=0 WHERE name='hoster-app-proxy';
-```
+| Route | Path | auth_required | Priority | Purpose |
+|-------|------|---------------|----------|---------|
+| `hoster-billing` | `/api/v1/deployments*` | 1 (billing) | 55 | Deployment CRUD - billable |
+| `hoster-api` | `/api/*` | 0 (pass-thru) | 50 | All other APIs - Hoster handles auth |
+| `hoster-front` | `/*` | 0 (public) | 10 | SPA frontend |
 
 ### Known Limitations
 
-1. **Auto-registration disabled:** Admin endpoints (`/admin/*`) are caught by frontend route
-2. **Auth disabled for testing:** All routes have `auth_required=0`
-3. **Port in URLs:** App proxy requires port in URL for local testing (`:8082`)
+1. **Port in URLs:** App proxy requires port in URL for local testing (`:8082`)
 
 ### Troubleshooting
 
@@ -945,9 +952,10 @@ UPDATE routes SET auth_required=0 WHERE name='hoster-app-proxy';
 - **Check:** Hoster is running on 8080
 - **Check:** Routes are configured correctly
 
-**Problem:** API returns 401
-- **Check:** Route has `auth_required=0`
-- **Fix:** `sqlite3 /tmp/hoster-e2e-test/apigate.db "UPDATE routes SET auth_required=0 WHERE name='hoster-api';"`
+**Problem:** Monitoring tabs empty / quota exceeded
+- **Check:** Monitoring routes go through `hoster-api` (auth_required=0, pass-through)
+- **Check:** Only deployment CRUD goes through billing (auth_required=1)
+- **Root cause:** If all APIs use auth_required=1, polling exhausts quota
 
 **Problem:** Can't access deployed app
 - **Check:** App Proxy is running on 9091

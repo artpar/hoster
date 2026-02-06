@@ -3,8 +3,10 @@
 package api
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"log/slog"
+	"math/big"
 	"net/http"
 
 	"github.com/artpar/hoster/internal/shell/api/middleware"
@@ -118,10 +120,10 @@ func SetupAPI(cfg APIConfig) http.Handler {
 	}
 
 	// In dev mode, pass the session lookup function so the middleware
-	// can get the actual user ID from the dev session
+	// can get the actual user ID from the Bearer token
 	if devAuth != nil {
-		authConfig.DevSessionLookup = func(sessionID string) *middleware.DevSession {
-			session := devAuth.LookupSession(sessionID)
+		authConfig.DevSessionLookup = func(token string) *middleware.DevSession {
+			session := devAuth.LookupSession(token)
 			if session == nil {
 				return nil
 			}
@@ -383,12 +385,13 @@ func generateRequestID() string {
 	return "req_" + randomString(12)
 }
 
-// randomString generates a random string of the given length.
+// randomString generates a cryptographically random string of the given length.
 func randomString(n int) string {
 	const letters = "abcdefghijklmnopqrstuvwxyz0123456789"
 	b := make([]byte, n)
 	for i := range b {
-		b[i] = letters[i%len(letters)]
+		idx, _ := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
+		b[i] = letters[idx.Int64()]
 	}
 	return string(b)
 }

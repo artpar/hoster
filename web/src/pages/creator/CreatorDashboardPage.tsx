@@ -14,7 +14,7 @@ import { useTemplates } from '@/hooks/useTemplates';
 import { useDeployments } from '@/hooks/useDeployments';
 import { useNodes, useDeleteNode, useEnterMaintenanceMode, useExitMaintenanceMode } from '@/hooks/useNodes';
 import { useSSHKeys, useDeleteSSHKey } from '@/hooks/useSSHKeys';
-import { useIsAuthenticated, useUserId } from '@/stores/authStore';
+import { useIsAuthenticated, useUser } from '@/stores/authStore';
 import { LoadingPage } from '@/components/common/LoadingSpinner';
 import { EmptyState } from '@/components/common/EmptyState';
 import { TemplateCard } from '@/components/templates/TemplateCard';
@@ -32,7 +32,8 @@ type StatusFilter = 'all' | 'draft' | 'published' | 'deprecated';
 
 export function CreatorDashboardPage() {
   const isAuthenticated = useIsAuthenticated();
-  const userId = useUserId();
+  const user = useUser();
+  const userId = user?.id ?? null;
   const { data: templates, isLoading, error } = useTemplates();
   const { data: deployments } = useDeployments();
   const { data: nodes, isLoading: nodesLoading } = useNodes();

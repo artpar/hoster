@@ -21,9 +21,9 @@ type DevSession struct {
 	Name   string
 }
 
-// DevSessionLookup is a function that looks up a dev session by session ID.
-// Returns nil if the session is not found.
-type DevSessionLookup func(sessionID string) *DevSession
+// DevSessionLookup is a function that looks up a dev session by Bearer token.
+// Returns nil if the token is not found.
+type DevSessionLookup func(token string) *DevSession
 
 // AuthConfig holds configuration for the auth middleware.
 type AuthConfig struct {
@@ -85,30 +85,41 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 			return
 		}
 
-		// In "dev" mode, check for dev session cookie first
+		// In "dev" mode, validate token from X-Auth-Token header
 		if m.config.Mode == "dev" {
-			userID := "dev-user" // fallback
+			token := extractAuthToken(r)
+			if token == "" {
+				// No token = unauthenticated
+				emptyCtx := auth.Context{
+					Authenticated: false,
+					PlanLimits:    auth.DefaultPlanLimits(),
+				}
+				r = r.WithContext(auth.WithContext(r.Context(), emptyCtx))
+				next.ServeHTTP(w, r)
+				return
+			}
 
-			// Try to get user ID from dev session cookie
+			// Look up session by token
 			if m.config.DevSessionLookup != nil {
-				if cookie, err := r.Cookie("hoster_dev_session"); err == nil {
-					if session := m.config.DevSessionLookup(cookie.Value); session != nil {
-						userID = session.UserID
-						m.config.Logger.Debug("dev auth: using session user",
-							"user_id", userID,
-							"email", session.Email,
-						)
+				if session := m.config.DevSessionLookup(token); session != nil {
+					devCtx := auth.Context{
+						UserID:        session.UserID,
+						PlanID:        "dev-plan",
+						PlanLimits:    auth.DefaultPlanLimits(),
+						Authenticated: true,
 					}
+					r = r.WithContext(auth.WithContext(r.Context(), devCtx))
+					next.ServeHTTP(w, r)
+					return
 				}
 			}
 
-			devCtx := auth.Context{
-				UserID:        userID,
-				PlanID:        "dev-plan",
+			// Token provided but invalid
+			emptyCtx := auth.Context{
+				Authenticated: false,
 				PlanLimits:    auth.DefaultPlanLimits(),
-				Authenticated: true,
 			}
-			r = r.WithContext(auth.WithContext(r.Context(), devCtx))
+			r = r.WithContext(auth.WithContext(r.Context(), emptyCtx))
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -190,6 +201,12 @@ type JSONAPIError struct {
 // JSONAPIErrorResponse represents a JSON:API error response.
 type JSONAPIErrorResponse struct {
 	Errors []JSONAPIError `json:"errors"`
+}
+
+// extractAuthToken reads the X-Auth-Token header.
+// Uses X-Auth-Token because APIGate strips the standard Authorization header.
+func extractAuthToken(r *http.Request) string {
+	return r.Header.Get("X-Auth-Token")
 }
 
 // writeJSONError writes a JSON:API formatted error response.

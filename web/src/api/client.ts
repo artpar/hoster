@@ -2,30 +2,18 @@ import type { JsonApiResponse, JsonApiErrorResponse, JsonApiError } from './type
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
-// Get auth headers from localStorage (zustand persist)
-function getAuthHeaders(): Record<string, string> {
+// Get the Bearer token from auth store in localStorage
+function getAuthToken(): string | null {
   try {
     const authData = localStorage.getItem('hoster-auth');
     if (authData) {
       const parsed = JSON.parse(authData);
-      const state = parsed.state;
-      if (state?.isAuthenticated && state?.userId) {
-        const headers: Record<string, string> = {
-          'X-User-ID': state.userId,
-        };
-        if (state.planId) {
-          headers['X-Plan-ID'] = state.planId;
-        }
-        if (state.planLimits) {
-          headers['X-Plan-Limits'] = JSON.stringify(state.planLimits);
-        }
-        return headers;
-      }
+      return parsed.state?.token || null;
     }
   } catch {
     // Ignore parse errors
   }
-  return {};
+  return null;
 }
 
 export class ApiError extends Error {
@@ -51,15 +39,22 @@ export async function apiClient<T>(
 ): Promise<JsonApiResponse<T>> {
   const { body, ...restOptions } = options;
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/vnd.api+json',
+    'Accept': 'application/vnd.api+json',
+  };
+
+  const token = getAuthToken();
+  if (token) {
+    headers['X-Auth-Token'] = token;
+  }
+
   const response = await fetch(`${BASE_URL}${endpoint}`, {
     ...restOptions,
     headers: {
-      'Content-Type': 'application/vnd.api+json',
-      'Accept': 'application/vnd.api+json',
-      ...getAuthHeaders(),
+      ...headers,
       ...options.headers,
     },
-    credentials: 'include',
     body: body ? JSON.stringify(body) : undefined,
   });
 

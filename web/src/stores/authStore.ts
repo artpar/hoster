@@ -17,15 +17,11 @@ export interface User {
 }
 
 interface AuthState {
+  token: string | null;
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
-
-  // Derived state for convenience
-  userId: string | null;
-  planId: string | null;
-  planLimits: PlanLimits | null;
 
   // Actions
   checkAuth: () => Promise<void>;
@@ -35,28 +31,36 @@ interface AuthState {
   forgotPassword: (email: string) => Promise<void>;
   resetPassword: (token: string, password: string) => Promise<void>;
   clearError: () => void;
-  setAuth: (userId: string, planId: string, limits: PlanLimits) => void;
   clearAuth: () => void;
+}
+
+function authHeaders(token: string | null): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['X-Auth-Token'] = token;
+  }
+  return headers;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
+      token: null,
       user: null,
       isAuthenticated: false,
       isLoading: true,
       error: null,
 
-      // Derived state
-      userId: null,
-      planId: null,
-      planLimits: null,
-
       checkAuth: async () => {
+        const { token } = get();
+        if (!token) {
+          set({ isAuthenticated: false, isLoading: false, user: null });
+          return;
+        }
         try {
           set({ isLoading: true, error: null });
-          const response = await fetch('/auth/me', {
-            credentials: 'include',
+          const response = await fetch('/api/auth/me', {
+            headers: authHeaders(token),
           });
 
           if (response.ok) {
@@ -65,28 +69,21 @@ export const useAuthStore = create<AuthState>()(
               user,
               isAuthenticated: true,
               isLoading: false,
-              userId: user.id,
-              planId: user.plan_id,
-              planLimits: user.plan_limits,
             });
           } else {
             set({
+              token: null,
               user: null,
               isAuthenticated: false,
               isLoading: false,
-              userId: null,
-              planId: null,
-              planLimits: null,
             });
           }
         } catch {
           set({
+            token: null,
             user: null,
             isAuthenticated: false,
             isLoading: false,
-            userId: null,
-            planId: null,
-            planLimits: null,
           });
         }
       },
@@ -94,19 +91,24 @@ export const useAuthStore = create<AuthState>()(
       login: async (email, password) => {
         try {
           set({ isLoading: true, error: null });
-          const response = await fetch('/auth/login', {
+          const response = await fetch('/api/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password }),
-            credentials: 'include',
           });
 
           if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.message || 'Login failed');
+            throw new Error(error.error?.message || 'Login failed');
           }
 
-          await get().checkAuth();
+          const data = await response.json();
+          set({
+            token: data.token,
+            user: data.user,
+            isAuthenticated: true,
+            isLoading: false,
+          });
         } catch (err) {
           set({
             isLoading: false,
@@ -119,19 +121,24 @@ export const useAuthStore = create<AuthState>()(
       signup: async (email, password, name) => {
         try {
           set({ isLoading: true, error: null });
-          const response = await fetch('/auth/register', {
+          const response = await fetch('/api/auth/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password, name }),
-            credentials: 'include',
           });
 
           if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.message || 'Signup failed');
+            throw new Error(error.error?.message || 'Signup failed');
           }
 
-          await get().checkAuth();
+          const data = await response.json();
+          set({
+            token: data.token,
+            user: data.user,
+            isAuthenticated: true,
+            isLoading: false,
+          });
         } catch (err) {
           set({
             isLoading: false,
@@ -142,19 +149,18 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: async () => {
+        const { token } = get();
         try {
-          await fetch('/auth/logout', {
+          await fetch('/api/auth/logout', {
             method: 'POST',
-            credentials: 'include',
+            headers: authHeaders(token),
           });
         } finally {
           set({
+            token: null,
             user: null,
             isAuthenticated: false,
             isLoading: false,
-            userId: null,
-            planId: null,
-            planLimits: null,
           });
         }
       },
@@ -162,7 +168,7 @@ export const useAuthStore = create<AuthState>()(
       forgotPassword: async (email) => {
         try {
           set({ isLoading: true, error: null });
-          const response = await fetch('/auth/forgot', {
+          const response = await fetch('/api/auth/forgot', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email }),
@@ -170,7 +176,7 @@ export const useAuthStore = create<AuthState>()(
 
           if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.message || 'Failed to send reset email');
+            throw new Error(error.error?.message || 'Failed to send reset email');
           }
 
           set({ isLoading: false });
@@ -183,18 +189,18 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      resetPassword: async (token, password) => {
+      resetPassword: async (resetToken, password) => {
         try {
           set({ isLoading: true, error: null });
-          const response = await fetch('/auth/reset', {
+          const response = await fetch('/api/auth/reset', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token, password }),
+            body: JSON.stringify({ token: resetToken, password }),
           });
 
           if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.message || 'Password reset failed');
+            throw new Error(error.error?.message || 'Password reset failed');
           }
 
           set({ isLoading: false });
@@ -209,39 +215,19 @@ export const useAuthStore = create<AuthState>()(
 
       clearError: () => set({ error: null }),
 
-      // Legacy setAuth for backward compatibility
-      setAuth: (userId, planId, planLimits) =>
-        set({
-          userId,
-          planId,
-          planLimits,
-          isAuthenticated: true,
-          user: {
-            id: userId,
-            email: '',
-            name: '',
-            plan_id: planId,
-            plan_limits: planLimits,
-          },
-        }),
-
       clearAuth: () =>
         set({
+          token: null,
           user: null,
-          userId: null,
-          planId: null,
-          planLimits: null,
           isAuthenticated: false,
         }),
     }),
     {
       name: 'hoster-auth',
       partialize: (state) => ({
+        token: state.token,
         user: state.user,
         isAuthenticated: state.isAuthenticated,
-        userId: state.userId,
-        planId: state.planId,
-        planLimits: state.planLimits,
       }),
     }
   )
@@ -249,21 +235,6 @@ export const useAuthStore = create<AuthState>()(
 
 // Selector hooks for convenience
 export const useIsAuthenticated = () => useAuthStore((state) => state.isAuthenticated);
-export const useUserId = () => useAuthStore((state) => state.userId);
-export const usePlanLimits = () => useAuthStore((state) => state.planLimits);
 export const useUser = () => useAuthStore((state) => state.user);
 export const useAuthLoading = () => useAuthStore((state) => state.isLoading);
 export const useAuthError = () => useAuthStore((state) => state.error);
-
-// Session recovery: Check auth when window regains focus
-// This helps recover sessions that may have been restored by APIGate
-if (typeof window !== 'undefined') {
-  window.addEventListener('focus', () => {
-    const state = useAuthStore.getState();
-    // Only check if we think we're unauthenticated
-    // This avoids spamming the server when already authenticated
-    if (!state.isAuthenticated) {
-      state.checkAuth();
-    }
-  });
-}

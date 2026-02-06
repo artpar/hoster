@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Rocket } from 'lucide-react';
 import type { Template } from '@/api/types';
-import { useCreateDeployment } from '@/hooks/useDeployments';
+import { useCreateDeployment, useStartDeployment } from '@/hooks/useDeployments';
 import {
   Dialog,
   DialogContent,
@@ -29,6 +29,7 @@ export function DeployDialog({
   onSuccess,
 }: DeployDialogProps) {
   const createDeployment = useCreateDeployment();
+  const startDeployment = useStartDeployment();
 
   // Generate default name from template slug
   const defaultName = `${template.attributes.slug}-${Date.now().toString(36)}`;
@@ -81,6 +82,12 @@ export function DeployDialog({
         custom_domain: customDomain || undefined,
         config_overrides: configOverrides,
       });
+      // Auto-start the deployment after creation
+      try {
+        await startDeployment.mutateAsync(deployment.id);
+      } catch {
+        // Start failed but deployment was created - navigate anyway
+      }
       onOpenChange(false);
       onSuccess(deployment.id);
     } catch (err) {
@@ -88,8 +95,10 @@ export function DeployDialog({
     }
   };
 
+  const isPending = createDeployment.isPending || startDeployment.isPending;
+
   const handleClose = () => {
-    if (!createDeployment.isPending) {
+    if (!isPending) {
       onOpenChange(false);
       // Reset form
       setName(defaultName);
@@ -119,7 +128,7 @@ export function DeployDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="my-app"
-              disabled={createDeployment.isPending}
+              disabled={isPending}
             />
             <p className="text-xs text-muted-foreground">
               Used for the auto-generated domain: {name.toLowerCase()}.yourdomain.com
@@ -134,7 +143,7 @@ export function DeployDialog({
               value={customDomain}
               onChange={(e) => setCustomDomain(e.target.value)}
               placeholder="app.example.com"
-              disabled={createDeployment.isPending}
+              disabled={isPending}
             />
             <p className="text-xs text-muted-foreground">
               Point your DNS CNAME to our servers to use a custom domain
@@ -150,7 +159,7 @@ export function DeployDialog({
               onChange={(e) => setEnvVars(e.target.value)}
               placeholder={`# One per line\nDATABASE_URL=postgres://...\nAPI_KEY=secret`}
               rows={4}
-              disabled={createDeployment.isPending}
+              disabled={isPending}
               className="font-mono text-sm"
             />
             <p className="text-xs text-muted-foreground">
@@ -182,16 +191,16 @@ export function DeployDialog({
           <Button
             variant="outline"
             onClick={handleClose}
-            disabled={createDeployment.isPending}
+            disabled={isPending}
           >
             Cancel
           </Button>
           <Button
             onClick={handleDeploy}
-            disabled={createDeployment.isPending}
+            disabled={isPending}
           >
             <Rocket className="mr-2 h-4 w-4" />
-            {createDeployment.isPending ? 'Deploying...' : 'Deploy'}
+            {startDeployment.isPending ? 'Starting...' : createDeployment.isPending ? 'Creating...' : 'Deploy'}
           </Button>
         </DialogFooter>
       </DialogContent>

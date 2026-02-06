@@ -83,19 +83,18 @@ func (h *DevAuthHandlers) LookupSession(sessionID string) *DevSession {
 }
 
 // RegisterRoutes registers dev auth routes on the router.
-// These routes are registered without the auth middleware so they're always accessible.
+// Auth endpoints are under /api/auth/ to avoid conflicting with APIGate's reserved /auth path.
 func (h *DevAuthHandlers) RegisterRoutes(router *mux.Router) {
-	// These endpoints match what the frontend expects
-	router.HandleFunc("/auth/login", h.handleLogin).Methods("POST", "OPTIONS")
-	router.HandleFunc("/auth/register", h.handleRegister).Methods("POST", "OPTIONS")
-	router.HandleFunc("/auth/me", h.handleMe).Methods("GET", "OPTIONS")
-	router.HandleFunc("/auth/logout", h.handleLogout).Methods("POST", "OPTIONS")
-	router.HandleFunc("/auth/forgot", h.handleForgotPassword).Methods("POST", "OPTIONS")
-	router.HandleFunc("/auth/reset", h.handleResetPassword).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/auth/login", h.handleLogin).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/auth/register", h.handleRegister).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/auth/me", h.handleMe).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/auth/logout", h.handleLogout).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/auth/forgot", h.handleForgotPassword).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/auth/reset", h.handleResetPassword).Methods("POST", "OPTIONS")
 }
 
 // handleLogin handles POST /auth/login.
-// In dev mode, accepts any credentials and creates a session.
+// In dev mode, accepts any credentials and returns a Bearer token.
 func (h *DevAuthHandlers) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		h.handleCORS(w)
@@ -116,10 +115,10 @@ func (h *DevAuthHandlers) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// In dev mode, accept any credentials
 	h.logger.Info("dev auth: login", "email", req.Email)
 
-	// Create a session
-	sessionID := generateSessionID()
+	// Create a session keyed by token
+	token := "tok_" + randomString(32)
 	h.sessionMu.Lock()
-	h.sessions[sessionID] = &DevSession{
+	h.sessions[token] = &DevSession{
 		UserID:    "dev-user-" + randomString(8),
 		Email:     req.Email,
 		Name:      getNameFromEmail(req.Email),
@@ -127,23 +126,17 @@ func (h *DevAuthHandlers) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	h.sessionMu.Unlock()
 
-	// Set session cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     "hoster_dev_session",
-		Value:    sessionID,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   7 * 24 * 60 * 60, // 7 days
-	})
-
-	// Return user info
+	// Return token + user info
 	user := h.getDevUser(req.Email)
-	h.writeJSON(w, http.StatusOK, user)
+	user.ID = h.sessions[token].UserID
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"token": token,
+		"user":  user,
+	})
 }
 
 // handleRegister handles POST /auth/register.
-// In dev mode, accepts any input and creates a "new" user.
+// In dev mode, accepts any input and returns a Bearer token.
 func (h *DevAuthHandlers) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		h.handleCORS(w)
@@ -164,15 +157,15 @@ func (h *DevAuthHandlers) handleRegister(w http.ResponseWriter, r *http.Request)
 	// In dev mode, accept any registration
 	h.logger.Info("dev auth: register", "email", req.Email, "name", req.Name)
 
-	// Create a session
-	sessionID := generateSessionID()
 	name := req.Name
 	if name == "" {
 		name = getNameFromEmail(req.Email)
 	}
 
+	// Create a session keyed by token
+	token := "tok_" + randomString(32)
 	h.sessionMu.Lock()
-	h.sessions[sessionID] = &DevSession{
+	h.sessions[token] = &DevSession{
 		UserID:    "dev-user-" + randomString(8),
 		Email:     req.Email,
 		Name:      name,
@@ -180,42 +173,36 @@ func (h *DevAuthHandlers) handleRegister(w http.ResponseWriter, r *http.Request)
 	}
 	h.sessionMu.Unlock()
 
-	// Set session cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     "hoster_dev_session",
-		Value:    sessionID,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   7 * 24 * 60 * 60, // 7 days
-	})
-
-	// Return user info
+	// Return token + user info
 	user := h.getDevUser(req.Email)
+	user.ID = h.sessions[token].UserID
 	user.Name = name
-	h.writeJSON(w, http.StatusOK, user)
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"token": token,
+		"user":  user,
+	})
 }
 
 // handleMe handles GET /auth/me.
-// Returns the current user if a session exists.
+// Returns the current user if a valid Bearer token is provided.
 func (h *DevAuthHandlers) handleMe(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		h.handleCORS(w)
 		return
 	}
 
-	cookie, err := r.Cookie("hoster_dev_session")
-	if err != nil {
+	token := extractAuthToken(r)
+	if token == "" {
 		h.writeError(w, http.StatusUnauthorized, "Not authenticated")
 		return
 	}
 
 	h.sessionMu.RLock()
-	session, exists := h.sessions[cookie.Value]
+	session, exists := h.sessions[token]
 	h.sessionMu.RUnlock()
 
 	if !exists {
-		h.writeError(w, http.StatusUnauthorized, "Session expired")
+		h.writeError(w, http.StatusUnauthorized, "Invalid or expired token")
 		return
 	}
 
@@ -226,28 +213,19 @@ func (h *DevAuthHandlers) handleMe(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleLogout handles POST /auth/logout.
-// Clears the session.
+// Invalidates the Bearer token.
 func (h *DevAuthHandlers) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		h.handleCORS(w)
 		return
 	}
 
-	cookie, err := r.Cookie("hoster_dev_session")
-	if err == nil {
+	token := extractAuthToken(r)
+	if token != "" {
 		h.sessionMu.Lock()
-		delete(h.sessions, cookie.Value)
+		delete(h.sessions, token)
 		h.sessionMu.Unlock()
 	}
-
-	// Clear the cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     "hoster_dev_session",
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		MaxAge:   -1,
-	})
 
 	h.writeJSON(w, http.StatusOK, map[string]string{"status": "logged out"})
 }
@@ -302,7 +280,7 @@ func (h *DevAuthHandlers) getDevUser(email string) DevUser {
 func (h *DevAuthHandlers) handleCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Auth-Token")
 	w.Header().Set("Access-Control-Allow-Credentials", "true")
 	w.WriteHeader(http.StatusOK)
 }
@@ -326,9 +304,10 @@ func (h *DevAuthHandlers) writeError(w http.ResponseWriter, status int, message 
 	})
 }
 
-// generateSessionID generates a random session ID.
-func generateSessionID() string {
-	return "sess_" + randomString(32)
+// extractAuthToken extracts the auth token from the X-Auth-Token header.
+// Uses X-Auth-Token because APIGate strips the standard Authorization header.
+func extractAuthToken(r *http.Request) string {
+	return r.Header.Get("X-Auth-Token")
 }
 
 // getNameFromEmail extracts a display name from an email address.

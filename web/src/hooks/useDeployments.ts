@@ -21,6 +21,14 @@ export function useDeployment(id: string) {
     queryKey: deploymentKeys.detail(id),
     queryFn: () => deploymentsApi.get(id),
     enabled: !!id,
+    refetchInterval: (query) => {
+      const status = query.state.data?.attributes?.status;
+      // Poll every 2s during transitions so the UI stays up to date
+      if (status && ['pending', 'scheduled', 'starting', 'stopping', 'deleting'].includes(status)) {
+        return 2000;
+      }
+      return false;
+    },
   });
 }
 

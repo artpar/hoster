@@ -14,14 +14,10 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      // For local dev: proxy directly to Hoster (uses dev auth)
-      // In production: APIGate handles auth + routing
+      // Proxy through APIGate (front-facing server)
+      // APIGate forwards to Hoster as upstream
       '/api': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/auth': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:8082',
         changeOrigin: true,
       },
     },

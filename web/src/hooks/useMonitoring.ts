@@ -43,6 +43,6 @@ export function useDeploymentEvents(deploymentId: string, params?: EventsQueryPa
     queryKey: monitoringKeys.events(deploymentId, params),
     queryFn: () => monitoringApi.getEvents(deploymentId, params),
     enabled: !!deploymentId,
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 5000, // Refresh every 5 seconds to catch startup events
   });
 }

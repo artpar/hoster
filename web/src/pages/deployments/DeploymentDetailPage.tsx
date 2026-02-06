@@ -38,6 +38,7 @@ export function DeploymentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: deployment, isLoading, error, refetch } = useDeployment(id ?? '');
+  const isTransitioning = deployment && ['pending', 'scheduled', 'starting', 'stopping', 'deleting'].includes(deployment.attributes.status);
   const { data: health, isLoading: healthLoading } = useDeploymentHealth(id ?? '');
   const { data: stats, isLoading: statsLoading } = useDeploymentStats(id ?? '');
 
@@ -153,8 +154,17 @@ export function DeploymentDetailPage() {
                   size="sm"
                   className="bg-green-600 hover:bg-green-700"
                 >
-                  <Play className="mr-1 h-4 w-4" />
-                  Start
+                  {startDeployment.isPending ? (
+                    <>
+                      <LoadingSpinner className="mr-1 h-4 w-4" />
+                      Starting...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="mr-1 h-4 w-4" />
+                      Start
+                    </>
+                  )}
                 </Button>
               )}
               {canStop && (
@@ -164,8 +174,17 @@ export function DeploymentDetailPage() {
                   size="sm"
                   className="bg-yellow-600 hover:bg-yellow-700"
                 >
-                  <Square className="mr-1 h-4 w-4" />
-                  Stop
+                  {stopDeployment.isPending ? (
+                    <>
+                      <LoadingSpinner className="mr-1 h-4 w-4" />
+                      Stopping...
+                    </>
+                  ) : (
+                    <>
+                      <Square className="mr-1 h-4 w-4" />
+                      Stop
+                    </>
+                  )}
                 </Button>
               )}
               <Button
@@ -240,6 +259,11 @@ export function DeploymentDetailPage() {
                       </div>
                     ))}
                   </div>
+                ) : isTransitioning ? (
+                  <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                    <LoadingSpinner className="h-4 w-4" />
+                    Waiting for containers to start...
+                  </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">No containers running</p>
                 )}
@@ -281,6 +305,11 @@ export function DeploymentDetailPage() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                ) : isTransitioning ? (
+                  <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                    <LoadingSpinner className="h-4 w-4" />
+                    Stats will appear once containers are running...
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">No stats available</p>
@@ -382,6 +411,11 @@ export function DeploymentDetailPage() {
                     </div>
                   ))}
                 </div>
+              ) : isTransitioning ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                  <LoadingSpinner className="h-4 w-4" />
+                  Logs will appear once containers are running...
+                </div>
               ) : (
                 <p className="text-sm text-muted-foreground">No logs available</p>
               )}
@@ -446,6 +480,11 @@ export function DeploymentDetailPage() {
                     Last updated: {formatDate(stats.collected_at)}
                   </p>
                 </div>
+              ) : isTransitioning ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                  <LoadingSpinner className="h-4 w-4" />
+                  Stats will appear once containers are running...
+                </div>
               ) : (
                 <p className="text-sm text-muted-foreground">No stats available</p>
               )}
@@ -495,6 +534,11 @@ export function DeploymentDetailPage() {
                       </span>
                     </div>
                   ))}
+                </div>
+              ) : isTransitioning ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                  <LoadingSpinner className="h-4 w-4" />
+                  Events will appear as containers start...
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">No events recorded</p>
