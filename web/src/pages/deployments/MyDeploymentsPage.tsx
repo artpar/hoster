@@ -5,6 +5,9 @@ import { useIsAuthenticated } from '@/stores/authStore';
 import { LoadingPage } from '@/components/common/LoadingSpinner';
 import { EmptyState } from '@/components/common/EmptyState';
 import { DeploymentCard } from '@/components/deployments/DeploymentCard';
+import { pages } from '@/docs/registry';
+
+const pageDocs = pages.deployments;
 
 export function MyDeploymentsPage() {
   const isAuthenticated = useIsAuthenticated();
@@ -36,9 +39,9 @@ export function MyDeploymentsPage() {
     <div>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">My Deployments</h1>
+          <h1 className="text-2xl font-bold">{pageDocs.title}</h1>
           <p className="text-muted-foreground">
-            Manage your deployed applications
+            {pageDocs.subtitle}
           </p>
         </div>
         <Link
@@ -53,8 +56,8 @@ export function MyDeploymentsPage() {
       {!deployments || deployments.length === 0 ? (
         <EmptyState
           icon={Layers}
-          title="No deployments yet"
-          description="Deploy your first application from the marketplace"
+          title={pageDocs.emptyState.label}
+          description={pageDocs.emptyState.description}
           action={
             <Link
               to="/marketplace"

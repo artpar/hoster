@@ -10,6 +10,9 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { AlertDialog } from '@/components/ui/AlertDialog';
+import { pages } from '@/docs/registry';
+
+const pageDocs = pages.templateDetail;
 
 export function TemplateDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -26,7 +29,7 @@ export function TemplateDetailPage() {
   if (error || !template) {
     return (
       <div className="rounded-md bg-destructive/10 p-4 text-destructive">
-        Template not found
+        {pageDocs.emptyState.label}
       </div>
     );
   }
@@ -116,7 +119,7 @@ export function TemplateDetailPage() {
               {/* Services */}
               {services.length > 0 && (
                 <div>
-                  <h3 className="mb-2 font-semibold">Included Services</h3>
+                  <h3 className="mb-2 font-semibold">{pageDocs.sections.services.label}</h3>
                   <div className="flex flex-wrap gap-2">
                     {services.map((service) => (
                       <Badge key={service} variant="secondary">
@@ -130,7 +133,7 @@ export function TemplateDetailPage() {
 
               {/* Compose Spec */}
               <div>
-                <h3 className="mb-2 font-semibold">Docker Compose Specification</h3>
+                <h3 className="mb-2 font-semibold">{pageDocs.sections.composeSpec.label}</h3>
                 <pre className="max-h-96 overflow-auto rounded-md bg-muted p-4 text-sm font-mono">
                   {template.attributes.compose_spec}
                 </pre>

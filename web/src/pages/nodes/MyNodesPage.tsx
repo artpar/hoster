@@ -7,6 +7,9 @@ import { NodeCard, AddNodeDialog, AddSSHKeyDialog } from '@/components/nodes';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { pages } from '@/docs/registry';
+
+const pageDocs = pages.nodes;
 
 export function MyNodesPage() {
   const { data: nodes, isLoading: nodesLoading } = useNodes();
@@ -24,9 +27,9 @@ export function MyNodesPage() {
       {/* Header */}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">My Nodes</h1>
+          <h1 className="text-2xl font-bold">{pageDocs.title}</h1>
           <p className="text-muted-foreground">
-            Manage your VPS servers for running deployments
+            {pageDocs.subtitle}
           </p>
         </div>
         <div className="flex gap-2">
@@ -52,8 +55,8 @@ export function MyNodesPage() {
       ) : !nodes || nodes.length === 0 ? (
         <EmptyState
           icon={Server}
-          title="No worker nodes"
-          description="Add your first VPS server to start running deployments on your own infrastructure"
+          title={pageDocs.emptyState.label}
+          description={pageDocs.emptyState.description}
           action={{
             label: 'Add Node',
             onClick: () => setAddNodeDialogOpen(true),

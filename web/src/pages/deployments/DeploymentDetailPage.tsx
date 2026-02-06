@@ -12,6 +12,7 @@ import {
   Clock,
   ExternalLink,
   Globe,
+  Info,
 } from 'lucide-react';
 import {
   useDeployment,
@@ -27,12 +28,17 @@ import {
 } from '@/hooks/useMonitoring';
 import { LoadingPage, LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { StatusBadge } from '@/components/common/StatusBadge';
+import { MetricDefinitions } from '@/components/docs/MetricDefinitions';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 import { Badge } from '@/components/ui/Badge';
 import { Select } from '@/components/ui/Select';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { pages, containerMetrics, eventTypes } from '@/docs/registry';
+import type { EventDoc } from '@/docs/types';
+
+const pageDocs = pages.deploymentDetail;
 
 export function DeploymentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -59,6 +65,10 @@ export function DeploymentDetailPage() {
   // Delete confirmation dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
+  // Help panel toggles
+  const [showStatsHelp, setShowStatsHelp] = useState(false);
+  const [showEventsHelp, setShowEventsHelp] = useState(false);
+
   const startDeployment = useStartDeployment();
   const stopDeployment = useStopDeployment();
   const deleteDeployment = useDeleteDeployment();
@@ -70,7 +80,7 @@ export function DeploymentDetailPage() {
   if (error || !deployment) {
     return (
       <div className="rounded-md bg-destructive/10 p-4 text-destructive">
-        Deployment not found
+        {pageDocs.emptyState.label}
       </div>
     );
   }
@@ -107,6 +117,10 @@ export function DeploymentDetailPage() {
   };
 
   const containers = health?.containers ?? [];
+
+  const getEventDoc = (type: string): EventDoc | undefined => {
+    return (eventTypes as Record<string, EventDoc>)[type];
+  };
 
   return (
     <div>
@@ -235,7 +249,7 @@ export function DeploymentDetailPage() {
             {/* Container Health Card */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Container Health</CardTitle>
+                <CardTitle className="text-lg">{pageDocs.sections.containerHealth.label}</CardTitle>
               </CardHeader>
               <CardContent>
                 {healthLoading ? (
@@ -273,7 +287,7 @@ export function DeploymentDetailPage() {
             {/* Quick Stats Card */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Resource Usage</CardTitle>
+                <CardTitle className="text-lg">{pageDocs.sections.resourceUsage.label}</CardTitle>
               </CardHeader>
               <CardContent>
                 {statsLoading ? (
@@ -355,7 +369,7 @@ export function DeploymentDetailPage() {
           <Card>
             <CardHeader>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <CardTitle className="text-lg">Container Logs</CardTitle>
+                <CardTitle className="text-lg">{pageDocs.sections.logs.label}</CardTitle>
                 <div className="flex items-center gap-2">
                   <Select
                     value={logsContainer ?? 'all'}
@@ -384,6 +398,7 @@ export function DeploymentDetailPage() {
                   </Button>
                 </div>
               </div>
+              <p className="text-sm text-muted-foreground">{pageDocs.sections.logs.description}</p>
             </CardHeader>
             <CardContent>
               {logsLoading ? (
@@ -427,9 +442,24 @@ export function DeploymentDetailPage() {
         <TabsContent value="stats">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Resource Statistics</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">{pageDocs.sections.stats.label}</CardTitle>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowStatsHelp(!showStatsHelp)}
+                >
+                  <Info className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-sm text-muted-foreground">{pageDocs.sections.stats.description}</p>
             </CardHeader>
             <CardContent>
+              {showStatsHelp && (
+                <div className="mb-4">
+                  <MetricDefinitions metrics={containerMetrics} />
+                </div>
+              )}
               {statsLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <LoadingSpinner />
@@ -440,13 +470,13 @@ export function DeploymentDetailPage() {
                     <thead className="border-b bg-muted/50">
                       <tr>
                         <th className="px-4 py-2 text-left font-medium">Container</th>
-                        <th className="px-4 py-2 text-right font-medium">CPU %</th>
-                        <th className="px-4 py-2 text-right font-medium">Memory</th>
-                        <th className="px-4 py-2 text-right font-medium">Memory %</th>
-                        <th className="px-4 py-2 text-right font-medium">Network RX</th>
-                        <th className="px-4 py-2 text-right font-medium">Network TX</th>
+                        <th className="px-4 py-2 text-right font-medium">{containerMetrics.cpu_percent.label}</th>
+                        <th className="px-4 py-2 text-right font-medium">{containerMetrics.memory_usage.label}</th>
+                        <th className="px-4 py-2 text-right font-medium">{containerMetrics.memory_percent.label}</th>
+                        <th className="px-4 py-2 text-right font-medium">{containerMetrics.network_rx.label}</th>
+                        <th className="px-4 py-2 text-right font-medium">{containerMetrics.network_tx.label}</th>
                         <th className="px-4 py-2 text-right font-medium">Block R/W</th>
-                        <th className="px-4 py-2 text-right font-medium">PIDs</th>
+                        <th className="px-4 py-2 text-right font-medium">{containerMetrics.pids.label}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -496,44 +526,78 @@ export function DeploymentDetailPage() {
         <TabsContent value="events">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Deployment Events</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">{pageDocs.sections.events.label}</CardTitle>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowEventsHelp(!showEventsHelp)}
+                >
+                  <Info className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-sm text-muted-foreground">{pageDocs.sections.events.description}</p>
             </CardHeader>
             <CardContent>
+              {showEventsHelp && (
+                <div className="mb-4 grid gap-2 sm:grid-cols-2">
+                  {Object.entries(eventTypes).map(([key, doc]) => (
+                    <div key={key} className="flex items-start gap-2 rounded-md border p-2">
+                      <Badge
+                        variant={
+                          doc.severity === 'error'
+                            ? 'destructive'
+                            : doc.severity === 'success'
+                            ? 'success'
+                            : 'secondary'
+                        }
+                        className="shrink-0"
+                      >
+                        {doc.label}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">{doc.description}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {eventsLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <LoadingSpinner />
                 </div>
               ) : events?.events && events.events.length > 0 ? (
                 <div className="space-y-2">
-                  {events.events.map((event) => (
-                    <div
-                      key={event.id}
-                      className="flex items-start gap-3 rounded-md border p-3"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant={
-                              event.type.includes('error') || event.type.includes('fail')
-                                ? 'destructive'
-                                : event.type.includes('start')
-                                ? 'success'
-                                : 'secondary'
-                            }
-                          >
-                            {event.type}
-                          </Badge>
-                          <span className="text-sm text-muted-foreground">
-                            {event.container}
-                          </span>
+                  {events.events.map((event) => {
+                    const doc = getEventDoc(event.type);
+                    return (
+                      <div
+                        key={event.id}
+                        className="flex items-start gap-3 rounded-md border p-3"
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant={
+                                doc?.severity === 'error'
+                                  ? 'destructive'
+                                  : doc?.severity === 'success'
+                                  ? 'success'
+                                  : 'secondary'
+                              }
+                            >
+                              {doc?.label ?? event.type}
+                            </Badge>
+                            <span className="text-sm text-muted-foreground">
+                              {event.container}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-sm">{event.message}</p>
                         </div>
-                        <p className="mt-1 text-sm">{event.message}</p>
+                        <span className="text-xs text-muted-foreground">
+                          {formatDate(event.timestamp)}
+                        </span>
                       </div>
-                      <span className="text-xs text-muted-foreground">
-                        {formatDate(event.timestamp)}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : isTransitioning ? (
                 <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">

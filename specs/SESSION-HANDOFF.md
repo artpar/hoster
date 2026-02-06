@@ -124,7 +124,7 @@ go build -o bin/apigate ./cmd/apigate
 - ✅ Local E2E fully functional (including real web-UI app deployments)
 - ✅ Remote node deployment working (verified on AWS EC2)
 - ✅ Web-UI templates working (Uptime Kuma verified end-to-end)
-- 🔴 **BLOCKED:** APIGate session cookie bug (issue #54) - signup/login doesn't set cookies
+- ✅ Auth moved to token-based (X-Auth-Token header) — session cookie issue (#54) no longer relevant
 - ✅ Critical privacy bug FIXED - deployment list now filtered by authenticated user
 - ✅ Auth UX improvements complete - user profile in header, better error messages
 - ✅ SSH Keys promoted to first-class page with node cross-references
@@ -342,14 +342,7 @@ console.log(await start.json());
 
 ## IMMEDIATE NEXT STEPS (Priority Order)
 
-### 1. Wait for APIGate Session Cookie Fix (BLOCKING)
-
-APIGate issue #54 must be resolved before production deployment:
-```bash
-gh issue view 54 --repo artpar/apigate
-```
-
-### 2. Commit Changes and Create Release
+### 1. Commit Changes and Create Release
 
 ```bash
 cd /Users/artpar/workspace/code/hoster
@@ -360,7 +353,7 @@ git commit -m "feat: Add dedicated SSH Keys page, web-UI app templates (WordPres
 git push origin main
 ```
 
-### 3. Build Frontend and Create Release
+### 2. Build Frontend and Create Release
 
 ```bash
 # Build frontend
@@ -376,18 +369,18 @@ git tag v0.2.6
 git push origin v0.2.6
 ```
 
-### 4. Deploy to Production
+### 3. Deploy to Production
 
 ```bash
 cd deploy/local
 make deploy-release VERSION=v0.2.6
 ```
 
-### 5. Test Production E2E
+### 4. Test Production E2E
 
 1. Navigate to https://emptychair.dev
 2. Browse marketplace (should see 12 templates — infra + web-UI apps)
-3. Sign up / Log in (requires APIGate #54 fix)
+3. Sign up / Log in (token-based auth via X-Auth-Token)
 4. Test SSH Keys page at /ssh-keys
 5. Deploy Uptime Kuma or IT Tools
 6. Monitor deployment (Events, Stats, Logs tabs)
@@ -602,11 +595,10 @@ make shell            # SSH into server
 - Uptime Kuma healthcheck shows "Unhealthy" initially because it uses a complex node.js health check — the app itself is fully functional.
 
 **Next Steps:**
-1. Wait for APIGate issue #54 fix (session cookies)
-2. Build and embed frontend with new SSH Keys page
-3. Create release with web-UI templates + SSH Keys page
-4. Deploy to production and test ALL user journeys
-5. Test real app deployment on production (Uptime Kuma via `*.apps.emptychair.dev`)
+1. Build and embed frontend with docs registry + SSH Keys page
+2. Create release v0.2.7 with docs registry + web-UI templates + SSH Keys page
+3. Deploy to production and test ALL user journeys
+4. Test real app deployment on production (Uptime Kuma via `*.apps.emptychair.dev`)
 
 ---
 

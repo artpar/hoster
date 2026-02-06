@@ -7,6 +7,9 @@ import { TemplateCard } from '@/components/templates/TemplateCard';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
+import { pages } from '@/docs/registry';
+
+const pageDocs = pages.marketplace;
 
 type SortOption = 'name' | 'price_asc' | 'price_desc' | 'newest';
 type PriceFilter = 'all' | 'free' | 'paid';
@@ -92,9 +95,9 @@ export function MarketplacePage() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">Marketplace</h1>
+        <h1 className="text-2xl font-bold">{pageDocs.title}</h1>
         <p className="text-muted-foreground">
-          Browse and deploy from our collection of {totalPublished} templates
+          {pageDocs.subtitle}
         </p>
       </div>
 
@@ -161,11 +164,11 @@ export function MarketplacePage() {
       {filteredTemplates.length === 0 ? (
         <EmptyState
           icon={Store}
-          title={searchQuery ? 'No matching templates' : 'No templates available'}
+          title={searchQuery ? 'No matching templates' : pageDocs.emptyState.label}
           description={
             searchQuery
               ? 'Try adjusting your search or filters'
-              : 'Check back later for new templates'
+              : pageDocs.emptyState.description
           }
           action={
             hasActiveFilters

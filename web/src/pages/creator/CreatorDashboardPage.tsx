@@ -20,6 +20,9 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
+import { pages } from '@/docs/registry';
+
+const pageDocs = pages.creator;
 
 type StatusFilter = 'all' | 'draft' | 'published' | 'deprecated';
 
@@ -132,9 +135,9 @@ export function CreatorDashboardPage() {
       {/* Header */}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Creator Dashboard</h1>
+          <h1 className="text-2xl font-bold">{pageDocs.title}</h1>
           <p className="text-muted-foreground">
-            Manage your templates and track deployments
+            {pageDocs.subtitle}
           </p>
         </div>
         <Button onClick={() => setCreateDialogOpen(true)}>
@@ -147,7 +150,7 @@ export function CreatorDashboardPage() {
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Templates</CardTitle>
+            <CardTitle className="text-sm font-medium">{pageDocs.sections.totalTemplates.label}</CardTitle>
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -160,7 +163,7 @@ export function CreatorDashboardPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Deployments</CardTitle>
+            <CardTitle className="text-sm font-medium">{pageDocs.sections.totalDeployments.label}</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -173,7 +176,7 @@ export function CreatorDashboardPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
+            <CardTitle className="text-sm font-medium">{pageDocs.sections.monthlyRevenue.label}</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -186,7 +189,7 @@ export function CreatorDashboardPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Published</CardTitle>
+            <CardTitle className="text-sm font-medium">{pageDocs.sections.published.label}</CardTitle>
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -243,11 +246,11 @@ export function CreatorDashboardPage() {
           {myTemplates.length === 0 ? (
             <EmptyState
               icon={LayoutDashboard}
-              title={searchQuery || statusFilter !== 'all' ? 'No matching templates' : 'No templates yet'}
+              title={searchQuery || statusFilter !== 'all' ? 'No matching templates' : pageDocs.emptyState.label}
               description={
                 searchQuery || statusFilter !== 'all'
                   ? 'Try adjusting your search or filters'
-                  : 'Create your first template to start earning'
+                  : pageDocs.emptyState.description
               }
               action={
                 !searchQuery && statusFilter === 'all'
@@ -334,34 +337,23 @@ export function CreatorDashboardPage() {
               </CardContent>
             </Card>
 
-            {/* Quick Tips */}
+            {/* Creator Tips */}
             <Card className="md:col-span-2">
               <CardHeader>
                 <CardTitle className="text-lg">Creator Tips</CardTitle>
               </CardHeader>
               <CardContent>
-                <ul className="space-y-2 text-sm text-muted-foreground">
-                  <li>
-                    <strong>Write clear descriptions</strong> - Help users understand what
-                    your template does and what problems it solves.
-                  </li>
-                  <li>
-                    <strong>Use semantic versioning</strong> - Follow X.Y.Z format to help
-                    users track updates.
-                  </li>
-                  <li>
-                    <strong>Test thoroughly</strong> - Make sure your compose spec works
-                    before publishing.
-                  </li>
-                  <li>
-                    <strong>Keep images public</strong> - All Docker images must be
-                    publicly accessible.
-                  </li>
-                  <li>
-                    <strong>Set fair pricing</strong> - Consider the value your template
-                    provides when setting prices.
-                  </li>
-                </ul>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {['composeGuide', 'versioning', 'pricing', 'lifecycle'].map((key) => {
+                    const section = pageDocs.sections[key];
+                    return (
+                      <div key={key} className="rounded-md border p-3">
+                        <p className="text-sm font-medium">{section.label}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{section.description}</p>
+                      </div>
+                    );
+                  })}
+                </div>
               </CardContent>
             </Card>
           </div>

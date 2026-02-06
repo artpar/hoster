@@ -6,6 +6,9 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { AddSSHKeyDialog } from '@/components/nodes/AddSSHKeyDialog';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { pages } from '@/docs/registry';
+
+const pageDocs = pages.sshKeys;
 
 export function SSHKeysPage() {
   const { data: sshKeys, isLoading } = useSSHKeys();
@@ -35,9 +38,9 @@ export function SSHKeysPage() {
       {/* Header */}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">SSH Keys</h1>
+          <h1 className="text-2xl font-bold">{pageDocs.title}</h1>
           <p className="text-muted-foreground">
-            Manage SSH keys used to connect to your worker nodes
+            {pageDocs.subtitle}
           </p>
         </div>
         <Button onClick={() => setAddDialogOpen(true)}>
@@ -54,8 +57,8 @@ export function SSHKeysPage() {
       ) : !sshKeys || sshKeys.length === 0 ? (
         <EmptyState
           icon={KeyRound}
-          title="No SSH keys"
-          description="Add an SSH key to connect to your worker nodes"
+          title={pageDocs.emptyState.label}
+          description={pageDocs.emptyState.description}
           action={{
             label: 'Add SSH Key',
             onClick: () => setAddDialogOpen(true),
