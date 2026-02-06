@@ -5,9 +5,9 @@
 
 ---
 
-## CURRENT PROJECT STATE (January 27, 2026)
+## CURRENT PROJECT STATE (February 6, 2026)
 
-### Status: PRIVACY FIX & AUTH UX IMPROVEMENTS - READY FOR v0.2.5
+### Status: SSH KEYS PAGE + WEB-UI TEMPLATES + E2E DEPLOYMENT VERIFIED
 
 **Local E2E Testing Environment - FULLY WORKING:**
 
@@ -37,7 +37,33 @@ go build -o bin/apigate ./cmd/apigate
 
 **New Features Completed:**
 
-1. **Remote Node E2E Testing** (January 23, 2026)
+1. **Dedicated SSH Keys Page** (February 6, 2026)
+   - ✅ New `/ssh-keys` route with standalone page
+   - ✅ Table view: Name, Fingerprint, Used By (node badges), Created, Actions
+   - ✅ Cross-references nodes using each key
+   - ✅ Delete warning shows which nodes use the key
+   - ✅ Sidebar nav item with KeyRound icon
+   - ✅ `/nodes` "Manage SSH Keys" links to `/ssh-keys`
+
+2. **Web-UI App Templates** (February 6, 2026)
+   - ✅ Migration 008: 6 new templates with real web UIs
+   - ✅ WordPress ($8/mo) - CMS with MySQL, multi-service compose
+   - ✅ Uptime Kuma ($4/mo) - Monitoring dashboard
+   - ✅ Gitea ($5/mo) - Self-hosted Git service
+   - ✅ n8n ($6/mo) - Workflow automation
+   - ✅ IT Tools ($2/mo) - Developer utility collection
+   - ✅ Metabase ($7/mo) - Business intelligence
+   - ✅ Marketplace now shows 12 templates total
+
+3. **Real Web-UI App Deployment E2E** (February 6, 2026)
+   - ✅ Deployed Uptime Kuma from marketplace via web UI
+   - ✅ Container pulled, created, started (~20 seconds)
+   - ✅ Accessed running app on localhost:30003 - full web UI loaded
+   - ✅ Completed Uptime Kuma admin setup, reached monitoring dashboard
+   - ✅ Hoster monitoring tabs verified: Overview, Logs, Stats, Events
+   - ✅ Plan limits correctly enforced (blocked 2nd deployment on free tier)
+
+4. **Remote Node E2E Testing** (January 23, 2026)
    - ✅ AWS EC2 instance at 98.82.190.29 with Docker
    - ✅ SSH key management via web UI
    - ✅ Node registration via web UI (aws-test-node)
@@ -95,12 +121,14 @@ go build -o bin/apigate ./cmd/apigate
 - ✅ All E2E flows verified (both modes)
 
 **What Needs Production Work:**
-- ✅ Local E2E fully functional
+- ✅ Local E2E fully functional (including real web-UI app deployments)
 - ✅ Remote node deployment working (verified on AWS EC2)
+- ✅ Web-UI templates working (Uptime Kuma verified end-to-end)
 - 🔴 **BLOCKED:** APIGate session cookie bug (issue #54) - signup/login doesn't set cookies
 - ✅ Critical privacy bug FIXED - deployment list now filtered by authenticated user
 - ✅ Auth UX improvements complete - user profile in header, better error messages
-- Need release v0.2.5 after APIGate fix is deployed
+- ✅ SSH Keys promoted to first-class page with node cross-references
+- Need release v0.2.5+ after APIGate fix is deployed
 - Production manual testing required (ALL journeys in specs/user-journeys.md)
 - CI workflows need verification (npm/rollup issues were being fixed)
 
@@ -145,10 +173,11 @@ HOSTER_APIGATE_AUTO_REGISTER=false \
 -- Check routes
 sqlite3 /tmp/hoster-e2e-test/apigate.db "SELECT name, path_pattern, host_pattern, priority, auth_required FROM routes ORDER BY priority DESC;"
 
--- Expected output:
--- hoster-app-proxy | /* | *.apps.localhost | 100 | 0
--- hoster-api       | /api/* |              | 50  | 0
--- hoster-frontend  | /*     |              | 10  | 0
+-- Expected output (priority order):
+-- hoster-app-proxy | /*                    | *.apps.localhost | 100 | 0
+-- hoster-billing   | /api/v1/deployments*  |                  | 55  | 1
+-- hoster-api       | /api/*                |                  | 50  | 0
+-- hoster-frontend  | /*                    |                  | 10  | 0
 ```
 
 **Logs:**
@@ -313,56 +342,54 @@ console.log(await start.json());
 
 ## IMMEDIATE NEXT STEPS (Priority Order)
 
-### 1. Commit Changes and Create Release
+### 1. Wait for APIGate Session Cookie Fix (BLOCKING)
+
+APIGate issue #54 must be resolved before production deployment:
+```bash
+gh issue view 54 --repo artpar/apigate
+```
+
+### 2. Commit Changes and Create Release
 
 ```bash
 cd /Users/artpar/workspace/code/hoster
 git add -A
 git status
-git commit -m "feat: Add React dialog components, fix pending deployment start"
+# Commit SSH Keys page, web-UI templates, and related changes
+git commit -m "feat: Add dedicated SSH Keys page, web-UI app templates (WordPress, Uptime Kuma, etc.)"
 git push origin main
 ```
 
-### 2. Verify CI Workflow is Fixed
+### 3. Build Frontend and Create Release
 
-Check if the npm/rollup issue is resolved:
 ```bash
-gh run list --repo artpar/hoster --limit 3
-```
+# Build frontend
+cd web && npm install && npm run build
+cp -r dist ../internal/shell/api/webui/
 
-If still failing, see troubleshooting section below.
+# Build Go binary with embedded frontend
+cd ..
+go build -o bin/hoster ./cmd/hoster
 
-### 3. Create New Release with Embedded Frontend
-
-Once CI passes:
-```bash
-# Commit any remaining changes
-git add -A
-git commit -m "feat: Complete monitoring and default templates"
-
-# Delete old failed tag if exists
-git tag -d v0.2.0 2>/dev/null
-git push origin :refs/tags/v0.2.0 2>/dev/null
-
-# Create fresh release
-git tag v0.2.2
-git push origin v0.2.2
+# Tag release
+git tag v0.2.6
+git push origin v0.2.6
 ```
 
 ### 4. Deploy to Production
 
 ```bash
 cd deploy/local
-make deploy-release VERSION=v0.2.2
+make deploy-release VERSION=v0.2.6
 ```
 
 ### 5. Test Production E2E
 
 1. Navigate to https://emptychair.dev
-2. Should see Hoster marketplace (not APIGate portal)
-3. Sign up / Log in via APIGate
-4. Browse templates (should see 7 templates with pricing)
-5. Deploy a template
+2. Browse marketplace (should see 12 templates — infra + web-UI apps)
+3. Sign up / Log in (requires APIGate #54 fix)
+4. Test SSH Keys page at /ssh-keys
+5. Deploy Uptime Kuma or IT Tools
 6. Monitor deployment (Events, Stats, Logs tabs)
 7. Access deployed app at https://{name}.apps.emptychair.dev
 
@@ -521,7 +548,69 @@ make shell            # SSH into server
 
 ## Session History
 
-### Session 7 (January 27, 2026) - CURRENT SESSION
+### Session 8 (February 6, 2026) - CURRENT SESSION
+
+**Goal:** Create dedicated SSH Keys page, add web-UI app templates, E2E deploy a real app
+
+**Accomplished:**
+
+1. **Dedicated SSH Keys Page (`/ssh-keys`)**
+   - Created `web/src/pages/ssh-keys/SSHKeysPage.tsx`
+   - Table with columns: Name, Fingerprint, Used By (node badges), Created, Actions
+   - Cross-references nodes via `ssh_key_id` — shows which nodes use each key
+   - Delete confirmation warns if key is in use by nodes
+   - Empty state with "Add SSH Key" action
+   - Added route in `App.tsx` as protected route
+   - Added `KeyRound` icon nav item in `Sidebar.tsx` (after "My Nodes")
+   - Removed inline SSH keys summary card from `MyNodesPage.tsx`
+   - "Manage SSH Keys" button replaced with `<Link to="/ssh-keys">`
+
+2. **Web-UI App Templates (migration 008)**
+   - Created `008_webui_templates.up.sql` with 6 templates
+   - WordPress: Multi-service (wordpress + mysql), port 80, $8/mo
+   - Uptime Kuma: Single container, monitoring dashboard, port 3001, $4/mo
+   - Gitea: Self-hosted Git, port 3000, $5/mo
+   - n8n: Workflow automation, port 5678, $6/mo
+   - IT Tools: Developer utilities, port 80, $2/mo
+   - Metabase: Business intelligence, port 3000, $7/mo
+   - Applied to running database for immediate testing
+
+3. **Full E2E Browser Testing (Chrome DevTools MCP)**
+   - Logged in via Vite dev server (localhost:3000) proxying to APIGate (8082)
+   - Verified marketplace shows all 12 templates
+   - Verified SSH Keys page: table, node cross-references, sidebar nav, link from /nodes
+   - Deployed Uptime Kuma from marketplace dialog
+   - Container created and started in ~20 seconds
+   - Accessed Uptime Kuma web UI at localhost:30003 — setup page loaded
+   - Completed admin account setup — reached monitoring dashboard
+   - Verified Hoster deployment detail: Overview (CPU/memory), Logs (100+ lines), Events (created/started)
+   - Plan limit correctly blocked 2nd deployment ("max 1 deployments")
+
+**Files Changed:**
+- `web/src/pages/ssh-keys/SSHKeysPage.tsx` - NEW - Standalone SSH Keys page
+- `web/src/App.tsx` - Added /ssh-keys route + import
+- `web/src/components/layout/Sidebar.tsx` - Added SSH Keys nav item
+- `web/src/pages/nodes/MyNodesPage.tsx` - Removed inline SSH key management, added link
+- `internal/shell/store/migrations/008_webui_templates.up.sql` - NEW - 6 web-UI templates
+- `internal/shell/store/migrations/008_webui_templates.down.sql` - NEW - Rollback
+- `CLAUDE.md` - Updated status, template counts, implementation status
+
+**Key Insights:**
+- Vite dev server (port 3000) must be used for testing frontend code changes (hot-reload). APIGate (8082) serves old embedded frontend binary.
+- Vite proxies `/api` to APIGate on 8082, so API calls work correctly.
+- Plan limits are enforced by APIGate on `auth_required=1` routes (deployment CRUD).
+- Uptime Kuma healthcheck shows "Unhealthy" initially because it uses a complex node.js health check — the app itself is fully functional.
+
+**Next Steps:**
+1. Wait for APIGate issue #54 fix (session cookies)
+2. Build and embed frontend with new SSH Keys page
+3. Create release with web-UI templates + SSH Keys page
+4. Deploy to production and test ALL user journeys
+5. Test real app deployment on production (Uptime Kuma via `*.apps.emptychair.dev`)
+
+---
+
+### Session 7 (January 27, 2026)
 
 **Goal:** Fix production authentication & UX issues discovered via manual testing
 

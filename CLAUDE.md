@@ -9,7 +9,7 @@
 
 **Vision**: Package creators define deployment templates (docker-compose + config + pricing), customers one-click deploy instances onto YOUR VPS infrastructure.
 
-**Status**: Backend deployed to production at https://emptychair.dev. Monitoring features complete. Local E2E environment fully functional. **Remote node deployment verified on AWS EC2.** Ready for v0.2.2 release.
+**Status**: Backend deployed to production at https://emptychair.dev. Monitoring features complete. Local E2E environment fully functional. **Remote node deployment verified on AWS EC2.** SSH Keys promoted to standalone page. 12 marketplace templates (6 database/infra + 6 web-UI apps). Uptime Kuma deployed and verified E2E locally.
 
 ---
 
@@ -443,12 +443,15 @@ These are intentional limitations documented in specs:
 - [x] v0.1.0 released and deployed to production (backend only)
 - [x] Container event recording in orchestrator - Lifecycle tracking
 - [x] Deployment monitoring UI - Events, Stats, Logs tabs working
-- [x] Default marketplace templates - 6 templates with pricing and resource limits
+- [x] Default marketplace templates - 12 templates (6 infra + 6 web-UI apps)
 - [x] Local E2E environment - APIGate + Hoster integration fully working
 - [x] Remote node E2E - AWS EC2 deployment verified (January 23, 2026)
 - [x] React dialog components - ConfirmDialog and AlertDialog replacing native dialogs
 - [x] SSH key management via web UI - Encrypted storage with AES-256-GCM
 - [x] Node registration via web UI - Health checks working
+- [x] Dedicated SSH Keys page (`/ssh-keys`) - Table with node cross-references
+- [x] Web-UI app templates (migration 008) - WordPress, Uptime Kuma, Gitea, n8n, IT Tools, Metabase
+- [x] Uptime Kuma E2E verified - deployed from marketplace, full web UI accessible
 
 ### IN PROGRESS
 - [ ] Fix CI npm/rollup issues - see specs/SESSION-HANDOFF.md for details
@@ -539,15 +542,25 @@ Full support for deploying to remote Docker hosts:
 HOSTER_ENCRYPTION_KEY=12345678901234567890123456789012  # exactly 32 bytes
 ```
 
-### Default Marketplace Templates: ✅ COMPLETE (January 22, 2026)
+### Default Marketplace Templates: ✅ COMPLETE (Updated February 6, 2026)
 
-6 production-ready templates with pricing and resource limits:
+12 templates — 6 infrastructure + 6 web-UI apps:
+
+**Infrastructure (migration 007):**
 - PostgreSQL Database ($5/month, 512MB RAM, 0.5 CPU, 5GB disk)
 - MySQL Database ($5/month, 512MB RAM, 0.5 CPU, 5GB disk)
 - Redis Cache ($3/month, 256MB RAM, 0.25 CPU, 2GB disk)
 - MongoDB Database ($5/month, 512MB RAM, 0.5 CPU, 10GB disk)
 - Nginx Web Server ($2/month, 64MB RAM, 0.1 CPU, 512MB disk)
 - Node.js Application ($4/month, 256MB RAM, 0.5 CPU, 2GB disk)
+
+**Web-UI Apps (migration 008):**
+- WordPress ($8/month, 768MB RAM, 0.75 CPU) - CMS with MySQL, port 80
+- Uptime Kuma ($4/month, 256MB RAM, 0.25 CPU) - Monitoring dashboard, port 3001
+- Gitea ($5/month, 512MB RAM, 0.5 CPU) - Self-hosted Git, port 3000
+- n8n ($6/month, 512MB RAM, 0.5 CPU) - Workflow automation, port 5678
+- IT Tools ($2/month, 64MB RAM, 0.1 CPU) - Developer utilities, port 80
+- Metabase ($7/month, 768MB RAM, 0.5 CPU) - Business intelligence, port 3000
 
 ### ADR-002 Compliance: ✅ COMPLETE
 

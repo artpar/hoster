@@ -8,6 +8,7 @@ import { MyDeploymentsPage } from '@/pages/deployments/MyDeploymentsPage';
 import { DeploymentDetailPage } from '@/pages/deployments/DeploymentDetailPage';
 import { CreatorDashboardPage } from '@/pages/creator/CreatorDashboardPage';
 import { MyNodesPage } from '@/pages/nodes/MyNodesPage';
+import { SSHKeysPage } from '@/pages/ssh-keys/SSHKeysPage';
 import { LoginPage, SignupPage, ForgotPasswordPage, ResetPasswordPage } from '@/pages/auth';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
@@ -54,6 +55,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <MyNodesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="ssh-keys"
+          element={
+            <ProtectedRoute>
+              <SSHKeysPage />
             </ProtectedRoute>
           }
         />

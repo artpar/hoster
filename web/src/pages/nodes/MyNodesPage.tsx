@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Plus, Server, Key } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Plus, Server, KeyRound } from 'lucide-react';
 import { useNodes, useDeleteNode, useEnterMaintenanceMode, useExitMaintenanceMode } from '@/hooks/useNodes';
-import { useSSHKeys, useDeleteSSHKey } from '@/hooks/useSSHKeys';
 import { EmptyState } from '@/components/common/EmptyState';
 import { NodeCard, AddNodeDialog, AddSSHKeyDialog } from '@/components/nodes';
 import { Button } from '@/components/ui/Button';
@@ -10,16 +10,13 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 export function MyNodesPage() {
   const { data: nodes, isLoading: nodesLoading } = useNodes();
-  const { data: sshKeys } = useSSHKeys();
 
   const deleteNode = useDeleteNode();
   const enterMaintenance = useEnterMaintenanceMode();
   const exitMaintenance = useExitMaintenanceMode();
-  const deleteSSHKey = useDeleteSSHKey();
 
   const [addNodeDialogOpen, setAddNodeDialogOpen] = useState(false);
   const [addSSHKeyDialogOpen, setAddSSHKeyDialogOpen] = useState(false);
-  const [deleteSSHKeyDialog, setDeleteSSHKeyDialog] = useState<{ open: boolean; id: string; name: string }>({ open: false, id: '', name: '' });
   const [deleteNodeDialog, setDeleteNodeDialog] = useState<{ open: boolean; id: string; name: string }>({ open: false, id: '', name: '' });
 
   return (
@@ -33,47 +30,19 @@ export function MyNodesPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setAddSSHKeyDialogOpen(true)}>
-            <Key className="mr-2 h-4 w-4" />
+          <Link
+            to="/ssh-keys"
+            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
+          >
+            <KeyRound className="h-4 w-4" />
             Manage SSH Keys
-          </Button>
+          </Link>
           <Button onClick={() => setAddNodeDialogOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Add Node
           </Button>
         </div>
       </div>
-
-      {/* SSH Keys Summary */}
-      {sshKeys && sshKeys.length > 0 && (
-        <div className="mb-4 rounded-lg border bg-card p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Key className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">SSH Keys</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {sshKeys.map((key) => (
-                <div
-                  key={key.id}
-                  className="flex items-center gap-1 rounded-full bg-secondary px-2 py-1 text-xs"
-                >
-                  <span className="font-medium">{key.attributes.name}</span>
-                  <span className="text-muted-foreground">
-                    ({key.attributes.fingerprint.substring(0, 12)}...)
-                  </span>
-                  <button
-                    onClick={() => setDeleteSSHKeyDialog({ open: true, id: key.id, name: key.attributes.name })}
-                    className="ml-1 text-muted-foreground hover:text-destructive"
-                  >
-                    &times;
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Nodes Grid */}
       {nodesLoading ? (
@@ -150,17 +119,6 @@ export function MyNodesPage() {
           console.log('SSH key created:', keyId);
           setAddNodeDialogOpen(true);
         }}
-      />
-
-      {/* Delete SSH Key Confirmation */}
-      <ConfirmDialog
-        open={deleteSSHKeyDialog.open}
-        onOpenChange={(open) => setDeleteSSHKeyDialog((prev) => ({ ...prev, open }))}
-        title="Delete SSH Key"
-        description={`Delete SSH key "${deleteSSHKeyDialog.name}"? This cannot be undone.`}
-        confirmLabel="Delete"
-        variant="destructive"
-        onConfirm={() => deleteSSHKey.mutate(deleteSSHKeyDialog.id)}
       />
 
       {/* Delete Node Confirmation */}
