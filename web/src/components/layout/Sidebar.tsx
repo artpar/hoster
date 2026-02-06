@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Store, Layers, LayoutDashboard } from 'lucide-react';
+import { Store, Layers, Server, LayoutDashboard } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useIsAuthenticated } from '@/stores/authStore';
 
@@ -13,6 +13,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { to: '/marketplace', icon: Store, label: 'Marketplace' },
   { to: '/deployments', icon: Layers, label: 'My Deployments', requiresAuth: true },
+  { to: '/nodes', icon: Server, label: 'My Nodes', requiresAuth: true },
   { to: '/creator', icon: LayoutDashboard, label: 'Creator', requiresAuth: true },
 ];
 

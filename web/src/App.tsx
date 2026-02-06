@@ -7,6 +7,7 @@ import { TemplateDetailPage } from '@/pages/marketplace/TemplateDetailPage';
 import { MyDeploymentsPage } from '@/pages/deployments/MyDeploymentsPage';
 import { DeploymentDetailPage } from '@/pages/deployments/DeploymentDetailPage';
 import { CreatorDashboardPage } from '@/pages/creator/CreatorDashboardPage';
+import { MyNodesPage } from '@/pages/nodes/MyNodesPage';
 import { LoginPage, SignupPage, ForgotPasswordPage, ResetPasswordPage } from '@/pages/auth';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
@@ -43,6 +44,16 @@ export default function App() {
           element={
             <ProtectedRoute>
               <DeploymentDetailPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Nodes - Requires Auth */}
+        <Route
+          path="nodes"
+          element={
+            <ProtectedRoute>
+              <MyNodesPage />
             </ProtectedRoute>
           }
         />
