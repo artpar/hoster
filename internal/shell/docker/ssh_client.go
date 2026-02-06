@@ -227,6 +227,70 @@ func (c *SSHDockerClient) deployMinion(ctx context.Context, binary []byte) error
 	return nil
 }
 
+// AutoEnsureMinion detects the remote node's architecture and deploys the correct
+// minion binary if it's missing or outdated. This is a convenience method that
+// combines architecture detection, binary selection, and deployment.
+func (c *SSHDockerClient) AutoEnsureMinion(ctx context.Context) error {
+	if err := c.connect(ctx); err != nil {
+		return err
+	}
+
+	// Detect remote architecture via uname -m
+	goarch, err := c.detectArch(ctx)
+	if err != nil {
+		return fmt.Errorf("detect remote architecture: %w", err)
+	}
+
+	// Get the correct binary for this architecture
+	binary, err := GetMinionBinary("linux", goarch)
+	if err != nil {
+		return fmt.Errorf("get minion binary for linux/%s: %w", goarch, err)
+	}
+
+	// Deploy if missing or outdated
+	return c.EnsureMinion(ctx, binary, MinionVersion)
+}
+
+// detectArch runs `uname -m` on the remote node and maps the result to a Go architecture string.
+func (c *SSHDockerClient) detectArch(ctx context.Context) (string, error) {
+	c.mu.Lock()
+	session, err := c.sshClient.NewSession()
+	c.mu.Unlock()
+	if err != nil {
+		return "", err
+	}
+	defer session.Close()
+
+	var stdout bytes.Buffer
+	session.Stdout = &stdout
+
+	done := make(chan error, 1)
+	go func() {
+		done <- session.Run("uname -m")
+	}()
+
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case <-time.After(5 * time.Second):
+		return "", fmt.Errorf("timeout detecting architecture")
+	case err := <-done:
+		if err != nil {
+			return "", fmt.Errorf("uname -m: %w", err)
+		}
+	}
+
+	arch := strings.TrimSpace(stdout.String())
+	switch arch {
+	case "x86_64":
+		return "amd64", nil
+	case "aarch64":
+		return "arm64", nil
+	default:
+		return "", fmt.Errorf("unsupported architecture: %s", arch)
+	}
+}
+
 // =============================================================================
 // Minion Execution
 // =============================================================================

@@ -3,6 +3,7 @@ package workers
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -175,12 +176,19 @@ func (h *HealthChecker) runCycle() {
 
 // checkNode performs a health check on a single node.
 func (h *HealthChecker) checkNode(ctx context.Context, node *domain.Node) {
-	nodeCtx, cancel := context.WithTimeout(ctx, h.config.NodeTimeout)
+	// Use a generous timeout to allow minion deployment on first check.
+	// AutoEnsureMinion has its own 2-minute timeout for the upload;
+	// the outer context just needs to not cancel before that.
+	timeout := h.config.NodeTimeout
+	if timeout < 3*time.Minute {
+		timeout = 3 * time.Minute
+	}
+	nodeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	logger := h.logger.With("node_id", node.ID, "node_name", node.Name)
 
-	// Try to ping the node
+	// Try to ping the node (includes auto-deploying minion if needed)
 	err := h.pingNode(nodeCtx, node)
 
 	now := time.Now()
@@ -239,7 +247,14 @@ func (h *HealthChecker) pingNode(ctx context.Context, node *domain.Node) error {
 	}
 	defer client.Close()
 
-	// Ping the Docker daemon
+	// Auto-deploy minion if missing or outdated (use longer timeout for binary upload)
+	ensureCtx, ensureCancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer ensureCancel()
+	if err := client.AutoEnsureMinion(ensureCtx); err != nil {
+		return fmt.Errorf("ensure minion: %w", err)
+	}
+
+	// Ping the Docker daemon via minion
 	return client.Ping()
 }
 
