@@ -297,6 +297,35 @@ func (s *stubStore) CountRoutableDeployments(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+// Cloud Credential operations
+func (s *stubStore) CreateCloudCredential(ctx context.Context, c *domain.CloudCredential) error {
+	return nil
+}
+func (s *stubStore) GetCloudCredential(ctx context.Context, id string) (*domain.CloudCredential, error) {
+	return nil, nil
+}
+func (s *stubStore) DeleteCloudCredential(ctx context.Context, id string) error { return nil }
+func (s *stubStore) ListCloudCredentialsByCreator(ctx context.Context, creatorID string, opts store.ListOptions) ([]domain.CloudCredential, error) {
+	return nil, nil
+}
+
+// Cloud Provision operations
+func (s *stubStore) CreateCloudProvision(ctx context.Context, p *domain.CloudProvision) error {
+	return nil
+}
+func (s *stubStore) GetCloudProvision(ctx context.Context, id string) (*domain.CloudProvision, error) {
+	return nil, nil
+}
+func (s *stubStore) UpdateCloudProvision(ctx context.Context, p *domain.CloudProvision) error {
+	return nil
+}
+func (s *stubStore) ListCloudProvisionsByCreator(ctx context.Context, creatorID string, opts store.ListOptions) ([]domain.CloudProvision, error) {
+	return nil, nil
+}
+func (s *stubStore) ListActiveProvisions(ctx context.Context) ([]domain.CloudProvision, error) {
+	return nil, nil
+}
+
 // stubDocker implements docker.Client for testing.
 type stubDocker struct {
 	pingErr    error
