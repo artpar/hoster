@@ -13,6 +13,7 @@ import {
   ExternalLink,
   Globe,
   Info,
+  Link,
 } from 'lucide-react';
 import {
   useDeployment,
@@ -35,6 +36,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 import { Badge } from '@/components/ui/Badge';
 import { Select } from '@/components/ui/Select';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { DomainsTab } from '@/components/deployments/DomainsTab';
 import { pages, containerMetrics, eventTypes } from '@/docs/registry';
 import type { EventDoc } from '@/docs/types';
 
@@ -240,6 +242,10 @@ export function DeploymentDetailPage() {
           <TabsTrigger value="events">
             <Clock className="mr-1 h-4 w-4" />
             Events
+          </TabsTrigger>
+          <TabsTrigger value="domains">
+            <Link className="mr-1 h-4 w-4" />
+            Domains
           </TabsTrigger>
         </TabsList>
 
@@ -609,6 +615,11 @@ export function DeploymentDetailPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Domains Tab */}
+        <TabsContent value="domains">
+          <DomainsTab deploymentId={deployment.id} />
         </TabsContent>
       </Tabs>
 

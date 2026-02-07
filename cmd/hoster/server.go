@@ -47,6 +47,8 @@ type Server struct {
 	nodePool        *docker.NodePool
 	billingReporter *billing.Reporter
 	healthChecker   *workers.HealthChecker
+	provisioner     *workers.Provisioner
+	dnsVerifier     *workers.DNSVerifier
 	registrar       *apigate.Registrar
 	logger          *slog.Logger
 }
@@ -114,6 +116,17 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 			"health_check_interval", cfg.Nodes.HealthCheckInterval,
 		)
 	}
+
+	// Create provisioner worker for cloud provider provisioning
+	var provisioner *workers.Provisioner
+	if encryptionKey != nil {
+		provisioner = workers.NewProvisioner(s, encryptionKey, workers.DefaultProvisionerConfig(), logger)
+	}
+
+	// Create DNS verifier worker for custom domain verification
+	dnsVerifier := workers.NewDNSVerifier(s, workers.DNSVerifierConfig{
+		BaseDomain: cfg.Domain.BaseDomain,
+	}, logger)
 
 	// Create scheduler service for node selection
 	sched := scheduler.NewService(s, nodePool, d, logger)
@@ -245,6 +258,8 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		nodePool:        nodePool,
 		billingReporter: billingReporter,
 		healthChecker:   healthChecker,
+		provisioner:     provisioner,
+		dnsVerifier:     dnsVerifier,
 		registrar:       registrar,
 		logger:          logger,
 	}, nil
@@ -276,6 +291,16 @@ func (s *Server) Start(ctx context.Context) error {
 	// Start health checker in background (Creator Worker Nodes Phase 7)
 	if s.healthChecker != nil {
 		s.healthChecker.Start()
+	}
+
+	// Start cloud provisioner worker
+	if s.provisioner != nil {
+		s.provisioner.Start()
+	}
+
+	// Start DNS verifier worker
+	if s.dnsVerifier != nil {
+		s.dnsVerifier.Start()
 	}
 
 	// Start App Proxy server in goroutine (specs/domain/proxy.md)
@@ -345,6 +370,16 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// Stop health checker (Creator Worker Nodes Phase 7)
 	if s.healthChecker != nil {
 		s.healthChecker.Stop()
+	}
+
+	// Stop cloud provisioner worker
+	if s.provisioner != nil {
+		s.provisioner.Stop()
+	}
+
+	// Stop DNS verifier worker
+	if s.dnsVerifier != nil {
+		s.dnsVerifier.Stop()
 	}
 
 	// Close node pool connections

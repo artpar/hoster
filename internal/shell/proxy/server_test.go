@@ -87,6 +87,31 @@ func (m *mockStore) DeleteSSHKey(ctx context.Context, id string) error { return 
 func (m *mockStore) ListSSHKeysByCreator(ctx context.Context, creatorID string, opts store.ListOptions) ([]domain.SSHKey, error) {
 	return nil, nil
 }
+func (m *mockStore) CreateCloudCredential(ctx context.Context, c *domain.CloudCredential) error {
+	return nil
+}
+func (m *mockStore) GetCloudCredential(ctx context.Context, id string) (*domain.CloudCredential, error) {
+	return nil, nil
+}
+func (m *mockStore) DeleteCloudCredential(ctx context.Context, id string) error { return nil }
+func (m *mockStore) ListCloudCredentialsByCreator(ctx context.Context, creatorID string, opts store.ListOptions) ([]domain.CloudCredential, error) {
+	return nil, nil
+}
+func (m *mockStore) CreateCloudProvision(ctx context.Context, p *domain.CloudProvision) error {
+	return nil
+}
+func (m *mockStore) GetCloudProvision(ctx context.Context, id string) (*domain.CloudProvision, error) {
+	return nil, nil
+}
+func (m *mockStore) UpdateCloudProvision(ctx context.Context, p *domain.CloudProvision) error {
+	return nil
+}
+func (m *mockStore) ListCloudProvisionsByCreator(ctx context.Context, creatorID string, opts store.ListOptions) ([]domain.CloudProvision, error) {
+	return nil, nil
+}
+func (m *mockStore) ListActiveProvisions(ctx context.Context) ([]domain.CloudProvision, error) {
+	return nil, nil
+}
 func (m *mockStore) WithTx(ctx context.Context, fn func(store.Store) error) error { return fn(m) }
 func (m *mockStore) Close() error                                                 { return nil }
 func (m *mockStore) CountRoutableDeployments(ctx context.Context) (int, error) {

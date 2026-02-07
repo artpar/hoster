@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Store, Layers, Server, KeyRound, LayoutDashboard } from 'lucide-react';
+import { Store, Layers, Server, KeyRound, Cloud, LayoutDashboard } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useIsAuthenticated } from '@/stores/authStore';
 
@@ -15,6 +15,7 @@ const navItems: NavItem[] = [
   { to: '/deployments', icon: Layers, label: 'My Deployments', requiresAuth: true },
   { to: '/nodes', icon: Server, label: 'My Nodes', requiresAuth: true },
   { to: '/ssh-keys', icon: KeyRound, label: 'SSH Keys', requiresAuth: true },
+  { to: '/cloud-providers', icon: Cloud, label: 'Cloud Providers', requiresAuth: true },
   { to: '/creator', icon: LayoutDashboard, label: 'Creator', requiresAuth: true },
 ];
 

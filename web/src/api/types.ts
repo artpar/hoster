@@ -244,6 +244,7 @@ export interface CreateNodeRequest {
   docker_socket?: string;
   capabilities?: string[];
   location?: string;
+  base_domain?: string;
 }
 
 export interface UpdateNodeRequest {
@@ -255,6 +256,7 @@ export interface UpdateNodeRequest {
   docker_socket?: string;
   capabilities?: string[];
   location?: string;
+  base_domain?: string;
 }
 
 // SSH Key Types
@@ -270,4 +272,71 @@ export type SSHKey = JsonApiResource<'ssh_keys', SSHKeyAttributes>;
 export interface CreateSSHKeyRequest {
   name: string;
   private_key: string;
+}
+
+// Cloud Credential Types
+export interface CloudCredentialAttributes {
+  name: string;
+  provider: 'aws' | 'digitalocean' | 'hetzner';
+  default_region?: string;
+  creator_id: string;
+  created_at: string;
+  updated_at: string;
+  credentials?: string; // write-only
+}
+
+export type CloudCredential = JsonApiResource<'cloud_credentials', CloudCredentialAttributes>;
+
+export interface CreateCloudCredentialRequest {
+  name: string;
+  provider: 'aws' | 'digitalocean' | 'hetzner';
+  credentials: string;
+  default_region?: string;
+}
+
+// Cloud Provision Types
+export type ProvisionStatus = 'pending' | 'creating' | 'configuring' | 'ready' | 'failed' | 'destroying' | 'destroyed';
+
+export interface CloudProvisionAttributes {
+  creator_id: string;
+  credential_id: string;
+  provider: string;
+  status: ProvisionStatus;
+  instance_name: string;
+  region: string;
+  size: string;
+  provider_instance_id?: string;
+  public_ip?: string;
+  node_id?: string;
+  ssh_key_id?: string;
+  current_step?: string;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
+}
+
+export type CloudProvision = JsonApiResource<'cloud_provisions', CloudProvisionAttributes>;
+
+export interface CreateCloudProvisionRequest {
+  credential_id: string;
+  instance_name: string;
+  region: string;
+  size: string;
+}
+
+// Provider catalog types (returned by custom actions)
+export interface ProviderRegion {
+  id: string;
+  name: string;
+  available: boolean;
+}
+
+export interface ProviderInstanceSize {
+  id: string;
+  name: string;
+  cpu_cores: number;
+  memory_mb: number;
+  disk_gb: number;
+  price_hourly: number;
 }

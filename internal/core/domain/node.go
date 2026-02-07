@@ -157,6 +157,9 @@ type Node struct {
 	Location        string       `json:"location,omitempty"`
 	LastHealthCheck *time.Time   `json:"last_health_check,omitempty"`
 	ErrorMessage    string       `json:"error_message,omitempty"`
+	ProviderType    string       `json:"provider_type,omitempty"`  // "manual", "aws", "digitalocean", "hetzner"
+	ProvisionID     string       `json:"provision_id,omitempty"`   // Links to cloud_provisions.id
+	BaseDomain      string       `json:"base_domain,omitempty"`    // Per-node base domain for deployments
 	CreatedAt       time.Time    `json:"created_at"`
 	UpdatedAt       time.Time    `json:"updated_at"`
 }

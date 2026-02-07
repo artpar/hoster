@@ -59,6 +59,19 @@ type Store interface {
 	DeleteSSHKey(ctx context.Context, id string) error
 	ListSSHKeysByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.SSHKey, error)
 
+	// Cloud Credential operations
+	CreateCloudCredential(ctx context.Context, cred *domain.CloudCredential) error
+	GetCloudCredential(ctx context.Context, id string) (*domain.CloudCredential, error)
+	DeleteCloudCredential(ctx context.Context, id string) error
+	ListCloudCredentialsByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.CloudCredential, error)
+
+	// Cloud Provision operations
+	CreateCloudProvision(ctx context.Context, prov *domain.CloudProvision) error
+	GetCloudProvision(ctx context.Context, id string) (*domain.CloudProvision, error)
+	UpdateCloudProvision(ctx context.Context, prov *domain.CloudProvision) error
+	ListCloudProvisionsByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.CloudProvision, error)
+	ListActiveProvisions(ctx context.Context) ([]domain.CloudProvision, error)
+
 	// Transaction support
 	WithTx(ctx context.Context, fn func(Store) error) error
 

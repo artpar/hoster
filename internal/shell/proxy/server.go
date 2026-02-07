@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/artpar/hoster/internal/core/domain"
 	"github.com/artpar/hoster/internal/core/proxy"
 	"github.com/artpar/hoster/internal/shell/store"
 )
@@ -119,15 +120,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"method", r.Method,
 	)
 
-	// 1. Parse hostname to extract slug
+	// 1. Parse hostname to extract slug (base domain pattern)
 	slug, ok := s.parser.Parse(hostname)
-	if !ok {
-		s.serveError(w, r, proxy.NewNotFoundError(hostname))
-		return
-	}
 
-	// 2. Resolve target from database (use hostname without port for matching)
-	target, err := s.resolveTarget(ctx, slug, hostnameWithoutPort)
+	// 2. Resolve target from database
+	var target proxy.ProxyTarget
+	var err error
+	if ok {
+		// Base domain match: resolve by parsed hostname
+		target, err = s.resolveTarget(ctx, slug, hostnameWithoutPort)
+	} else {
+		// Custom domain fallback: try direct hostname lookup
+		target, err = s.resolveTarget(ctx, "", hostnameWithoutPort)
+	}
 	if err != nil {
 		var proxyErr proxy.ProxyError
 		if errors.As(err, &proxyErr) {
@@ -165,6 +170,16 @@ func (s *Server) resolveTarget(ctx context.Context, slug, hostname string) (prox
 			return proxy.ProxyTarget{}, proxy.NewNotFoundError(hostname)
 		}
 		return proxy.ProxyTarget{}, err
+	}
+
+	// For custom domains, check that the domain is verified
+	for _, d := range deployment.Domains {
+		if strings.EqualFold(d.Hostname, hostname) && d.Type == domain.DomainTypeCustom {
+			if d.VerificationStatus != domain.DomainVerificationVerified {
+				return proxy.ProxyTarget{}, proxy.NewVerificationPendingError(hostname)
+			}
+			break
+		}
 	}
 
 	return proxy.ProxyTarget{
@@ -228,6 +243,8 @@ func (s *Server) serveError(w http.ResponseWriter, r *http.Request, err proxy.Pr
 		tmplName = "not_found.html"
 	case proxy.ErrorStopped:
 		tmplName = "stopped.html"
+	case proxy.ErrorVerificationPending:
+		tmplName = "verification_pending.html"
 	default:
 		tmplName = "unavailable.html"
 	}

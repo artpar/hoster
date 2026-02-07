@@ -84,7 +84,7 @@ export const logStreams: Record<'stdout' | 'stderr', DocEntry> = {
 
 // --- PAGE DOCUMENTATION ---
 export const pages: Record<
-  'marketplace' | 'templateDetail' | 'deployments' | 'deploymentDetail' | 'nodes' | 'sshKeys' | 'creator',
+  'marketplace' | 'templateDetail' | 'deployments' | 'deploymentDetail' | 'nodes' | 'sshKeys' | 'cloudProviders' | 'creator',
   PageDoc
 > = {
   marketplace: {
@@ -202,6 +202,28 @@ export const pages: Record<
     emptyState: {
       label: 'No SSH keys',
       description: 'SSH keys authenticate Hoster to your servers without passwords. Generate a key pair with ssh-keygen, add the private key here, and place the public key on your server.',
+    },
+  },
+  cloudProviders: {
+    title: 'Cloud Providers',
+    subtitle: 'Manage cloud credentials and provision server nodes directly from AWS, DigitalOcean, or Hetzner.',
+    sections: {
+      credentials: {
+        label: 'Cloud Credentials',
+        description: 'API credentials for cloud providers. Encrypted before storage. Used to provision and manage cloud instances.',
+      },
+      provisioning: {
+        label: 'Provisioning',
+        description: 'Create a cloud server instance and automatically register it as a deployment node. Includes SSH setup and Docker installation.',
+      },
+      provisionStatus: {
+        label: 'Provision Status',
+        description: 'Tracks the provisioning lifecycle: pending, creating instance, configuring (installing Docker/SSH), ready, or failed.',
+      },
+    },
+    emptyState: {
+      label: 'No cloud credentials',
+      description: 'Add API credentials for a cloud provider to start provisioning nodes automatically.',
     },
   },
   creator: {

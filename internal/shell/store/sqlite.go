@@ -366,6 +366,42 @@ func (s *txSQLiteStore) ListSSHKeysByCreator(ctx context.Context, creatorID stri
 	return listSSHKeysByCreator(ctx, s.tx, creatorID, opts)
 }
 
+func (s *txSQLiteStore) CreateCloudCredential(ctx context.Context, cred *domain.CloudCredential) error {
+	return createCloudCredential(ctx, s.tx, cred)
+}
+
+func (s *txSQLiteStore) GetCloudCredential(ctx context.Context, id string) (*domain.CloudCredential, error) {
+	return getCloudCredential(ctx, s.tx, id)
+}
+
+func (s *txSQLiteStore) DeleteCloudCredential(ctx context.Context, id string) error {
+	return deleteCloudCredential(ctx, s.tx, id)
+}
+
+func (s *txSQLiteStore) ListCloudCredentialsByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.CloudCredential, error) {
+	return listCloudCredentialsByCreator(ctx, s.tx, creatorID, opts)
+}
+
+func (s *txSQLiteStore) CreateCloudProvision(ctx context.Context, prov *domain.CloudProvision) error {
+	return createCloudProvision(ctx, s.tx, prov)
+}
+
+func (s *txSQLiteStore) GetCloudProvision(ctx context.Context, id string) (*domain.CloudProvision, error) {
+	return getCloudProvision(ctx, s.tx, id)
+}
+
+func (s *txSQLiteStore) UpdateCloudProvision(ctx context.Context, prov *domain.CloudProvision) error {
+	return updateCloudProvision(ctx, s.tx, prov)
+}
+
+func (s *txSQLiteStore) ListCloudProvisionsByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.CloudProvision, error) {
+	return listCloudProvisionsByCreator(ctx, s.tx, creatorID, opts)
+}
+
+func (s *txSQLiteStore) ListActiveProvisions(ctx context.Context) ([]domain.CloudProvision, error) {
+	return listActiveProvisions(ctx, s.tx)
+}
+
 // =============================================================================
 // Shared Implementation Functions
 // =============================================================================
@@ -851,20 +887,19 @@ func (s *SQLiteStore) GetDeploymentByDomain(ctx context.Context, hostname string
 }
 
 func getDeploymentByDomain(ctx context.Context, exec executor, hostname string) (*domain.Deployment, error) {
-	// Query for deployment where any domain in the JSON array matches
-	// We search both $[0] and $[1] to handle typical auto + custom domain scenarios
+	// Query for deployment where any domain in the JSON array matches the hostname
+	// Uses json_each() to handle any number of domains per deployment
 	query := `
-		SELECT * FROM deployments
-		WHERE (
-			json_extract(domains, '$[0].hostname') = ?
-			OR json_extract(domains, '$[1].hostname') = ?
-			OR json_extract(domains, '$[2].hostname') = ?
+		SELECT d.* FROM deployments d
+		WHERE EXISTS (
+			SELECT 1 FROM json_each(d.domains) AS je
+			WHERE json_extract(je.value, '$.hostname') = ?
 		)
 		LIMIT 1
 	`
 
 	var row deploymentRow
-	if err := exec.GetContext(ctx, &row, query, hostname, hostname, hostname); err != nil {
+	if err := exec.GetContext(ctx, &row, query, hostname); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, NewStoreError("GetDeploymentByDomain", "deployment", hostname, "deployment not found for hostname", ErrNotFound)
 		}
@@ -1344,6 +1379,9 @@ type nodeRow struct {
 	Location             string  `db:"location"`
 	LastHealthCheck      *string `db:"last_health_check"`
 	ErrorMessage         string  `db:"error_message"`
+	ProviderType         string  `db:"provider_type"`
+	ProvisionID          string  `db:"provision_id"`
+	BaseDomain           string  `db:"base_domain"`
 	CreatedAt            string  `db:"created_at"`
 	UpdatedAt            string  `db:"updated_at"`
 }
@@ -1371,13 +1409,17 @@ func createNode(ctx context.Context, exec executor, node *domain.Node) error {
 			docker_socket, status, capabilities,
 			capacity_cpu_cores, capacity_memory_mb, capacity_disk_mb,
 			capacity_cpu_used, capacity_memory_used_mb, capacity_disk_used_mb,
-			location, last_health_check, error_message, created_at, updated_at
+			location, last_health_check, error_message,
+			provider_type, provision_id, base_domain,
+			created_at, updated_at
 		) VALUES (
 			:id, :name, :creator_id, :ssh_host, :ssh_port, :ssh_user, :ssh_key_id,
 			:docker_socket, :status, :capabilities,
 			:capacity_cpu_cores, :capacity_memory_mb, :capacity_disk_mb,
 			:capacity_cpu_used, :capacity_memory_used_mb, :capacity_disk_used_mb,
-			:location, :last_health_check, :error_message, :created_at, :updated_at
+			:location, :last_health_check, :error_message,
+			:provider_type, :provision_id, :base_domain,
+			:created_at, :updated_at
 		)`
 
 	var sshKeyID *string
@@ -1405,6 +1447,9 @@ func createNode(ctx context.Context, exec executor, node *domain.Node) error {
 		Location:             node.Location,
 		LastHealthCheck:      lastHealthCheck,
 		ErrorMessage:         node.ErrorMessage,
+		ProviderType:         node.ProviderType,
+		ProvisionID:          node.ProvisionID,
+		BaseDomain:           node.BaseDomain,
 		CreatedAt:            node.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:            node.UpdatedAt.Format(time.RFC3339),
 	}
@@ -1435,7 +1480,9 @@ func getNode(ctx context.Context, exec executor, id string) (*domain.Node, error
 			docker_socket, status, capabilities,
 			capacity_cpu_cores, capacity_memory_mb, capacity_disk_mb,
 			capacity_cpu_used, capacity_memory_used_mb, capacity_disk_used_mb,
-			location, last_health_check, error_message, created_at, updated_at
+			location, last_health_check, error_message,
+			provider_type, provision_id, base_domain,
+			created_at, updated_at
 		FROM nodes WHERE id = ?`
 
 	if err := exec.GetContext(ctx, &row, query, id); err != nil {
@@ -1484,6 +1531,9 @@ func updateNode(ctx context.Context, exec executor, node *domain.Node) error {
 			location = :location,
 			last_health_check = :last_health_check,
 			error_message = :error_message,
+			provider_type = :provider_type,
+			provision_id = :provision_id,
+			base_domain = :base_domain,
 			updated_at = :updated_at
 		WHERE id = :id`
 
@@ -1512,6 +1562,9 @@ func updateNode(ctx context.Context, exec executor, node *domain.Node) error {
 		Location:             node.Location,
 		LastHealthCheck:      lastHealthCheck,
 		ErrorMessage:         node.ErrorMessage,
+		ProviderType:         node.ProviderType,
+		ProvisionID:          node.ProvisionID,
+		BaseDomain:           node.BaseDomain,
 		CreatedAt:            node.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:            node.UpdatedAt.Format(time.RFC3339),
 	}
@@ -1563,7 +1616,9 @@ func listNodesByCreator(ctx context.Context, exec executor, creatorID string, op
 			docker_socket, status, capabilities,
 			capacity_cpu_cores, capacity_memory_mb, capacity_disk_mb,
 			capacity_cpu_used, capacity_memory_used_mb, capacity_disk_used_mb,
-			location, last_health_check, error_message, created_at, updated_at
+			location, last_health_check, error_message,
+			provider_type, provision_id, base_domain,
+			created_at, updated_at
 		FROM nodes
 		WHERE creator_id = ?
 		ORDER BY created_at DESC
@@ -1597,7 +1652,9 @@ func listOnlineNodes(ctx context.Context, exec executor) ([]domain.Node, error) 
 			docker_socket, status, capabilities,
 			capacity_cpu_cores, capacity_memory_mb, capacity_disk_mb,
 			capacity_cpu_used, capacity_memory_used_mb, capacity_disk_used_mb,
-			location, last_health_check, error_message, created_at, updated_at
+			location, last_health_check, error_message,
+			provider_type, provision_id, base_domain,
+			created_at, updated_at
 		FROM nodes
 		WHERE status = 'online'
 		ORDER BY created_at ASC`
@@ -1630,7 +1687,9 @@ func listCheckableNodes(ctx context.Context, exec executor) ([]domain.Node, erro
 			docker_socket, status, capabilities,
 			capacity_cpu_cores, capacity_memory_mb, capacity_disk_mb,
 			capacity_cpu_used, capacity_memory_used_mb, capacity_disk_used_mb,
-			location, last_health_check, error_message, created_at, updated_at
+			location, last_health_check, error_message,
+			provider_type, provision_id, base_domain,
+			created_at, updated_at
 		FROM nodes
 		WHERE status != 'maintenance'
 		ORDER BY created_at ASC`
@@ -1695,6 +1754,9 @@ func rowToNode(row *nodeRow) (*domain.Node, error) {
 		Location:        row.Location,
 		LastHealthCheck: lastHealthCheck,
 		ErrorMessage:    row.ErrorMessage,
+		ProviderType:    row.ProviderType,
+		ProvisionID:     row.ProvisionID,
+		BaseDomain:      row.BaseDomain,
 		CreatedAt:       createdAt,
 		UpdatedAt:       updatedAt,
 	}, nil
@@ -1827,4 +1889,422 @@ func listSSHKeysByCreator(ctx context.Context, exec executor, creatorID string, 
 	}
 
 	return keys, nil
+}
+
+// =============================================================================
+// Cloud Credential Operations
+// =============================================================================
+
+// cloudCredentialRow represents a cloud credential row in the database.
+type cloudCredentialRow struct {
+	ID                   string `db:"id"`
+	CreatorID            string `db:"creator_id"`
+	Name                 string `db:"name"`
+	Provider             string `db:"provider"`
+	CredentialsEncrypted []byte `db:"credentials_encrypted"`
+	DefaultRegion        string `db:"default_region"`
+	CreatedAt            string `db:"created_at"`
+	UpdatedAt            string `db:"updated_at"`
+}
+
+// CreateCloudCredential creates a new cloud credential in the database.
+func (s *SQLiteStore) CreateCloudCredential(ctx context.Context, cred *domain.CloudCredential) error {
+	return createCloudCredential(ctx, s.db, cred)
+}
+
+func createCloudCredential(ctx context.Context, exec executor, cred *domain.CloudCredential) error {
+	query := `
+		INSERT INTO cloud_credentials (id, creator_id, name, provider, credentials_encrypted, default_region, created_at, updated_at)
+		VALUES (:id, :creator_id, :name, :provider, :credentials_encrypted, :default_region, :created_at, :updated_at)`
+
+	row := cloudCredentialRow{
+		ID:                   cred.ID,
+		CreatorID:            cred.CreatorID,
+		Name:                 cred.Name,
+		Provider:             string(cred.Provider),
+		CredentialsEncrypted: cred.CredentialsEncrypted,
+		DefaultRegion:        cred.DefaultRegion,
+		CreatedAt:            cred.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:            cred.UpdatedAt.Format(time.RFC3339),
+	}
+
+	_, err := exec.NamedExecContext(ctx, query, row)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed: cloud_credentials.id") {
+			return NewStoreError("CreateCloudCredential", "cloud_credential", cred.ID, "cloud credential with this ID already exists", ErrDuplicateID)
+		}
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return NewStoreError("CreateCloudCredential", "cloud_credential", cred.ID, "cloud credential with this name already exists for creator", ErrDuplicateKey)
+		}
+		return NewStoreError("CreateCloudCredential", "cloud_credential", cred.ID, err.Error(), err)
+	}
+
+	return nil
+}
+
+// GetCloudCredential retrieves a cloud credential by ID.
+func (s *SQLiteStore) GetCloudCredential(ctx context.Context, id string) (*domain.CloudCredential, error) {
+	return getCloudCredential(ctx, s.db, id)
+}
+
+func getCloudCredential(ctx context.Context, exec executor, id string) (*domain.CloudCredential, error) {
+	var row cloudCredentialRow
+	query := `
+		SELECT id, creator_id, name, provider, credentials_encrypted, default_region, created_at, updated_at
+		FROM cloud_credentials WHERE id = ?`
+
+	if err := exec.GetContext(ctx, &row, query, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, NewStoreError("GetCloudCredential", "cloud_credential", id, "cloud credential not found", ErrNotFound)
+		}
+		return nil, NewStoreError("GetCloudCredential", "cloud_credential", id, err.Error(), err)
+	}
+
+	return rowToCloudCredential(&row)
+}
+
+// DeleteCloudCredential deletes a cloud credential by ID.
+func (s *SQLiteStore) DeleteCloudCredential(ctx context.Context, id string) error {
+	return deleteCloudCredential(ctx, s.db, id)
+}
+
+func deleteCloudCredential(ctx context.Context, exec executor, id string) error {
+	query := `DELETE FROM cloud_credentials WHERE id = ?`
+
+	result, err := exec.ExecContext(ctx, query, id)
+	if err != nil {
+		return NewStoreError("DeleteCloudCredential", "cloud_credential", id, err.Error(), err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return NewStoreError("DeleteCloudCredential", "cloud_credential", id, "cloud credential not found", ErrNotFound)
+	}
+
+	return nil
+}
+
+// ListCloudCredentialsByCreator lists all cloud credentials for a creator.
+func (s *SQLiteStore) ListCloudCredentialsByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.CloudCredential, error) {
+	return listCloudCredentialsByCreator(ctx, s.db, creatorID, opts)
+}
+
+func listCloudCredentialsByCreator(ctx context.Context, exec executor, creatorID string, opts ListOptions) ([]domain.CloudCredential, error) {
+	opts = opts.Normalize()
+
+	query := `
+		SELECT id, creator_id, name, provider, credentials_encrypted, default_region, created_at, updated_at
+		FROM cloud_credentials
+		WHERE creator_id = ?
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?`
+
+	var rows []cloudCredentialRow
+	if err := exec.SelectContext(ctx, &rows, query, creatorID, opts.Limit, opts.Offset); err != nil {
+		return nil, NewStoreError("ListCloudCredentialsByCreator", "cloud_credential", creatorID, err.Error(), err)
+	}
+
+	creds := make([]domain.CloudCredential, 0, len(rows))
+	for _, row := range rows {
+		cred, err := rowToCloudCredential(&row)
+		if err != nil {
+			return nil, err
+		}
+		creds = append(creds, *cred)
+	}
+
+	return creds, nil
+}
+
+// rowToCloudCredential converts a database row to a domain.CloudCredential.
+func rowToCloudCredential(row *cloudCredentialRow) (*domain.CloudCredential, error) {
+	createdAt, _ := time.Parse(time.RFC3339, row.CreatedAt)
+	updatedAt, _ := time.Parse(time.RFC3339, row.UpdatedAt)
+
+	return &domain.CloudCredential{
+		ID:                   row.ID,
+		CreatorID:            row.CreatorID,
+		Name:                 row.Name,
+		Provider:             domain.ProviderType(row.Provider),
+		CredentialsEncrypted: row.CredentialsEncrypted,
+		DefaultRegion:        row.DefaultRegion,
+		CreatedAt:            createdAt,
+		UpdatedAt:            updatedAt,
+	}, nil
+}
+
+// =============================================================================
+// Cloud Provision Operations
+// =============================================================================
+
+// cloudProvisionRow represents a cloud provision row in the database.
+type cloudProvisionRow struct {
+	ID                 string  `db:"id"`
+	CreatorID          string  `db:"creator_id"`
+	CredentialID       string  `db:"credential_id"`
+	Provider           string  `db:"provider"`
+	Status             string  `db:"status"`
+	InstanceName       string  `db:"instance_name"`
+	Region             string  `db:"region"`
+	Size               string  `db:"size"`
+	ProviderInstanceID string  `db:"provider_instance_id"`
+	PublicIP           string  `db:"public_ip"`
+	NodeID             string  `db:"node_id"`
+	SSHKeyID           string  `db:"ssh_key_id"`
+	CurrentStep        string  `db:"current_step"`
+	ErrorMessage       string  `db:"error_message"`
+	CreatedAt          string  `db:"created_at"`
+	UpdatedAt          string  `db:"updated_at"`
+	CompletedAt        *string `db:"completed_at"`
+}
+
+// CreateCloudProvision creates a new cloud provision in the database.
+func (s *SQLiteStore) CreateCloudProvision(ctx context.Context, prov *domain.CloudProvision) error {
+	return createCloudProvision(ctx, s.db, prov)
+}
+
+func createCloudProvision(ctx context.Context, exec executor, prov *domain.CloudProvision) error {
+	var completedAt *string
+	if prov.CompletedAt != nil {
+		s := prov.CompletedAt.Format(time.RFC3339)
+		completedAt = &s
+	}
+
+	query := `
+		INSERT INTO cloud_provisions (
+			id, creator_id, credential_id, provider, status,
+			instance_name, region, size,
+			provider_instance_id, public_ip, node_id, ssh_key_id,
+			current_step, error_message,
+			created_at, updated_at, completed_at
+		) VALUES (
+			:id, :creator_id, :credential_id, :provider, :status,
+			:instance_name, :region, :size,
+			:provider_instance_id, :public_ip, :node_id, :ssh_key_id,
+			:current_step, :error_message,
+			:created_at, :updated_at, :completed_at
+		)`
+
+	row := cloudProvisionRow{
+		ID:                 prov.ID,
+		CreatorID:          prov.CreatorID,
+		CredentialID:       prov.CredentialID,
+		Provider:           string(prov.Provider),
+		Status:             string(prov.Status),
+		InstanceName:       prov.InstanceName,
+		Region:             prov.Region,
+		Size:               prov.Size,
+		ProviderInstanceID: prov.ProviderInstanceID,
+		PublicIP:           prov.PublicIP,
+		NodeID:             prov.NodeID,
+		SSHKeyID:           prov.SSHKeyID,
+		CurrentStep:        prov.CurrentStep,
+		ErrorMessage:       prov.ErrorMessage,
+		CreatedAt:          prov.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:          prov.UpdatedAt.Format(time.RFC3339),
+		CompletedAt:        completedAt,
+	}
+
+	_, err := exec.NamedExecContext(ctx, query, row)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed: cloud_provisions.id") {
+			return NewStoreError("CreateCloudProvision", "cloud_provision", prov.ID, "cloud provision with this ID already exists", ErrDuplicateID)
+		}
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return NewStoreError("CreateCloudProvision", "cloud_provision", prov.ID, "cloud provision with this name already exists", ErrDuplicateKey)
+		}
+		return NewStoreError("CreateCloudProvision", "cloud_provision", prov.ID, err.Error(), err)
+	}
+
+	return nil
+}
+
+// GetCloudProvision retrieves a cloud provision by ID.
+func (s *SQLiteStore) GetCloudProvision(ctx context.Context, id string) (*domain.CloudProvision, error) {
+	return getCloudProvision(ctx, s.db, id)
+}
+
+func getCloudProvision(ctx context.Context, exec executor, id string) (*domain.CloudProvision, error) {
+	var row cloudProvisionRow
+	query := `
+		SELECT id, creator_id, credential_id, provider, status,
+			instance_name, region, size,
+			provider_instance_id, public_ip, node_id, ssh_key_id,
+			current_step, error_message,
+			created_at, updated_at, completed_at
+		FROM cloud_provisions WHERE id = ?`
+
+	if err := exec.GetContext(ctx, &row, query, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, NewStoreError("GetCloudProvision", "cloud_provision", id, "cloud provision not found", ErrNotFound)
+		}
+		return nil, NewStoreError("GetCloudProvision", "cloud_provision", id, err.Error(), err)
+	}
+
+	return rowToCloudProvision(&row)
+}
+
+// UpdateCloudProvision updates an existing cloud provision.
+func (s *SQLiteStore) UpdateCloudProvision(ctx context.Context, prov *domain.CloudProvision) error {
+	return updateCloudProvision(ctx, s.db, prov)
+}
+
+func updateCloudProvision(ctx context.Context, exec executor, prov *domain.CloudProvision) error {
+	var completedAt *string
+	if prov.CompletedAt != nil {
+		s := prov.CompletedAt.Format(time.RFC3339)
+		completedAt = &s
+	}
+
+	query := `
+		UPDATE cloud_provisions SET
+			creator_id = :creator_id,
+			credential_id = :credential_id,
+			provider = :provider,
+			status = :status,
+			instance_name = :instance_name,
+			region = :region,
+			size = :size,
+			provider_instance_id = :provider_instance_id,
+			public_ip = :public_ip,
+			node_id = :node_id,
+			ssh_key_id = :ssh_key_id,
+			current_step = :current_step,
+			error_message = :error_message,
+			updated_at = :updated_at,
+			completed_at = :completed_at
+		WHERE id = :id`
+
+	row := cloudProvisionRow{
+		ID:                 prov.ID,
+		CreatorID:          prov.CreatorID,
+		CredentialID:       prov.CredentialID,
+		Provider:           string(prov.Provider),
+		Status:             string(prov.Status),
+		InstanceName:       prov.InstanceName,
+		Region:             prov.Region,
+		Size:               prov.Size,
+		ProviderInstanceID: prov.ProviderInstanceID,
+		PublicIP:           prov.PublicIP,
+		NodeID:             prov.NodeID,
+		SSHKeyID:           prov.SSHKeyID,
+		CurrentStep:        prov.CurrentStep,
+		ErrorMessage:       prov.ErrorMessage,
+		CreatedAt:          prov.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:          prov.UpdatedAt.Format(time.RFC3339),
+		CompletedAt:        completedAt,
+	}
+
+	result, err := exec.NamedExecContext(ctx, query, row)
+	if err != nil {
+		return NewStoreError("UpdateCloudProvision", "cloud_provision", prov.ID, err.Error(), err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return NewStoreError("UpdateCloudProvision", "cloud_provision", prov.ID, "cloud provision not found", ErrNotFound)
+	}
+
+	return nil
+}
+
+// ListCloudProvisionsByCreator lists all cloud provisions for a creator.
+func (s *SQLiteStore) ListCloudProvisionsByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.CloudProvision, error) {
+	return listCloudProvisionsByCreator(ctx, s.db, creatorID, opts)
+}
+
+func listCloudProvisionsByCreator(ctx context.Context, exec executor, creatorID string, opts ListOptions) ([]domain.CloudProvision, error) {
+	opts = opts.Normalize()
+
+	query := `
+		SELECT id, creator_id, credential_id, provider, status,
+			instance_name, region, size,
+			provider_instance_id, public_ip, node_id, ssh_key_id,
+			current_step, error_message,
+			created_at, updated_at, completed_at
+		FROM cloud_provisions
+		WHERE creator_id = ?
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?`
+
+	var rows []cloudProvisionRow
+	if err := exec.SelectContext(ctx, &rows, query, creatorID, opts.Limit, opts.Offset); err != nil {
+		return nil, NewStoreError("ListCloudProvisionsByCreator", "cloud_provision", creatorID, err.Error(), err)
+	}
+
+	provisions := make([]domain.CloudProvision, 0, len(rows))
+	for _, row := range rows {
+		prov, err := rowToCloudProvision(&row)
+		if err != nil {
+			return nil, err
+		}
+		provisions = append(provisions, *prov)
+	}
+
+	return provisions, nil
+}
+
+// ListActiveProvisions returns all provisions that are still in progress.
+func (s *SQLiteStore) ListActiveProvisions(ctx context.Context) ([]domain.CloudProvision, error) {
+	return listActiveProvisions(ctx, s.db)
+}
+
+func listActiveProvisions(ctx context.Context, exec executor) ([]domain.CloudProvision, error) {
+	query := `
+		SELECT id, creator_id, credential_id, provider, status,
+			instance_name, region, size,
+			provider_instance_id, public_ip, node_id, ssh_key_id,
+			current_step, error_message,
+			created_at, updated_at, completed_at
+		FROM cloud_provisions
+		WHERE status IN ('pending', 'creating', 'configuring')
+		ORDER BY created_at ASC`
+
+	var rows []cloudProvisionRow
+	if err := exec.SelectContext(ctx, &rows, query); err != nil {
+		return nil, NewStoreError("ListActiveProvisions", "cloud_provision", "", err.Error(), err)
+	}
+
+	provisions := make([]domain.CloudProvision, 0, len(rows))
+	for _, row := range rows {
+		prov, err := rowToCloudProvision(&row)
+		if err != nil {
+			return nil, err
+		}
+		provisions = append(provisions, *prov)
+	}
+
+	return provisions, nil
+}
+
+// rowToCloudProvision converts a database row to a domain.CloudProvision.
+func rowToCloudProvision(row *cloudProvisionRow) (*domain.CloudProvision, error) {
+	createdAt, _ := time.Parse(time.RFC3339, row.CreatedAt)
+	updatedAt, _ := time.Parse(time.RFC3339, row.UpdatedAt)
+
+	var completedAt *time.Time
+	if row.CompletedAt != nil && *row.CompletedAt != "" {
+		t, _ := time.Parse(time.RFC3339, *row.CompletedAt)
+		completedAt = &t
+	}
+
+	return &domain.CloudProvision{
+		ID:                 row.ID,
+		CreatorID:          row.CreatorID,
+		CredentialID:       row.CredentialID,
+		Provider:           domain.ProviderType(row.Provider),
+		Status:             domain.ProvisionStatus(row.Status),
+		InstanceName:       row.InstanceName,
+		Region:             row.Region,
+		Size:               row.Size,
+		ProviderInstanceID: row.ProviderInstanceID,
+		PublicIP:           row.PublicIP,
+		NodeID:             row.NodeID,
+		SSHKeyID:           row.SSHKeyID,
+		CurrentStep:        row.CurrentStep,
+		ErrorMessage:       row.ErrorMessage,
+		CreatedAt:          createdAt,
+		UpdatedAt:          updatedAt,
+		CompletedAt:        completedAt,
+	}, nil
 }

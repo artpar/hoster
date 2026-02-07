@@ -51,12 +51,35 @@ const (
 	DomainTypeCustom DomainType = "custom"
 )
 
+// DomainVerificationStatus represents the verification state of a custom domain.
+type DomainVerificationStatus string
+
+const (
+	DomainVerificationNone     DomainVerificationStatus = ""         // Auto domains (no verification needed)
+	DomainVerificationPending  DomainVerificationStatus = "pending"
+	DomainVerificationVerified DomainVerificationStatus = "verified"
+	DomainVerificationFailed   DomainVerificationStatus = "failed"
+)
+
+// DomainVerificationMethod describes how a domain is verified.
+type DomainVerificationMethod string
+
+const (
+	DomainVerificationMethodNone  DomainVerificationMethod = ""
+	DomainVerificationMethodCNAME DomainVerificationMethod = "cname"
+	DomainVerificationMethodA     DomainVerificationMethod = "a_record"
+)
+
 // Domain represents a hostname assigned to a deployment.
 type Domain struct {
-	Hostname     string     `json:"hostname"`
-	Type         DomainType `json:"type"`
-	SSLEnabled   bool       `json:"ssl_enabled"`
-	SSLExpiresAt *time.Time `json:"ssl_expires_at,omitempty"`
+	Hostname           string                   `json:"hostname"`
+	Type               DomainType               `json:"type"`
+	SSLEnabled         bool                     `json:"ssl_enabled"`
+	SSLExpiresAt       *time.Time               `json:"ssl_expires_at,omitempty"`
+	VerificationStatus DomainVerificationStatus `json:"verification_status,omitempty"`
+	VerificationMethod DomainVerificationMethod `json:"verification_method,omitempty"`
+	VerifiedAt         *time.Time               `json:"verified_at,omitempty"`
+	LastCheckError     string                   `json:"last_check_error,omitempty"`
 }
 
 // =============================================================================
@@ -233,6 +256,27 @@ func GenerateDomain(deploymentName, baseDomain string) Domain {
 		Hostname:   fmt.Sprintf("%s.%s", Slugify(deploymentName), baseDomain),
 		Type:       DomainTypeAuto,
 		SSLEnabled: false, // Enabled after SSL provisioning
+	}
+}
+
+// GenerateDomainForNode generates an auto domain using the node's base domain if available,
+// falling back to the global base domain.
+func GenerateDomainForNode(deploymentName, nodeBaseDomain, globalBaseDomain string) Domain {
+	baseDomain := globalBaseDomain
+	if nodeBaseDomain != "" {
+		baseDomain = nodeBaseDomain
+	}
+	return GenerateDomain(deploymentName, baseDomain)
+}
+
+// NewCustomDomain creates a custom domain entry with pending verification.
+func NewCustomDomain(hostname string) Domain {
+	return Domain{
+		Hostname:           hostname,
+		Type:               DomainTypeCustom,
+		SSLEnabled:         false,
+		VerificationStatus: DomainVerificationPending,
+		VerificationMethod: DomainVerificationMethodCNAME,
 	}
 }
 

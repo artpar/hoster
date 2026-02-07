@@ -84,11 +84,15 @@ func SetupAPI(cfg APIConfig) http.Handler {
 	)
 	nodeResource := resources.NewNodeResource(cfg.Store)
 	sshKeyResource := resources.NewSSHKeyResource(cfg.Store, cfg.EncryptionKey)
+	cloudCredentialResource := resources.NewCloudCredentialResource(cfg.Store, cfg.EncryptionKey)
+	cloudProvisionResource := resources.NewCloudProvisionResource(cfg.Store)
 
 	jsonAPI.AddResource(resources.Template{}, templateResource)
 	jsonAPI.AddResource(resources.Deployment{}, deploymentResource)
 	jsonAPI.AddResource(resources.Node{}, nodeResource)
 	jsonAPI.AddResource(resources.SSHKey{}, sshKeyResource)
+	jsonAPI.AddResource(resources.CloudCredential{}, cloudCredentialResource)
+	jsonAPI.AddResource(resources.CloudProvision{}, cloudProvisionResource)
 
 	// Mount api2go handler under /api
 	router.PathPrefix("/api").Handler(jsonAPI.Handler())
@@ -182,6 +186,33 @@ func SetupAPI(cfg APIConfig) http.Handler {
 		writeResponder(w, resp, err, cfg.Logger)
 	}).Methods("DELETE")
 
+	// Cloud credential custom actions
+	customRouter.HandleFunc("/api/v1/cloud_credentials/{id}/regions", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id := vars["id"]
+		resp, err := cloudCredentialResource.ListRegions(id, r)
+		writeResponder(w, resp, err, cfg.Logger)
+	}).Methods("GET")
+
+	customRouter.HandleFunc("/api/v1/cloud_credentials/{id}/sizes", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id := vars["id"]
+		resp, err := cloudCredentialResource.ListSizes(id, r)
+		writeResponder(w, resp, err, cfg.Logger)
+	}).Methods("GET")
+
+	// Cloud provision custom actions
+	customRouter.HandleFunc("/api/v1/cloud_provisions/{id}/retry", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id := vars["id"]
+		resp, err := cloudProvisionResource.RetryProvision(id, r)
+		writeResponder(w, resp, err, cfg.Logger)
+	}).Methods("POST")
+
+	// Domain management endpoints
+	domainHandlers := NewDomainHandlers(cfg.Store)
+	domainHandlers.RegisterRoutes(customRouter)
+
 	// Monitoring endpoints - Following F010: Monitoring Dashboard
 	monitoringHandlers := NewMonitoringHandlers(cfg.Store, cfg.Docker)
 	monitoringHandlers.RegisterRoutes(customRouter)
@@ -225,6 +256,22 @@ func SetupAPI(cfg APIConfig) http.Handler {
 		SupportsFind:   true,
 		SupportsCreate: true,
 		SupportsUpdate: false, // SSH keys are immutable
+		SupportsDelete: true,
+	})
+	openapiGen.RegisterResource(openapi.ResourceInfo{
+		Name:           "cloud_credentials",
+		Model:          resources.CloudCredential{},
+		SupportsFind:   true,
+		SupportsCreate: true,
+		SupportsUpdate: false,
+		SupportsDelete: true,
+	})
+	openapiGen.RegisterResource(openapi.ResourceInfo{
+		Name:           "cloud_provisions",
+		Model:          resources.CloudProvision{},
+		SupportsFind:   true,
+		SupportsCreate: true,
+		SupportsUpdate: false,
 		SupportsDelete: true,
 	})
 

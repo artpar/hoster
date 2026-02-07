@@ -169,6 +169,50 @@ func CanCreateSSHKey(ctx Context) bool {
 }
 
 // =============================================================================
+// Cloud Credential Authorization
+// =============================================================================
+
+// CanViewCloudCredential checks if the user can view a cloud credential.
+// Only the credential's creator can view it.
+func CanViewCloudCredential(ctx Context, cred domain.CloudCredential) bool {
+	return ctx.Authenticated && ctx.UserID == cred.CreatorID
+}
+
+// CanManageCloudCredential checks if the user can manage a cloud credential (delete).
+// Only the credential's creator can manage it.
+func CanManageCloudCredential(ctx Context, cred domain.CloudCredential) bool {
+	return ctx.Authenticated && ctx.UserID == cred.CreatorID
+}
+
+// CanCreateCloudCredential checks if the user can create cloud credentials.
+// Returns true if the user is authenticated.
+func CanCreateCloudCredential(ctx Context) bool {
+	return ctx.Authenticated
+}
+
+// =============================================================================
+// Cloud Provision Authorization
+// =============================================================================
+
+// CanViewCloudProvision checks if the user can view a cloud provision.
+// Only the provision's creator can view it.
+func CanViewCloudProvision(ctx Context, prov domain.CloudProvision) bool {
+	return ctx.Authenticated && ctx.UserID == prov.CreatorID
+}
+
+// CanManageCloudProvision checks if the user can manage a cloud provision (destroy/retry).
+// Only the provision's creator can manage it.
+func CanManageCloudProvision(ctx Context, prov domain.CloudProvision) bool {
+	return ctx.Authenticated && ctx.UserID == prov.CreatorID
+}
+
+// CanCreateCloudProvision checks if the user can create cloud provisions.
+// Returns true if the user is authenticated.
+func CanCreateCloudProvision(ctx Context) bool {
+	return ctx.Authenticated
+}
+
+// =============================================================================
 // Generic Helpers
 // =============================================================================
 

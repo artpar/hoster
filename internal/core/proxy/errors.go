@@ -11,6 +11,7 @@ const (
 	ErrorUnavailable
 	ErrorUpstreamTimeout
 	ErrorUpstreamError
+	ErrorVerificationPending
 )
 
 // ProxyError represents an error during proxying.
@@ -53,5 +54,15 @@ func NewUnavailableError(hostname string) ProxyError {
 		Hostname:   hostname,
 		Message:    fmt.Sprintf("app unavailable: %s", hostname),
 		StatusCode: 503,
+	}
+}
+
+// NewVerificationPendingError creates an error for unverified custom domain.
+func NewVerificationPendingError(hostname string) ProxyError {
+	return ProxyError{
+		Type:       ErrorVerificationPending,
+		Hostname:   hostname,
+		Message:    fmt.Sprintf("DNS verification pending for %s", hostname),
+		StatusCode: 403,
 	}
 }

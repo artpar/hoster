@@ -47,6 +47,7 @@ export function AddNodeDialog({
   const [sshKeyId, setSshKeyId] = useState('');
   const [dockerSocket, setDockerSocket] = useState('/var/run/docker.sock');
   const [location, setLocation] = useState('');
+  const [baseDomain, setBaseDomain] = useState('');
   const [capabilities, setCapabilities] = useState<string[]>(['standard']);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,6 +102,7 @@ export function AddNodeDialog({
         docker_socket: dockerSocket.trim() || undefined,
         capabilities,
         location: location.trim() || undefined,
+        base_domain: baseDomain.trim() || undefined,
       });
       onOpenChange(false);
       onSuccess?.(node.id);
@@ -112,6 +114,7 @@ export function AddNodeDialog({
       setSshKeyId('');
       setDockerSocket('/var/run/docker.sock');
       setLocation('');
+      setBaseDomain('');
       setCapabilities(['standard']);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create node');
@@ -242,6 +245,21 @@ export function AddNodeDialog({
               placeholder="us-east-1"
               disabled={createNode.isPending}
             />
+          </div>
+
+          {/* Base Domain */}
+          <div className="grid gap-2">
+            <Label htmlFor="base-domain">Base Domain (optional)</Label>
+            <Input
+              id="base-domain"
+              value={baseDomain}
+              onChange={(e) => setBaseDomain(e.target.value)}
+              placeholder="apps.example.com"
+              disabled={createNode.isPending}
+            />
+            <p className="text-xs text-muted-foreground">
+              Deployments on this node will get subdomains under this base domain (e.g., myapp.apps.example.com)
+            </p>
           </div>
 
           {/* Capabilities */}

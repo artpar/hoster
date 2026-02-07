@@ -9,6 +9,7 @@ import { DeploymentDetailPage } from '@/pages/deployments/DeploymentDetailPage';
 import { CreatorDashboardPage } from '@/pages/creator/CreatorDashboardPage';
 import { MyNodesPage } from '@/pages/nodes/MyNodesPage';
 import { SSHKeysPage } from '@/pages/ssh-keys/SSHKeysPage';
+import { CloudProvidersPage } from '@/pages/cloud/CloudProvidersPage';
 import { LoginPage, SignupPage, ForgotPasswordPage, ResetPasswordPage } from '@/pages/auth';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
@@ -63,6 +64,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <SSHKeysPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="cloud-providers"
+          element={
+            <ProtectedRoute>
+              <CloudProvidersPage />
             </ProtectedRoute>
           }
         />
