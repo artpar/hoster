@@ -87,12 +87,9 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		}
 	}
 
-	// Create NodePool and health checker if remote nodes are enabled
-	var nodePool *docker.NodePool
-	var healthChecker *workers.HealthChecker
+	// Initialize encryption key (needed for SSH keys, cloud credentials, etc.)
 	var encryptionKey []byte
-
-	if cfg.Nodes.Enabled && cfg.Nodes.EncryptionKey != "" {
+	if cfg.Nodes.EncryptionKey != "" {
 		encryptionKey = []byte(cfg.Nodes.EncryptionKey)
 		if len(encryptionKey) != 32 {
 			s.Close()
@@ -103,7 +100,13 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 				ExitCode: ExitConfigError,
 			}
 		}
+	}
 
+	// Create NodePool and health checker if remote nodes are enabled
+	var nodePool *docker.NodePool
+	var healthChecker *workers.HealthChecker
+
+	if cfg.Nodes.Enabled && encryptionKey != nil {
 		nodePool = docker.NewNodePool(s, encryptionKey, docker.DefaultNodePoolConfig())
 
 		healthChecker = workers.NewHealthChecker(s, nodePool, encryptionKey, workers.HealthCheckerConfig{

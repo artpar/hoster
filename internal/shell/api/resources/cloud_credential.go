@@ -155,6 +155,12 @@ func (r CloudCredentialResource) Create(obj interface{}, req api2go.Request) (ap
 	}
 
 	// Encrypt credentials
+	if len(r.EncryptionKey) == 0 {
+		return &Response{Code: http.StatusInternalServerError}, api2go.NewHTTPError(
+			fmt.Errorf("server encryption key not configured"),
+			"Server encryption is not configured. Set HOSTER_NODES_ENCRYPTION_KEY.",
+			http.StatusInternalServerError)
+	}
 	encryptedCreds, err := crypto.EncryptSSHKey(credJSON, r.EncryptionKey)
 	if err != nil {
 		return &Response{Code: http.StatusInternalServerError}, err
