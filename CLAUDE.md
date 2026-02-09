@@ -9,7 +9,7 @@
 
 **Vision**: Package creators define deployment templates (docker-compose + config + pricing), customers one-click deploy instances onto YOUR VPS infrastructure.
 
-**Status**: Backend deployed to production at https://emptychair.dev. Monitoring features complete. Local E2E environment fully functional. **Remote node deployment verified on AWS EC2.** SSH Keys promoted to standalone page. 12 marketplace templates (6 database/infra + 6 web-UI apps). Uptime Kuma deployed and verified E2E locally.
+**Status**: Backend deployed to production at https://emptychair.dev. Monitoring features complete. Local E2E environment fully functional. **Remote node deployment verified on AWS EC2.** SSH Keys promoted to standalone page. 12 marketplace templates (6 database/infra + 6 web-UI apps). Uptime Kuma deployed and verified E2E locally. **Dev auth removed — all auth via APIGate headers.**
 
 ---
 

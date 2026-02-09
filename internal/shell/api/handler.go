@@ -49,11 +49,9 @@ func NewHandler(s store.Store, d docker.Client, l *slog.Logger, baseDomain, conf
 	if configDir == "" {
 		configDir = "/var/lib/hoster/configs"
 	}
-	// Create auth middleware with header mode (production APIGate integration)
+	// Create auth middleware (APIGate injects X-User-ID headers)
 	authMW := apimiddleware.NewAuthMiddleware(apimiddleware.AuthConfig{
-		Mode:        "header", // Extract auth from X-User-ID headers
-		RequireAuth: false,    // Don't enforce auth globally (checked per-handler)
-		Logger:      l,
+		Logger: l,
 	})
 	return &Handler{
 		store:        s,
@@ -80,11 +78,9 @@ func NewHandlerWithScheduler(s store.Store, d docker.Client, sched *scheduler.Se
 	if sched == nil {
 		sched = scheduler.NewService(s, nil, d, l)
 	}
-	// Create auth middleware with header mode (production APIGate integration)
+	// Create auth middleware (APIGate injects X-User-ID headers)
 	authMW := apimiddleware.NewAuthMiddleware(apimiddleware.AuthConfig{
-		Mode:        "header", // Extract auth from X-User-ID headers
-		RequireAuth: false,    // Don't enforce auth globally (checked per-handler)
-		Logger:      l,
+		Logger: l,
 	})
 	return &Handler{
 		store:        s,

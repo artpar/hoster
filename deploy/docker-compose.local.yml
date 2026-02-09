@@ -49,9 +49,6 @@ services:
       - HOSTER_SERVER_PORT=8080
       - HOSTER_DATA_DIR=/data
 
-      # Auth - trust headers from APIGate
-      - HOSTER_AUTH_MODE=header
-
       # APIGate integration
       - HOSTER_APIGATE_ENABLED=true
       - HOSTER_APIGATE_URL=http://apigate:8082

@@ -102,11 +102,11 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		}
 	}
 
-	// Create NodePool and health checker if remote nodes are enabled
+	// Create NodePool and health checker if encryption key is configured
 	var nodePool *docker.NodePool
 	var healthChecker *workers.HealthChecker
 
-	if cfg.Nodes.Enabled && encryptionKey != nil {
+	if encryptionKey != nil {
 		nodePool = docker.NewNodePool(s, encryptionKey, docker.DefaultNodePoolConfig())
 
 		healthChecker = workers.NewHealthChecker(s, nodePool, encryptionKey, workers.HealthCheckerConfig{
@@ -143,8 +143,6 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		BaseDomain: cfg.Domain.BaseDomain,
 		ConfigDir:  cfg.Domain.ConfigDir,
 		// Auth configuration (ADR-005)
-		AuthMode:         cfg.Auth.Mode,
-		AuthRequire:      cfg.Auth.RequireAuth,
 		AuthSharedSecret: cfg.Auth.SharedSecret,
 		// Encryption key for SSH keys (required for node management)
 		EncryptionKey: encryptionKey,

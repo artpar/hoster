@@ -10,7 +10,6 @@ import { CreatorDashboardPage } from '@/pages/creator/CreatorDashboardPage';
 import { MyNodesPage } from '@/pages/nodes/MyNodesPage';
 import { SSHKeysPage } from '@/pages/ssh-keys/SSHKeysPage';
 import { CloudProvidersPage } from '@/pages/cloud/CloudProvidersPage';
-import { LoginPage, SignupPage, ForgotPasswordPage, ResetPasswordPage } from '@/pages/auth';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
 export default function App() {
@@ -18,12 +17,6 @@ export default function App() {
     <Routes>
       {/* Landing page - no layout */}
       <Route path="/" element={<LandingPage />} />
-
-      {/* Auth routes - no layout */}
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/signup" element={<SignupPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       {/* Main app routes with layout */}
       <Route element={<Layout />}>

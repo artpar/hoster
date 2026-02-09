@@ -33,8 +33,6 @@ type APIConfig struct {
 	ConfigDir  string
 
 	// Auth configuration (following ADR-005)
-	AuthMode         string // "header", "dev", or "none"
-	AuthRequire      bool   // Require auth for protected endpoints
 	AuthSharedSecret string // Optional: validate X-APIGate-Secret
 
 	// Encryption key for SSH keys (required for node management)
@@ -107,39 +105,12 @@ func SetupAPI(cfg APIConfig) http.Handler {
 	customRouter.Use(requestIDMiddleware)
 	customRouter.Use(recoveryMiddleware(cfg.Logger))
 
-	// Create dev auth handlers if in dev mode (needed for session lookup)
-	var devAuth *DevAuthHandlers
-	if cfg.AuthMode == "dev" {
-		cfg.Logger.Info("registering dev auth endpoints (auth.mode=dev)")
-		devAuth = NewDevAuthHandlers(cfg.Logger)
-		devAuth.RegisterRoutes(customRouter)
-	}
-
 	// Add auth middleware (following ADR-005: APIGate Integration)
-	authConfig := middleware.AuthConfig{
-		Mode:         cfg.AuthMode,
-		RequireAuth:  cfg.AuthRequire,
+	// Always header mode — APIGate injects X-User-ID headers
+	authMW := middleware.NewAuthMiddleware(middleware.AuthConfig{
 		SharedSecret: cfg.AuthSharedSecret,
 		Logger:       cfg.Logger,
-	}
-
-	// In dev mode, pass the session lookup function so the middleware
-	// can get the actual user ID from the Bearer token
-	if devAuth != nil {
-		authConfig.DevSessionLookup = func(token string) *middleware.DevSession {
-			session := devAuth.LookupSession(token)
-			if session == nil {
-				return nil
-			}
-			return &middleware.DevSession{
-				UserID: session.UserID,
-				Email:  session.Email,
-				Name:   session.Name,
-			}
-		}
-	}
-
-	authMW := middleware.NewAuthMiddleware(authConfig)
+	})
 	customRouter.Use(authMW.Handler)
 
 	// Health endpoints

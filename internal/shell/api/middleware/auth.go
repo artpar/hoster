@@ -14,39 +14,14 @@ import (
 // Auth Configuration
 // =============================================================================
 
-// DevSession represents a dev session for session lookup.
-type DevSession struct {
-	UserID string
-	Email  string
-	Name   string
-}
-
-// DevSessionLookup is a function that looks up a dev session by Bearer token.
-// Returns nil if the token is not found.
-type DevSessionLookup func(token string) *DevSession
-
 // AuthConfig holds configuration for the auth middleware.
 type AuthConfig struct {
-	// Mode determines how authentication is handled.
-	// "header" - Extract auth from APIGate headers (production)
-	// "none" - Skip auth extraction entirely (unauthenticated requests)
-	// "dev" - Auto-authenticate as dev-user (local development)
-	Mode string
-
-	// RequireAuth determines if authentication is required for protected endpoints.
-	// When true, unauthenticated requests to protected endpoints return 401.
-	RequireAuth bool
-
 	// SharedSecret is an optional secret to validate X-APIGate-Secret header.
 	// If empty, secret validation is skipped.
 	SharedSecret string
 
 	// Logger for auth middleware logging.
 	Logger *slog.Logger
-
-	// DevSessionLookup is used in "dev" mode to look up sessions from the dev auth handler.
-	// If nil in dev mode, falls back to hardcoded "dev-user".
-	DevSessionLookup DevSessionLookup
 }
 
 // =============================================================================
@@ -68,62 +43,9 @@ func NewAuthMiddleware(cfg AuthConfig) *AuthMiddleware {
 }
 
 // Handler returns the middleware handler function.
-// This middleware extracts auth context from headers and stores it in the request context.
-// If Mode is "none", it skips authentication extraction entirely (unauthenticated).
-// If Mode is "dev", it auto-authenticates as a dev user for local development.
+// This middleware extracts auth context from APIGate-injected headers and stores it in the request context.
 func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// In "none" mode, skip auth extraction entirely (unauthenticated)
-		if m.config.Mode == "none" {
-			// Set an unauthenticated context
-			emptyCtx := auth.Context{
-				Authenticated: false,
-				PlanLimits:    auth.DefaultPlanLimits(),
-			}
-			r = r.WithContext(auth.WithContext(r.Context(), emptyCtx))
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		// In "dev" mode, validate token from X-Auth-Token header
-		if m.config.Mode == "dev" {
-			token := extractAuthToken(r)
-			if token == "" {
-				// No token = unauthenticated
-				emptyCtx := auth.Context{
-					Authenticated: false,
-					PlanLimits:    auth.DefaultPlanLimits(),
-				}
-				r = r.WithContext(auth.WithContext(r.Context(), emptyCtx))
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			// Look up session by token
-			if m.config.DevSessionLookup != nil {
-				if session := m.config.DevSessionLookup(token); session != nil {
-					devCtx := auth.Context{
-						UserID:        session.UserID,
-						PlanID:        "dev-plan",
-						PlanLimits:    auth.DefaultPlanLimits(),
-						Authenticated: true,
-					}
-					r = r.WithContext(auth.WithContext(r.Context(), devCtx))
-					next.ServeHTTP(w, r)
-					return
-				}
-			}
-
-			// Token provided but invalid
-			emptyCtx := auth.Context{
-				Authenticated: false,
-				PlanLimits:    auth.DefaultPlanLimits(),
-			}
-			r = r.WithContext(auth.WithContext(r.Context(), emptyCtx))
-			next.ServeHTTP(w, r)
-			return
-		}
-
 		// Validate shared secret if configured
 		if m.config.SharedSecret != "" {
 			if r.Header.Get(auth.HeaderAPIGateSecret) != m.config.SharedSecret {
@@ -201,12 +123,6 @@ type JSONAPIError struct {
 // JSONAPIErrorResponse represents a JSON:API error response.
 type JSONAPIErrorResponse struct {
 	Errors []JSONAPIError `json:"errors"`
-}
-
-// extractAuthToken reads the X-Auth-Token header.
-// Uses X-Auth-Token because APIGate strips the standard Authorization header.
-func extractAuthToken(r *http.Request) string {
-	return r.Header.Get("X-Auth-Token")
 }
 
 // writeJSONError writes a JSON:API formatted error response.

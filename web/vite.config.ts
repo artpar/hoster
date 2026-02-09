@@ -20,6 +20,15 @@ export default defineConfig({
         target: 'http://localhost:8082',
         changeOrigin: true,
       },
+      // Auth endpoints served by APIGate directly
+      '/auth': {
+        target: 'http://localhost:8082',
+        changeOrigin: true,
+      },
+      '/portal': {
+        target: 'http://localhost:8082',
+        changeOrigin: true,
+      },
     },
   },
   build: {

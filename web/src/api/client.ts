@@ -2,20 +2,6 @@ import type { JsonApiResponse, JsonApiErrorResponse, JsonApiError } from './type
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
-// Get the Bearer token from auth store in localStorage
-function getAuthToken(): string | null {
-  try {
-    const authData = localStorage.getItem('hoster-auth');
-    if (authData) {
-      const parsed = JSON.parse(authData);
-      return parsed.state?.token || null;
-    }
-  } catch {
-    // Ignore parse errors
-  }
-  return null;
-}
-
 export class ApiError extends Error {
   errors: JsonApiError[];
   status: number;
@@ -44,13 +30,10 @@ export async function apiClient<T>(
     'Accept': 'application/vnd.api+json',
   };
 
-  const token = getAuthToken();
-  if (token) {
-    headers['X-Auth-Token'] = token;
-  }
-
+  // Auth is handled by APIGate cookies — no token header needed
   const response = await fetch(`${BASE_URL}${endpoint}`, {
     ...restOptions,
+    credentials: 'include',
     headers: {
       ...headers,
       ...options.headers,

@@ -33,32 +33,10 @@ func testHandler() http.Handler {
 // AuthMiddleware Tests
 // =============================================================================
 
-func TestAuthMiddleware_ModeNone_SkipsAuth(t *testing.T) {
-	middleware := NewAuthMiddleware(AuthConfig{
-		Mode: "none",
-	})
+func TestAuthMiddleware_ExtractsContext(t *testing.T) {
+	mw := NewAuthMiddleware(AuthConfig{})
 
-	handler := middleware.Handler(testHandler())
-	req := httptest.NewRequest("GET", "/api/v1/test", nil)
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-
-	// Context should be unauthenticated since mode=none doesn't extract
-	var resp map[string]interface{}
-	err := json.Unmarshal(rec.Body.Bytes(), &resp)
-	require.NoError(t, err)
-	assert.Equal(t, false, resp["authenticated"])
-}
-
-func TestAuthMiddleware_HeaderMode_ExtractsContext(t *testing.T) {
-	middleware := NewAuthMiddleware(AuthConfig{
-		Mode: "header",
-	})
-
-	handler := middleware.Handler(testHandler())
+	handler := mw.Handler(testHandler())
 	req := httptest.NewRequest("GET", "/api/v1/test", nil)
 	req.Header.Set("X-User-ID", "user_123")
 	req.Header.Set("X-Plan-ID", "plan_premium")
@@ -76,12 +54,10 @@ func TestAuthMiddleware_HeaderMode_ExtractsContext(t *testing.T) {
 	assert.Equal(t, "plan_premium", resp["plan_id"])
 }
 
-func TestAuthMiddleware_HeaderMode_NoHeaders(t *testing.T) {
-	middleware := NewAuthMiddleware(AuthConfig{
-		Mode: "header",
-	})
+func TestAuthMiddleware_NoHeaders(t *testing.T) {
+	mw := NewAuthMiddleware(AuthConfig{})
 
-	handler := middleware.Handler(testHandler())
+	handler := mw.Handler(testHandler())
 	req := httptest.NewRequest("GET", "/api/v1/test", nil)
 	rec := httptest.NewRecorder()
 
@@ -96,12 +72,11 @@ func TestAuthMiddleware_HeaderMode_NoHeaders(t *testing.T) {
 }
 
 func TestAuthMiddleware_SharedSecret_Valid(t *testing.T) {
-	middleware := NewAuthMiddleware(AuthConfig{
-		Mode:         "header",
+	mw := NewAuthMiddleware(AuthConfig{
 		SharedSecret: "my-secret-key",
 	})
 
-	handler := middleware.Handler(testHandler())
+	handler := mw.Handler(testHandler())
 	req := httptest.NewRequest("GET", "/api/v1/test", nil)
 	req.Header.Set("X-APIGate-Secret", "my-secret-key")
 	req.Header.Set("X-User-ID", "user_123")
@@ -113,12 +88,11 @@ func TestAuthMiddleware_SharedSecret_Valid(t *testing.T) {
 }
 
 func TestAuthMiddleware_SharedSecret_Invalid(t *testing.T) {
-	middleware := NewAuthMiddleware(AuthConfig{
-		Mode:         "header",
+	mw := NewAuthMiddleware(AuthConfig{
 		SharedSecret: "my-secret-key",
 	})
 
-	handler := middleware.Handler(testHandler())
+	handler := mw.Handler(testHandler())
 	req := httptest.NewRequest("GET", "/api/v1/test", nil)
 	req.Header.Set("X-APIGate-Secret", "wrong-secret")
 	req.Header.Set("X-User-ID", "user_123")
@@ -131,12 +105,11 @@ func TestAuthMiddleware_SharedSecret_Invalid(t *testing.T) {
 }
 
 func TestAuthMiddleware_SharedSecret_Missing(t *testing.T) {
-	middleware := NewAuthMiddleware(AuthConfig{
-		Mode:         "header",
+	mw := NewAuthMiddleware(AuthConfig{
 		SharedSecret: "my-secret-key",
 	})
 
-	handler := middleware.Handler(testHandler())
+	handler := mw.Handler(testHandler())
 	req := httptest.NewRequest("GET", "/api/v1/test", nil)
 	req.Header.Set("X-User-ID", "user_123")
 	rec := httptest.NewRecorder()
@@ -146,33 +119,12 @@ func TestAuthMiddleware_SharedSecret_Missing(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, rec.Code)
 }
 
-func TestAuthMiddleware_EmptyMode_DefaultsToHeader(t *testing.T) {
-	middleware := NewAuthMiddleware(AuthConfig{
-		Mode: "", // empty mode
-	})
-
-	handler := middleware.Handler(testHandler())
-	req := httptest.NewRequest("GET", "/api/v1/test", nil)
-	req.Header.Set("X-User-ID", "user_456")
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-
-	var resp map[string]interface{}
-	err := json.Unmarshal(rec.Body.Bytes(), &resp)
-	require.NoError(t, err)
-	assert.Equal(t, true, resp["authenticated"])
-}
-
 // =============================================================================
 // RequireAuth Middleware Tests
 // =============================================================================
 
 func TestRequireAuth_Authenticated(t *testing.T) {
-	// Setup auth middleware first
-	authMW := NewAuthMiddleware(AuthConfig{Mode: "header"})
+	authMW := NewAuthMiddleware(AuthConfig{})
 	requireMW := RequireAuth(nil)
 
 	handler := authMW.Handler(requireMW(testHandler()))
@@ -186,8 +138,7 @@ func TestRequireAuth_Authenticated(t *testing.T) {
 }
 
 func TestRequireAuth_Unauthenticated(t *testing.T) {
-	// Setup auth middleware first
-	authMW := NewAuthMiddleware(AuthConfig{Mode: "header"})
+	authMW := NewAuthMiddleware(AuthConfig{})
 	requireMW := RequireAuth(nil)
 
 	handler := authMW.Handler(requireMW(testHandler()))
@@ -202,22 +153,6 @@ func TestRequireAuth_Unauthenticated(t *testing.T) {
 
 	body, _ := io.ReadAll(rec.Body)
 	assert.Contains(t, string(body), "Authentication required")
-}
-
-func TestRequireAuth_ModeNone_StillRequires(t *testing.T) {
-	// Even with mode=none, RequireAuth should check the context
-	authMW := NewAuthMiddleware(AuthConfig{Mode: "none"})
-	requireMW := RequireAuth(nil)
-
-	handler := authMW.Handler(requireMW(testHandler()))
-	req := httptest.NewRequest("GET", "/api/v1/protected", nil)
-	req.Header.Set("X-User-ID", "user_123") // This won't be extracted in none mode
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	// Should fail because mode=none doesn't extract context
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 }
 
 // =============================================================================
@@ -244,11 +179,9 @@ func TestWriteJSONError(t *testing.T) {
 // =============================================================================
 
 func TestAuthMiddleware_ExtractsPlanLimits(t *testing.T) {
-	middleware := NewAuthMiddleware(AuthConfig{
-		Mode: "header",
-	})
+	mw := NewAuthMiddleware(AuthConfig{})
 
-	handler := middleware.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := auth.FromContext(r.Context())
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -274,11 +207,9 @@ func TestAuthMiddleware_ExtractsPlanLimits(t *testing.T) {
 }
 
 func TestAuthMiddleware_DefaultPlanLimits(t *testing.T) {
-	middleware := NewAuthMiddleware(AuthConfig{
-		Mode: "header",
-	})
+	mw := NewAuthMiddleware(AuthConfig{})
 
-	handler := middleware.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := auth.FromContext(r.Context())
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{

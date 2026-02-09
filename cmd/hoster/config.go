@@ -66,17 +66,8 @@ type DomainConfig struct {
 
 // AuthConfig holds authentication configuration.
 // Following ADR-005: APIGate Integration for Authentication and Billing
+// Auth is always via APIGate-injected headers (X-User-ID etc.)
 type AuthConfig struct {
-	// Mode determines how authentication is handled.
-	// "header" - Extract auth from APIGate headers (production)
-	// "dev" - Auto-authenticate as dev-user (local development)
-	// "none" - Skip auth extraction entirely (unauthenticated requests)
-	Mode string `mapstructure:"mode"`
-
-	// RequireAuth determines if authentication is required for protected endpoints.
-	// When true, unauthenticated requests to protected endpoints return 401.
-	RequireAuth bool `mapstructure:"require_auth"`
-
 	// SharedSecret is an optional secret to validate X-APIGate-Secret header.
 	// If empty, secret validation is skipped.
 	SharedSecret string `mapstructure:"shared_secret"`
@@ -102,12 +93,8 @@ type BillingConfig struct {
 }
 
 // NodesConfig holds worker nodes configuration.
-// Following Creator Worker Nodes Phase 7: Health Checker
+// If EncryptionKey is set, remote node features (NodePool, HealthChecker, Provisioner) are enabled.
 type NodesConfig struct {
-	// Enabled determines if remote worker nodes are enabled.
-	// When false, only local Docker is used.
-	Enabled bool `mapstructure:"enabled"`
-
 	// EncryptionKey is the 32-byte key for encrypting SSH private keys.
 	// Must be exactly 32 bytes for AES-256-GCM.
 	// Set via HOSTER_NODES_ENCRYPTION_KEY environment variable.
@@ -190,8 +177,6 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("log.format", "json")
 	v.SetDefault("domain.base_domain", "apps.localhost")
 	v.SetDefault("domain.config_dir", "./data/configs")
-	v.SetDefault("auth.mode", "dev")           // Default to dev user for development
-	v.SetDefault("auth.require_auth", false)   // Don't require auth by default
 	v.SetDefault("auth.shared_secret", "")     // No secret validation by default
 
 	// Billing defaults (F009: Billing Integration)
@@ -202,7 +187,6 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("billing.batch_size", 100)
 
 	// Node defaults (Creator Worker Nodes)
-	v.SetDefault("nodes.enabled", false)                    // Disabled by default (local Docker only)
 	v.SetDefault("nodes.encryption_key", "")                // Must be set via environment
 	v.SetDefault("nodes.health_check_interval", "60s")      // Check nodes every minute
 	v.SetDefault("nodes.health_check_timeout", "10s")       // 10 second timeout per node

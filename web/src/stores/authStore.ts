@@ -17,7 +17,6 @@ export interface User {
 }
 
 interface AuthState {
-  token: string | null;
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -25,46 +24,44 @@ interface AuthState {
 
   // Actions
   checkAuth: () => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
-  forgotPassword: (email: string) => Promise<void>;
-  resetPassword: (token: string, password: string) => Promise<void>;
   clearError: () => void;
   clearAuth: () => void;
 }
 
-function authHeaders(token: string | null): Record<string, string> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) {
-    headers['X-Auth-Token'] = token;
-  }
-  return headers;
-}
+// APIGate handles auth via cookies — no token management needed.
+// Login/signup are handled by redirecting to /portal (APIGate's auth UI).
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set, get) => ({
-      token: null,
+    (set) => ({
       user: null,
       isAuthenticated: false,
       isLoading: true,
       error: null,
 
       checkAuth: async () => {
-        const { token } = get();
-        if (!token) {
-          set({ isAuthenticated: false, isLoading: false, user: null });
-          return;
-        }
         try {
           set({ isLoading: true, error: null });
-          const response = await fetch('/api/auth/me', {
-            headers: authHeaders(token),
+          const response = await fetch('/auth/me', {
+            credentials: 'include',
           });
 
           if (response.ok) {
-            const user = await response.json();
+            const data = await response.json();
+            // APIGate returns user data — map to our User type
+            const user: User = {
+              id: data.id || data.user_id || '',
+              email: data.email || '',
+              name: data.name || data.email || '',
+              plan_id: data.plan_id || 'free',
+              plan_limits: data.plan_limits || {
+                max_deployments: 1,
+                max_cpu_cores: 1,
+                max_memory_mb: 1024,
+                max_disk_gb: 5,
+              },
+            };
             set({
               user,
               isAuthenticated: true,
@@ -72,7 +69,6 @@ export const useAuthStore = create<AuthState>()(
             });
           } else {
             set({
-              token: null,
               user: null,
               isAuthenticated: false,
               isLoading: false,
@@ -80,136 +76,25 @@ export const useAuthStore = create<AuthState>()(
           }
         } catch {
           set({
-            token: null,
             user: null,
             isAuthenticated: false,
             isLoading: false,
           });
-        }
-      },
-
-      login: async (email, password) => {
-        try {
-          set({ isLoading: true, error: null });
-          const response = await fetch('/api/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password }),
-          });
-
-          if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error?.message || 'Login failed');
-          }
-
-          const data = await response.json();
-          set({
-            token: data.token,
-            user: data.user,
-            isAuthenticated: true,
-            isLoading: false,
-          });
-        } catch (err) {
-          set({
-            isLoading: false,
-            error: err instanceof Error ? err.message : 'Login failed',
-          });
-          throw err;
-        }
-      },
-
-      signup: async (email, password, name) => {
-        try {
-          set({ isLoading: true, error: null });
-          const response = await fetch('/api/auth/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password, name }),
-          });
-
-          if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error?.message || 'Signup failed');
-          }
-
-          const data = await response.json();
-          set({
-            token: data.token,
-            user: data.user,
-            isAuthenticated: true,
-            isLoading: false,
-          });
-        } catch (err) {
-          set({
-            isLoading: false,
-            error: err instanceof Error ? err.message : 'Signup failed',
-          });
-          throw err;
         }
       },
 
       logout: async () => {
-        const { token } = get();
         try {
-          await fetch('/api/auth/logout', {
+          await fetch('/auth/logout', {
             method: 'POST',
-            headers: authHeaders(token),
+            credentials: 'include',
           });
         } finally {
           set({
-            token: null,
             user: null,
             isAuthenticated: false,
             isLoading: false,
           });
-        }
-      },
-
-      forgotPassword: async (email) => {
-        try {
-          set({ isLoading: true, error: null });
-          const response = await fetch('/api/auth/forgot', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email }),
-          });
-
-          if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error?.message || 'Failed to send reset email');
-          }
-
-          set({ isLoading: false });
-        } catch (err) {
-          set({
-            isLoading: false,
-            error: err instanceof Error ? err.message : 'Failed to send reset email',
-          });
-          throw err;
-        }
-      },
-
-      resetPassword: async (resetToken, password) => {
-        try {
-          set({ isLoading: true, error: null });
-          const response = await fetch('/api/auth/reset', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: resetToken, password }),
-          });
-
-          if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error?.message || 'Password reset failed');
-          }
-
-          set({ isLoading: false });
-        } catch (err) {
-          set({
-            isLoading: false,
-            error: err instanceof Error ? err.message : 'Password reset failed',
-          });
-          throw err;
         }
       },
 
@@ -217,7 +102,6 @@ export const useAuthStore = create<AuthState>()(
 
       clearAuth: () =>
         set({
-          token: null,
           user: null,
           isAuthenticated: false,
         }),
@@ -225,7 +109,6 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'hoster-auth',
       partialize: (state) => ({
-        token: state.token,
         user: state.user,
         isAuthenticated: state.isAuthenticated,
       }),
