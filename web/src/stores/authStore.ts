@@ -32,23 +32,17 @@ interface AuthState {
   clearAuth: () => void;
 }
 
-// APIGate handles auth backend via JWT tokens.
-// Hoster provides its own branded login/signup pages that call APIGate's /auth/* endpoints.
-// Login returns a JWT token; all subsequent requests use Authorization: Bearer.
+// APIGate v0.3.2+ handles auth via JWT tokens at /mod/auth/* endpoints.
+// Login/register return flat JSON: { token, user, success }
+// /mod/auth/me returns: { user: { id, email, name, plan_id, ... } }
 
-function parseUserFromAuthMe(data: Record<string, unknown>): User {
-  // /auth/me returns JSON:API format: { data: { type, id, attributes, relationships } }
-  const jsonApiData = data.data as Record<string, unknown> | undefined;
-  const attrs = (jsonApiData?.attributes || {}) as Record<string, unknown>;
-  const relationships = (jsonApiData?.relationships || {}) as Record<string, unknown>;
-  const planRel = (relationships.plan as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
-
+function parseUser(userData: Record<string, unknown>): User {
   return {
-    id: (jsonApiData?.id as string) || '',
-    email: (attrs.email as string) || '',
-    name: (attrs.name as string) || (attrs.email as string) || '',
-    plan_id: (planRel?.id as string) || 'free',
-    plan_limits: (attrs.plan_limits as PlanLimits) || {
+    id: (userData.id as string) || '',
+    email: (userData.email as string) || '',
+    name: (userData.name as string) || (userData.email as string) || '',
+    plan_id: (userData.plan_id as string) || 'free',
+    plan_limits: (userData.plan_limits as PlanLimits) || {
       max_deployments: 1,
       max_cpu_cores: 1,
       max_memory_mb: 1024,
@@ -74,13 +68,13 @@ export const useAuthStore = create<AuthState>()(
             set({ user: null, isAuthenticated: false, isLoading: false });
             return;
           }
-          const response = await fetch('/auth/me', {
+          const response = await fetch('/mod/auth/me', {
             headers: { 'Authorization': `Bearer ${token}` },
           });
 
           if (response.ok) {
             const data = await response.json();
-            const user = parseUserFromAuthMe(data);
+            const user = parseUser(data.user as Record<string, unknown>);
             set({
               user,
               isAuthenticated: true,
@@ -107,7 +101,7 @@ export const useAuthStore = create<AuthState>()(
       login: async (email, password) => {
         try {
           set({ isLoading: true, error: null });
-          const response = await fetch('/auth/login', {
+          const response = await fetch('/mod/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password }),
@@ -115,12 +109,12 @@ export const useAuthStore = create<AuthState>()(
 
           if (!response.ok) {
             const errorData = await response.json();
-            const detail = errorData.errors?.[0]?.detail || 'Login failed';
+            const detail = errorData.error || errorData.errors?.[0]?.detail || 'Login failed';
             throw new Error(detail);
           }
 
           const data = await response.json();
-          const token = data.data?.attributes?.token;
+          const token = data.token;
           if (!token) {
             throw new Error('No token in login response');
           }
@@ -140,20 +134,26 @@ export const useAuthStore = create<AuthState>()(
       signup: async (email, password) => {
         try {
           set({ isLoading: true, error: null });
-          const response = await fetch('/auth/register', {
+          const response = await fetch('/mod/auth/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password }),
+            body: JSON.stringify({ email, password, name: email.split('@')[0] }),
           });
 
           if (!response.ok) {
             const errorData = await response.json();
-            const detail = errorData.errors?.[0]?.detail || 'Signup failed';
+            const detail = errorData.error || errorData.errors?.[0]?.detail || 'Signup failed';
             throw new Error(detail);
           }
 
-          // Auto-login after signup to get JWT token
-          await get().login(email, password);
+          // Register returns token directly — no need to auto-login
+          const data = await response.json();
+          const token = data.token;
+          if (!token) {
+            throw new Error('No token in register response');
+          }
+          set({ token });
+          await get().checkAuth();
         } catch (err) {
           set({
             isLoading: false,
@@ -167,7 +167,7 @@ export const useAuthStore = create<AuthState>()(
         const { token } = get();
         try {
           if (token) {
-            await fetch('/auth/logout', {
+            await fetch('/mod/auth/logout', {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${token}` },
             });
