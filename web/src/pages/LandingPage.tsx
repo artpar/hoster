@@ -115,12 +115,12 @@ export function LandingPage() {
               </Link>
             ) : (
               <>
-                <a href="/portal">
+                <Link to="/login">
                   <Button variant="ghost">Sign In</Button>
-                </a>
-                <a href="/portal">
+                </Link>
+                <Link to="/signup">
                   <Button>Get Started</Button>
-                </a>
+                </Link>
               </>
             )}
           </div>
@@ -144,11 +144,11 @@ export function LandingPage() {
                 Explore Marketplace <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
-            <a href="/portal">
+            <Link to="/signup">
               <Button size="lg" variant="outline">
                 Start Free
               </Button>
-            </a>
+            </Link>
           </div>
         </div>
       </section>
@@ -230,11 +230,11 @@ export function LandingPage() {
               Start free and scale as you grow.
             </p>
             <div className="mt-8 flex items-center justify-center gap-4">
-              <a href="/portal">
+              <Link to="/signup">
                 <Button size="lg" variant="secondary" className="gap-2">
                   Create Free Account <ArrowRight className="h-4 w-4" />
                 </Button>
-              </a>
+              </Link>
             </div>
           </CardContent>
         </Card>

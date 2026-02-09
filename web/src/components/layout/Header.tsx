@@ -69,9 +69,9 @@ export function Header() {
               </Button>
             </div>
           ) : (
-            <a href="/portal">
+            <Link to="/login">
               <Button variant="ghost" size="sm">Sign In</Button>
-            </a>
+            </Link>
           )}
         </div>
       </div>

@@ -205,7 +205,7 @@ export function TemplateDetailPage() {
         title="Authentication Required"
         description="You need to sign in to deploy templates. Your session may have expired. Please sign in to continue."
         buttonLabel="Sign In"
-        onConfirm={() => { window.location.href = '/portal'; }}
+        onConfirm={() => { window.location.href = '/login'; }}
       />
     </div>
   );

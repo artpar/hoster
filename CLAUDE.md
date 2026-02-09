@@ -119,14 +119,14 @@ hoster/
 │   │   ├── compose/            # Compose parsing (IMPLEMENTED)
 │   │   ├── deployment/         # Deployment logic (IMPLEMENTED)
 │   │   ├── traefik/            # Traefik config generation (IMPLEMENTED)
-│   │   ├── auth/               # Auth context (TODO - F008)
+│   │   ├── auth/               # Auth context extraction (IMPLEMENTED)
 │   │   ├── limits/             # Plan limits (TODO - F009)
 │   │   └── monitoring/         # Health aggregation (TODO - F010)
 │   └── shell/                  # IMPERATIVE SHELL (I/O)
 │       ├── api/                # HTTP handlers (IMPLEMENTED)
 │       │   ├── resources/      # api2go resources (TODO - ADR-003)
 │       │   ├── openapi/        # OpenAPI generator (TODO - ADR-004)
-│       │   └── middleware/     # Auth middleware (TODO - F008)
+│       │   └── middleware/     # Auth middleware (IMPLEMENTED)
 │       ├── docker/             # Docker SDK wrapper (IMPLEMENTED)
 │       ├── store/              # Database layer (IMPLEMENTED)
 │       └── billing/            # APIGate billing client (TODO - F009)
@@ -185,8 +185,8 @@ hoster/
 
 - **Decision**: Use APIGate as reverse proxy for auth and billing
 - **Rationale**: Leverage existing auth/billing infrastructure
-- **Implication**: Trust X-User-ID headers, network isolation required
-- **DO NOT**: Build auth from scratch or use external auth providers
+- **Implication**: Trust X-User-ID headers injected by APIGate. Hoster has NO custom auth — no login/signup endpoints, no session management. Frontend uses APIGate's `/portal` for login/signup and `/auth/*` for cookie-based session management.
+- **DO NOT**: Build auth from scratch, add login/signup endpoints to Hoster, or use external auth providers
 - **Spec**: `specs/decisions/ADR-005-apigate-integration.md`
 
 ### ADR-006: Frontend Architecture
@@ -361,7 +361,7 @@ If you deploy to production without manual user testing:
 **NEVER skip, bypass, or workaround any part of the system.**
 
 ### Forbidden Actions:
-- ❌ Don't use dev auth in production as a "temporary" workaround
+- ❌ Don't build custom auth in Hoster — APIGate owns auth
 - ❌ Don't create session bridges or auth hacks
 - ❌ Don't skip manual testing "just this once"
 - ❌ Don't deploy without testing all user journeys
@@ -452,6 +452,9 @@ These are intentional limitations documented in specs:
 - [x] Dedicated SSH Keys page (`/ssh-keys`) - Table with node cross-references
 - [x] Web-UI app templates (migration 008) - WordPress, Uptime Kuma, Gitea, n8n, IT Tools, Metabase
 - [x] Uptime Kuma E2E verified - deployed from marketplace, full web UI accessible
+- [x] Dev auth removed — all auth via APIGate headers (February 2026)
+- [x] Frontend auth pages deleted — login/signup via APIGate portal
+- [x] Nodes.Enabled config gate removed — encryption key presence drives feature activation
 
 ### IN PROGRESS
 - [ ] Fix CI npm/rollup issues - see specs/SESSION-HANDOFF.md for details
@@ -539,7 +542,7 @@ Full support for deploying to remote Docker hosts:
 
 **Critical Note:** Encryption key must be consistent across restarts:
 ```bash
-HOSTER_ENCRYPTION_KEY=12345678901234567890123456789012  # exactly 32 bytes
+HOSTER_NODES_ENCRYPTION_KEY=12345678901234567890123456789012  # exactly 32 bytes
 ```
 
 ### Default Marketplace Templates: ✅ COMPLETE (Updated February 6, 2026)
@@ -861,7 +864,7 @@ Internet → APIGate (:8082, front-facing) → Hoster (:8080, backend)
 
 **Separation of concerns:**
 - **APIGate = Billing/Quota.** Only deployment CRUD is billable. NOT responsible for auth.
-- **Hoster = Auth + Business Logic.** Token-based auth on every API endpoint. Owns user identity.
+- **Hoster = Business Logic.** Reads user identity from APIGate-injected X-User-ID header. No custom auth endpoints.
 
 **Full architecture spec:** `specs/architecture/apigate-integration.md`
 
@@ -873,6 +876,32 @@ Internet → APIGate (:8082, front-facing) → Hoster (:8080, backend)
 
 When encountering APIGate-related issues during development or testing, report them at the issues link above. The `gh` CLI is available and logged in for creating issues.
 
+### Auth Flow (February 2026)
+
+**There is NO auth system in Hoster.** Auth is entirely APIGate's responsibility.
+
+1. User clicks "Sign In" → browser navigates to `/portal` (APIGate's built-in auth UI)
+2. User registers/logs in via APIGate portal → APIGate sets session cookie
+3. APIGate injects `X-User-ID`, `X-Plan-ID`, `X-Plan-Limits` headers on forwarded requests
+4. Hoster middleware reads these headers → `auth.Context{Authenticated: true, UserID: "..."}`
+5. If headers are absent → `auth.Context{Authenticated: false}` (public access, no error)
+6. Protected endpoints check `ctx.Authenticated` and return 401 if false
+
+**Frontend auth flow:**
+- `checkAuth()` → `GET /auth/me` (APIGate, cookie-based)
+- `logout()` → `POST /auth/logout` (APIGate)
+- No login/signup functions — browser redirects to `/portal`
+- No `X-Auth-Token` header — APIGate uses cookies
+- `ProtectedRoute` redirects to `/portal` via `window.location.href`
+- Vite dev server proxies `/auth` and `/portal` to APIGate on :8082
+
+**Deleted files (February 2026):**
+- `internal/shell/api/dev_auth.go` — in-memory session store
+- `web/src/pages/auth/*` — LoginPage, SignupPage, ForgotPasswordPage, ResetPasswordPage
+
+**Removed config:**
+- `HOSTER_AUTH_MODE` — no longer exists (always header mode)
+- `HOSTER_NODES_ENABLED` — no longer exists (encryption key presence drives activation)
 
 ---
 
@@ -934,7 +963,7 @@ sqlite3 /tmp/hoster-e2e-test/apigate.db "SELECT name, path_pattern, host_pattern
 
 1. **Access Frontend:** http://localhost:8082/
 2. **Browse Marketplace:** http://localhost:8082/marketplace
-3. **Sign in via dev auth:** Use any email/password
+3. **Sign in via APIGate portal:** Click Sign In → redirects to /portal
 4. **Deploy template:** Select a template and deploy
 5. **Monitor deployment:** View Events, Stats, Logs tabs
 6. **Access deployed app:** http://{deployment-name}.apps.localhost:8082/

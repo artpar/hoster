@@ -15,13 +15,17 @@ import (
 var webUIAssets embed.FS
 
 // WebUIHandler returns an HTTP handler that serves the embedded Web UI.
-// It serves static files from the embedded assets and falls back to index.html
-// for client-side routing support (SPA pattern).
+// It serves static files and falls back to index.html for SPA routing.
+// Prefers web/dist/ on disk (always fresh from Vite) over embedded assets.
 func WebUIHandler() http.Handler {
-	// Try to get the dist subfolder
-	distFS, err := fs.Sub(webUIAssets, "webui/dist")
-	if err != nil {
-		// Return a handler that shows build instructions
+	// Prefer filesystem web/dist/ — always up-to-date during development.
+	// Falls back to embedded assets when the directory doesn't exist (production binary).
+	var distFS fs.FS
+	if info, err := os.Stat("web/dist"); err == nil && info.IsDir() {
+		distFS = os.DirFS("web/dist")
+	} else if sub, err := fs.Sub(webUIAssets, "webui/dist"); err == nil {
+		distFS = sub
+	} else {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusServiceUnavailable)
@@ -101,11 +105,9 @@ npm run build
 
 // IsWebUIBuilt checks if the web UI has been built.
 func IsWebUIBuilt() bool {
+	if info, err := os.Stat("web/dist/index.html"); err == nil && !info.IsDir() {
+		return true
+	}
 	_, err := fs.Stat(webUIAssets, "webui/dist/index.html")
 	return err == nil
-}
-
-// WebUIDevMode checks if we should use dev mode (Vite server).
-func WebUIDevMode() bool {
-	return os.Getenv("HOSTER_WEBUI_DEV") == "1"
 }

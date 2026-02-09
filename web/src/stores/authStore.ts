@@ -24,17 +24,40 @@ interface AuthState {
 
   // Actions
   checkAuth: () => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
   clearAuth: () => void;
 }
 
-// APIGate handles auth via cookies — no token management needed.
-// Login/signup are handled by redirecting to /portal (APIGate's auth UI).
+// APIGate handles auth backend (sessions, cookies, validation).
+// Hoster provides its own branded login/signup pages that call APIGate's /auth/* endpoints.
+
+function parseUserFromAuthMe(data: Record<string, unknown>): User {
+  // /auth/me returns JSON:API format: { data: { type, id, attributes, relationships } }
+  const jsonApiData = data.data as Record<string, unknown> | undefined;
+  const attrs = (jsonApiData?.attributes || {}) as Record<string, unknown>;
+  const relationships = (jsonApiData?.relationships || {}) as Record<string, unknown>;
+  const planRel = (relationships.plan as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
+
+  return {
+    id: (jsonApiData?.id as string) || '',
+    email: (attrs.email as string) || '',
+    name: (attrs.name as string) || (attrs.email as string) || '',
+    plan_id: (planRel?.id as string) || 'free',
+    plan_limits: (attrs.plan_limits as PlanLimits) || {
+      max_deployments: 1,
+      max_cpu_cores: 1,
+      max_memory_mb: 1024,
+      max_disk_gb: 5,
+    },
+  };
+}
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       isAuthenticated: false,
       isLoading: true,
@@ -49,19 +72,7 @@ export const useAuthStore = create<AuthState>()(
 
           if (response.ok) {
             const data = await response.json();
-            // APIGate returns user data — map to our User type
-            const user: User = {
-              id: data.id || data.user_id || '',
-              email: data.email || '',
-              name: data.name || data.email || '',
-              plan_id: data.plan_id || 'free',
-              plan_limits: data.plan_limits || {
-                max_deployments: 1,
-                max_cpu_cores: 1,
-                max_memory_mb: 1024,
-                max_disk_gb: 5,
-              },
-            };
+            const user = parseUserFromAuthMe(data);
             set({
               user,
               isAuthenticated: true,
@@ -80,6 +91,60 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: false,
             isLoading: false,
           });
+        }
+      },
+
+      login: async (email, password) => {
+        try {
+          set({ isLoading: true, error: null });
+          const response = await fetch('/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ email, password }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            const detail = errorData.errors?.[0]?.detail || 'Login failed';
+            throw new Error(detail);
+          }
+
+          // Login sets session cookie — now fetch user data
+          await get().checkAuth();
+        } catch (err) {
+          set({
+            isLoading: false,
+            error: err instanceof Error ? err.message : 'Login failed',
+          });
+          throw err;
+        }
+      },
+
+      signup: async (email, password) => {
+        try {
+          set({ isLoading: true, error: null });
+          const response = await fetch('/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ email, password }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            const detail = errorData.errors?.[0]?.detail || 'Signup failed';
+            throw new Error(detail);
+          }
+
+          // Register doesn't set a cookie — auto-login after signup
+          await get().login(email, password);
+        } catch (err) {
+          set({
+            isLoading: false,
+            error: err instanceof Error ? err.message : 'Signup failed',
+          });
+          throw err;
         }
       },
 

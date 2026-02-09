@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom';
 import { Layout } from '@/components/layout/Layout';
 import { ProtectedRoute } from '@/components/auth';
 import { LandingPage } from '@/pages/LandingPage';
+import { LoginPage, SignupPage } from '@/pages/auth';
 import { MarketplacePage } from '@/pages/marketplace/MarketplacePage';
 import { TemplateDetailPage } from '@/pages/marketplace/TemplateDetailPage';
 import { MyDeploymentsPage } from '@/pages/deployments/MyDeploymentsPage';
@@ -17,6 +18,10 @@ export default function App() {
     <Routes>
       {/* Landing page - no layout */}
       <Route path="/" element={<LandingPage />} />
+
+      {/* Auth pages - no layout */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<SignupPage />} />
 
       {/* Main app routes with layout */}
       <Route element={<Layout />}>
