@@ -16,7 +16,7 @@
 - **App Proxy** (localhost:9091) - Routes deployed apps via subdomain
 - **Database**: `/tmp/hoster-e2e-test/hoster.db` (Hoster), `/tmp/hoster-e2e-test/apigate.db` (APIGate)
 - **Routes configured**: Frontend (/*), API (/api/*), App Proxy (*.apps.localhost/*)
-- **Auto-registration**: Disabled (using manual route configuration)
+- **Auto-registration**: Removed (routes configured manually in APIGate)
 - **Auth**: Disabled for testing (`auth_required=0` on all routes)
 - **Subdomain Routing**: ✅ WORKING (requires APIGate commit 5d72804 or later)
 
@@ -155,10 +155,9 @@ lsof -i :9091  # App Proxy
 cd /tmp/hoster-e2e-test
 apigate serve --config apigate.yaml > apigate.log 2>&1 &
 
-# Terminal 2: Start Hoster (without auto-registration)
+# Terminal 2: Start Hoster
 cd /Users/artpar/workspace/code/hoster
 HOSTER_DATABASE_DSN=/tmp/hoster-e2e-test/hoster.db \
-HOSTER_APIGATE_AUTO_REGISTER=false \
 ./bin/hoster > /tmp/hoster-e2e-test/hoster.log 2>&1 &
 ```
 

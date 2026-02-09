@@ -1,4 +1,5 @@
 import type { JsonApiResponse, JsonApiErrorResponse, JsonApiError } from './types';
+import { useAuthStore } from '../stores/authStore';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
@@ -30,10 +31,14 @@ export async function apiClient<T>(
     'Accept': 'application/vnd.api+json',
   };
 
-  // Auth is handled by APIGate cookies — no token header needed
+  // Auth via JWT Bearer token
+  const token = useAuthStore.getState().token;
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${BASE_URL}${endpoint}`, {
     ...restOptions,
-    credentials: 'include',
     headers: {
       ...headers,
       ...options.headers,

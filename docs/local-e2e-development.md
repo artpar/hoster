@@ -97,9 +97,7 @@ HOSTER_AUTH_MODE=dev go run ./cmd/hoster
 Run with APIGate for full auth flow:
 
 ```bash
-HOSTER_AUTH_MODE=header \
-HOSTER_APIGATE_URL=http://localhost:8082 \
-go run ./cmd/hoster
+HOSTER_AUTH_MODE=header go run ./cmd/hoster
 ```
 
 - Trusts `X-User-ID`, `X-Plan-ID`, `X-Plan-Limits` headers from APIGate
@@ -205,12 +203,6 @@ lsof -i :8080
 # Kill it
 kill -9 <PID>
 ```
-
-### APIGate Registration Failed (401)
-
-The auto-registration requires an admin API key. Either:
-1. Disable auto-registration: `HOSTER_APIGATE_AUTO_REGISTER=false`
-2. Create admin key in APIGate and set `HOSTER_APIGATE_ADMIN_KEY`
 
 ### App Proxy Not Routing
 

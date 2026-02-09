@@ -944,10 +944,9 @@ Routes (priority order):
 cd /tmp/hoster-e2e-test
 apigate serve --config apigate.yaml > apigate.log 2>&1 &
 
-# Terminal 2: Start Hoster (auto-registration disabled)
+# Terminal 2: Start Hoster
 cd /Users/artpar/workspace/code/hoster
 HOSTER_DATA_DIR=/tmp/hoster-e2e-test \
-HOSTER_APIGATE_AUTO_REGISTER=false \
 ./bin/hoster > /tmp/hoster-e2e-test/hoster.log 2>&1 &
 # NOTE: HOSTER_DATA_DIR sets both database (/tmp/hoster-e2e-test/hoster.db)
 # and config dir. Use the same value on every restart to persist data.

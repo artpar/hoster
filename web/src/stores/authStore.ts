@@ -18,6 +18,7 @@ export interface User {
 
 interface AuthState {
   user: User | null;
+  token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
@@ -31,8 +32,9 @@ interface AuthState {
   clearAuth: () => void;
 }
 
-// APIGate handles auth backend (sessions, cookies, validation).
+// APIGate handles auth backend via JWT tokens.
 // Hoster provides its own branded login/signup pages that call APIGate's /auth/* endpoints.
+// Login returns a JWT token; all subsequent requests use Authorization: Bearer.
 
 function parseUserFromAuthMe(data: Record<string, unknown>): User {
   // /auth/me returns JSON:API format: { data: { type, id, attributes, relationships } }
@@ -59,6 +61,7 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
+      token: null,
       isAuthenticated: false,
       isLoading: true,
       error: null,
@@ -66,8 +69,13 @@ export const useAuthStore = create<AuthState>()(
       checkAuth: async () => {
         try {
           set({ isLoading: true, error: null });
+          const { token } = get();
+          if (!token) {
+            set({ user: null, isAuthenticated: false, isLoading: false });
+            return;
+          }
           const response = await fetch('/auth/me', {
-            credentials: 'include',
+            headers: { 'Authorization': `Bearer ${token}` },
           });
 
           if (response.ok) {
@@ -81,6 +89,7 @@ export const useAuthStore = create<AuthState>()(
           } else {
             set({
               user: null,
+              token: null,
               isAuthenticated: false,
               isLoading: false,
             });
@@ -88,6 +97,7 @@ export const useAuthStore = create<AuthState>()(
         } catch {
           set({
             user: null,
+            token: null,
             isAuthenticated: false,
             isLoading: false,
           });
@@ -100,7 +110,6 @@ export const useAuthStore = create<AuthState>()(
           const response = await fetch('/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({ email, password }),
           });
 
@@ -110,7 +119,14 @@ export const useAuthStore = create<AuthState>()(
             throw new Error(detail);
           }
 
-          // Login sets session cookie — now fetch user data
+          const data = await response.json();
+          const token = data.data?.attributes?.token;
+          if (!token) {
+            throw new Error('No token in login response');
+          }
+          set({ token });
+
+          // Fetch user profile with the new token
           await get().checkAuth();
         } catch (err) {
           set({
@@ -127,7 +143,6 @@ export const useAuthStore = create<AuthState>()(
           const response = await fetch('/auth/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({ email, password }),
           });
 
@@ -137,7 +152,7 @@ export const useAuthStore = create<AuthState>()(
             throw new Error(detail);
           }
 
-          // Register doesn't set a cookie — auto-login after signup
+          // Auto-login after signup to get JWT token
           await get().login(email, password);
         } catch (err) {
           set({
@@ -149,14 +164,18 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: async () => {
+        const { token } = get();
         try {
-          await fetch('/auth/logout', {
-            method: 'POST',
-            credentials: 'include',
-          });
+          if (token) {
+            await fetch('/auth/logout', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}` },
+            });
+          }
         } finally {
           set({
             user: null,
+            token: null,
             isAuthenticated: false,
             isLoading: false,
           });
@@ -168,6 +187,7 @@ export const useAuthStore = create<AuthState>()(
       clearAuth: () =>
         set({
           user: null,
+          token: null,
           isAuthenticated: false,
         }),
     }),
@@ -175,6 +195,7 @@ export const useAuthStore = create<AuthState>()(
       name: 'hoster-auth',
       partialize: (state) => ({
         user: state.user,
+        token: state.token,
         isAuthenticated: state.isAuthenticated,
       }),
     }

@@ -99,38 +99,7 @@ Option C - Try different Node version:
     node-version: '20'
 ```
 
-### Priority 2: Fix APIGate Auto-Registration
-
-**Current Issue:**
-- Auto-registration fails with 401 when accessing `/admin/upstreams`
-- Frontend route (`/*`, priority 10) catches all requests including `/admin/*`
-- Admin endpoints get proxied to Hoster instead of APIGate
-
-**Solution Options:**
-
-**Option A: Higher Priority Admin Route (RECOMMENDED)**
-```sql
--- Add admin route with priority 5 (higher than frontend priority 10)
-INSERT INTO routes (
-  id, name, path_pattern, match_type, upstream_id, priority, enabled, auth_required
-) VALUES (
-  'route_apigate_admin',
-  'apigate-admin',
-  '/admin/*',
-  'prefix',
-  'upstream_apigate_internal', -- Points to APIGate itself
-  5,
-  1,
-  0
-);
-```
-
-**Option B: Keep Manual Configuration (CURRENT)**
-- Continue using manually configured routes
-- Keep `HOSTER_APIGATE_AUTO_REGISTER=false`
-- Simple and working for now
-
-### Priority 3: Create Release
+### Priority 2: Create Release
 
 **Once CI Passes:**
 
@@ -233,16 +202,6 @@ sudo systemctl status hoster
 
 ## Known Issues and Limitations
 
-### APIGate Auto-Registration
-
-**Issue:** Hoster frontend route catches `/admin/*` requests before they reach APIGate
-
-**Impact:** Auto-registration fails with 401 errors
-
-**Workaround:** Use manual route configuration with `HOSTER_APIGATE_AUTO_REGISTER=false`
-
-**Long-term Fix:** Add higher-priority admin route to APIGate or exclude `/admin/*` in frontend route pattern
-
 ### Local Testing Port Requirements
 
 **Issue:** App proxy requires port in URL for local testing
@@ -298,7 +257,6 @@ apigate serve --config apigate.yaml > apigate.log 2>&1 &
 # Terminal 2: Hoster
 cd /Users/artpar/workspace/code/hoster
 HOSTER_DATABASE_DSN=/tmp/hoster-e2e-test/hoster.db \
-HOSTER_APIGATE_AUTO_REGISTER=false \
 ./bin/hoster > /tmp/hoster-e2e-test/hoster.log 2>&1 &
 ```
 
@@ -324,7 +282,6 @@ HOSTER_APIGATE_AUTO_REGISTER=false \
 
 ### For Future Releases
 
-- APIGate auto-registration fixed
 - Real authentication enabled (not dev mode)
 - Billing integration working
 - Multi-node support

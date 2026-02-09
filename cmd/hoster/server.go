@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -11,7 +10,6 @@ import (
 	"syscall"
 
 	"github.com/artpar/hoster/internal/shell/api"
-	"github.com/artpar/hoster/internal/shell/apigate"
 	"github.com/artpar/hoster/internal/shell/billing"
 	"github.com/artpar/hoster/internal/shell/docker"
 	"github.com/artpar/hoster/internal/shell/proxy"
@@ -30,7 +28,6 @@ const (
 	ExitDatabaseError    = 2
 	ExitDockerError      = 3
 	ExitHTTPServerError  = 4
-	ExitAPIGateError     = 5
 )
 
 // =============================================================================
@@ -49,7 +46,6 @@ type Server struct {
 	healthChecker   *workers.HealthChecker
 	provisioner     *workers.Provisioner
 	dnsVerifier     *workers.DNSVerifier
-	registrar       *apigate.Registrar
 	logger          *slog.Logger
 }
 
@@ -160,15 +156,8 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 	var billingReporter *billing.Reporter
 	if cfg.Billing.Enabled {
 		var billingClient billing.Client
-		// Use centralized APIGate URL, fallback to billing-specific URL for backward compatibility
-		apiGateURL := cfg.APIGate.URL
-		if cfg.Billing.APIGateURL != "" {
-			apiGateURL = cfg.Billing.APIGateURL // Allow override for backward compatibility
-		}
+		apiGateURL := cfg.Billing.APIGateURL
 		apiKey := cfg.Billing.APIKey
-		if apiKey == "" {
-			apiKey = cfg.APIGate.AdminKey // Use admin key if no billing-specific key
-		}
 
 		if apiGateURL != "" {
 			billingClient = billing.NewAPIGateClient(billing.Config{
@@ -228,28 +217,6 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		logger.Info("app proxy disabled")
 	}
 
-	// Create APIGate registrar for automatic route registration
-	var registrar *apigate.Registrar
-	if cfg.APIGate.AutoRegister && cfg.APIGate.URL != "" {
-		// Build app proxy URL for registration
-		appProxyURL := ""
-		if cfg.Proxy.Enabled {
-			appProxyURL = fmt.Sprintf("http://localhost:%d", cfg.Proxy.Port)
-		}
-
-		registrar = apigate.NewRegistrar(apigate.RegistrarConfig{
-			APIGateURL:         cfg.APIGate.URL,
-			APIKey:             cfg.APIGate.AdminKey,
-			AppProxyURL:        appProxyURL,
-			AppProxyBaseDomain: cfg.Proxy.BaseDomain,
-			HosterAPIURL:       fmt.Sprintf("http://localhost:%d", cfg.Server.Port),
-		}, logger)
-
-		logger.Info("apigate auto-registration enabled",
-			"apigate_url", cfg.APIGate.URL,
-		)
-	}
-
 	return &Server{
 		config:          cfg,
 		httpServer:      httpServer,
@@ -261,7 +228,6 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		healthChecker:   healthChecker,
 		provisioner:     provisioner,
 		dnsVerifier:     dnsVerifier,
-		registrar:       registrar,
 		logger:          logger,
 	}, nil
 }
@@ -271,18 +237,6 @@ func (s *Server) Start(ctx context.Context) error {
 	// Setup signal handling
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
-	// Register routes with APIGate (central to Hoster deployment)
-	if s.registrar != nil {
-		s.logger.Info("registering with APIGate...")
-		if err := s.registrar.RegisterAll(ctx); err != nil {
-			s.logger.Error("failed to register with APIGate", "error", err)
-			// Don't fail startup - APIGate might not be ready yet
-			// Routes can be registered manually or on retry
-		} else {
-			s.logger.Info("APIGate registration complete")
-		}
-	}
 
 	// Start billing reporter in background (F009: Billing Integration)
 	if s.billingReporter != nil {
