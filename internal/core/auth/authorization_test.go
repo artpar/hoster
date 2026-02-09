@@ -12,7 +12,7 @@ import (
 // Test Helpers
 // =============================================================================
 
-func authenticatedContext(userID string) Context {
+func authenticatedContext(userID int) Context {
 	return Context{
 		UserID:        userID,
 		PlanID:        "plan_default",
@@ -21,7 +21,7 @@ func authenticatedContext(userID string) Context {
 	}
 }
 
-func contextWithLimits(userID string, limits PlanLimits) Context {
+func contextWithLimits(userID int, limits PlanLimits) Context {
 	return Context{
 		UserID:        userID,
 		PlanID:        "plan_custom",
@@ -34,28 +34,28 @@ func unauthenticatedContext() Context {
 	return Context{Authenticated: false}
 }
 
-func sampleTemplate(creatorID string, published bool) domain.Template {
+func sampleTemplate(creatorID int, published bool) domain.Template {
 	return domain.Template{
-		ID:        "tmpl_test",
-		Name:      "Test Template",
-		Slug:      "test-template",
-		Version:   "1.0.0",
-		CreatorID: creatorID,
-		Published: published,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ReferenceID: "tmpl_test",
+		Name:        "Test Template",
+		Slug:        "test-template",
+		Version:     "1.0.0",
+		CreatorID:   creatorID,
+		Published:   published,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}
 }
 
-func sampleDeployment(customerID string) domain.Deployment {
+func sampleDeployment(customerID int) domain.Deployment {
 	return domain.Deployment{
-		ID:         "deploy_test",
-		Name:       "Test Deployment",
-		CustomerID: customerID,
-		TemplateID: "tmpl_test",
-		Status:     domain.StatusRunning,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		ReferenceID: "deploy_test",
+		Name:        "Test Deployment",
+		CustomerID:  customerID,
+		TemplateID:  1,
+		Status:      domain.StatusRunning,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}
 }
 
@@ -64,68 +64,68 @@ func sampleDeployment(customerID string) domain.Deployment {
 // =============================================================================
 
 func TestCanViewTemplate_PublishedVisible(t *testing.T) {
-	template := sampleTemplate("creator_123", true)
+	template := sampleTemplate(123, true)
 
 	// Unauthenticated can view published
 	assert.True(t, CanViewTemplate(unauthenticatedContext(), template))
 
 	// Different user can view published
-	assert.True(t, CanViewTemplate(authenticatedContext("other_user"), template))
+	assert.True(t, CanViewTemplate(authenticatedContext(999), template))
 
 	// Creator can view published
-	assert.True(t, CanViewTemplate(authenticatedContext("creator_123"), template))
+	assert.True(t, CanViewTemplate(authenticatedContext(123), template))
 }
 
 func TestCanViewTemplate_UnpublishedCreatorOnly(t *testing.T) {
-	template := sampleTemplate("creator_123", false)
+	template := sampleTemplate(123, false)
 
 	// Unauthenticated cannot view unpublished
 	assert.False(t, CanViewTemplate(unauthenticatedContext(), template))
 
 	// Different user cannot view unpublished
-	assert.False(t, CanViewTemplate(authenticatedContext("other_user"), template))
+	assert.False(t, CanViewTemplate(authenticatedContext(999), template))
 
 	// Creator can view unpublished
-	assert.True(t, CanViewTemplate(authenticatedContext("creator_123"), template))
+	assert.True(t, CanViewTemplate(authenticatedContext(123), template))
 }
 
 func TestCanModifyTemplate_CreatorOnly(t *testing.T) {
-	template := sampleTemplate("creator_123", true)
+	template := sampleTemplate(123, true)
 
 	// Unauthenticated cannot modify
 	assert.False(t, CanModifyTemplate(unauthenticatedContext(), template))
 
 	// Different user cannot modify
-	assert.False(t, CanModifyTemplate(authenticatedContext("other_user"), template))
+	assert.False(t, CanModifyTemplate(authenticatedContext(999), template))
 
 	// Creator can modify
-	assert.True(t, CanModifyTemplate(authenticatedContext("creator_123"), template))
+	assert.True(t, CanModifyTemplate(authenticatedContext(123), template))
 }
 
 func TestCanDeleteTemplate_CreatorOnly(t *testing.T) {
-	template := sampleTemplate("creator_123", true)
+	template := sampleTemplate(123, true)
 
 	// Unauthenticated cannot delete
 	assert.False(t, CanDeleteTemplate(unauthenticatedContext(), template))
 
 	// Different user cannot delete
-	assert.False(t, CanDeleteTemplate(authenticatedContext("other_user"), template))
+	assert.False(t, CanDeleteTemplate(authenticatedContext(999), template))
 
 	// Creator can delete
-	assert.True(t, CanDeleteTemplate(authenticatedContext("creator_123"), template))
+	assert.True(t, CanDeleteTemplate(authenticatedContext(123), template))
 }
 
 func TestCanPublishTemplate_CreatorOnly(t *testing.T) {
-	template := sampleTemplate("creator_123", false)
+	template := sampleTemplate(123, false)
 
 	// Unauthenticated cannot publish
 	assert.False(t, CanPublishTemplate(unauthenticatedContext(), template))
 
 	// Different user cannot publish
-	assert.False(t, CanPublishTemplate(authenticatedContext("other_user"), template))
+	assert.False(t, CanPublishTemplate(authenticatedContext(999), template))
 
 	// Creator can publish
-	assert.True(t, CanPublishTemplate(authenticatedContext("creator_123"), template))
+	assert.True(t, CanPublishTemplate(authenticatedContext(123), template))
 }
 
 // =============================================================================
@@ -133,42 +133,42 @@ func TestCanPublishTemplate_CreatorOnly(t *testing.T) {
 // =============================================================================
 
 func TestCanViewDeployment_OwnerOnly(t *testing.T) {
-	deployment := sampleDeployment("customer_456")
+	deployment := sampleDeployment(456)
 
 	// Unauthenticated cannot view
 	assert.False(t, CanViewDeployment(unauthenticatedContext(), deployment))
 
 	// Different user cannot view
-	assert.False(t, CanViewDeployment(authenticatedContext("other_user"), deployment))
+	assert.False(t, CanViewDeployment(authenticatedContext(999), deployment))
 
 	// Owner can view
-	assert.True(t, CanViewDeployment(authenticatedContext("customer_456"), deployment))
+	assert.True(t, CanViewDeployment(authenticatedContext(456), deployment))
 }
 
 func TestCanManageDeployment_OwnerOnly(t *testing.T) {
-	deployment := sampleDeployment("customer_456")
+	deployment := sampleDeployment(456)
 
 	// Unauthenticated cannot manage
 	assert.False(t, CanManageDeployment(unauthenticatedContext(), deployment))
 
 	// Different user cannot manage
-	assert.False(t, CanManageDeployment(authenticatedContext("other_user"), deployment))
+	assert.False(t, CanManageDeployment(authenticatedContext(999), deployment))
 
 	// Owner can manage
-	assert.True(t, CanManageDeployment(authenticatedContext("customer_456"), deployment))
+	assert.True(t, CanManageDeployment(authenticatedContext(456), deployment))
 }
 
 func TestCanDeleteDeployment_OwnerOnly(t *testing.T) {
-	deployment := sampleDeployment("customer_456")
+	deployment := sampleDeployment(456)
 
 	// Unauthenticated cannot delete
 	assert.False(t, CanDeleteDeployment(unauthenticatedContext(), deployment))
 
 	// Different user cannot delete
-	assert.False(t, CanDeleteDeployment(authenticatedContext("other_user"), deployment))
+	assert.False(t, CanDeleteDeployment(authenticatedContext(999), deployment))
 
 	// Owner can delete
-	assert.True(t, CanDeleteDeployment(authenticatedContext("customer_456"), deployment))
+	assert.True(t, CanDeleteDeployment(authenticatedContext(456), deployment))
 }
 
 // =============================================================================
@@ -183,7 +183,7 @@ func TestCanCreateDeployment_Unauthenticated(t *testing.T) {
 }
 
 func TestCanCreateDeployment_WithinLimit(t *testing.T) {
-	ctx := contextWithLimits("user_123", PlanLimits{MaxDeployments: 5})
+	ctx := contextWithLimits(123, PlanLimits{MaxDeployments: 5})
 
 	ok, reason := CanCreateDeployment(ctx, 0)
 	assert.True(t, ok)
@@ -195,7 +195,7 @@ func TestCanCreateDeployment_WithinLimit(t *testing.T) {
 }
 
 func TestCanCreateDeployment_AtLimit(t *testing.T) {
-	ctx := contextWithLimits("user_123", PlanLimits{MaxDeployments: 5})
+	ctx := contextWithLimits(123, PlanLimits{MaxDeployments: 5})
 
 	ok, reason := CanCreateDeployment(ctx, 5)
 
@@ -204,7 +204,7 @@ func TestCanCreateDeployment_AtLimit(t *testing.T) {
 }
 
 func TestCanCreateDeployment_OverLimit(t *testing.T) {
-	ctx := contextWithLimits("user_123", PlanLimits{MaxDeployments: 5})
+	ctx := contextWithLimits(123, PlanLimits{MaxDeployments: 5})
 
 	ok, reason := CanCreateDeployment(ctx, 10)
 
@@ -214,7 +214,7 @@ func TestCanCreateDeployment_OverLimit(t *testing.T) {
 
 func TestCanCreateDeployment_DefaultLimits(t *testing.T) {
 	// Default limits allow only 1 deployment
-	ctx := authenticatedContext("user_123")
+	ctx := authenticatedContext(123)
 
 	ok, _ := CanCreateDeployment(ctx, 0)
 	assert.True(t, ok)
@@ -236,7 +236,7 @@ func TestValidateResourceLimits_Unauthenticated(t *testing.T) {
 }
 
 func TestValidateResourceLimits_WithinLimits(t *testing.T) {
-	ctx := contextWithLimits("user_123", PlanLimits{
+	ctx := contextWithLimits(123, PlanLimits{
 		MaxCPUCores: 4.0,
 		MaxMemoryMB: 8192,
 		MaxDiskMB:   51200,
@@ -252,7 +252,7 @@ func TestValidateResourceLimits_WithinLimits(t *testing.T) {
 }
 
 func TestValidateResourceLimits_ExactlyAtLimits(t *testing.T) {
-	ctx := contextWithLimits("user_123", PlanLimits{
+	ctx := contextWithLimits(123, PlanLimits{
 		MaxCPUCores: 4.0,
 		MaxMemoryMB: 8192,
 		MaxDiskMB:   51200,
@@ -268,7 +268,7 @@ func TestValidateResourceLimits_ExactlyAtLimits(t *testing.T) {
 }
 
 func TestValidateResourceLimits_CPUExceeded(t *testing.T) {
-	ctx := contextWithLimits("user_123", PlanLimits{
+	ctx := contextWithLimits(123, PlanLimits{
 		MaxCPUCores: 4.0,
 		MaxMemoryMB: 8192,
 		MaxDiskMB:   51200,
@@ -285,7 +285,7 @@ func TestValidateResourceLimits_CPUExceeded(t *testing.T) {
 }
 
 func TestValidateResourceLimits_MemoryExceeded(t *testing.T) {
-	ctx := contextWithLimits("user_123", PlanLimits{
+	ctx := contextWithLimits(123, PlanLimits{
 		MaxCPUCores: 4.0,
 		MaxMemoryMB: 8192,
 		MaxDiskMB:   51200,
@@ -302,7 +302,7 @@ func TestValidateResourceLimits_MemoryExceeded(t *testing.T) {
 }
 
 func TestValidateResourceLimits_DiskExceeded(t *testing.T) {
-	ctx := contextWithLimits("user_123", PlanLimits{
+	ctx := contextWithLimits(123, PlanLimits{
 		MaxCPUCores: 4.0,
 		MaxMemoryMB: 8192,
 		MaxDiskMB:   51200,
@@ -319,7 +319,7 @@ func TestValidateResourceLimits_DiskExceeded(t *testing.T) {
 }
 
 func TestValidateResourceLimits_ZeroCurrentUsage(t *testing.T) {
-	ctx := contextWithLimits("user_123", PlanLimits{
+	ctx := contextWithLimits(123, PlanLimits{
 		MaxCPUCores: 2.0,
 		MaxMemoryMB: 4096,
 		MaxDiskMB:   20480,
@@ -357,7 +357,7 @@ func TestResourcesFromDomain(t *testing.T) {
 // =============================================================================
 
 func TestRequireAuthentication_Authenticated(t *testing.T) {
-	ok, reason := RequireAuthentication(authenticatedContext("user_123"))
+	ok, reason := RequireAuthentication(authenticatedContext(123))
 
 	assert.True(t, ok)
 	assert.Empty(t, reason)
@@ -375,39 +375,39 @@ func TestRequireAuthentication_Unauthenticated(t *testing.T) {
 // =============================================================================
 
 func TestEmptyUserID_Template(t *testing.T) {
-	// Context with empty UserID should be treated as unauthenticated
+	// Context with zero UserID should be treated as unauthenticated
 	ctx := Context{
-		UserID:        "",
+		UserID:        0,
 		Authenticated: true, // Buggy state - authenticated but no UserID
 	}
-	template := sampleTemplate("creator_123", false)
+	template := sampleTemplate(123, false)
 
 	// Should not match creator
 	assert.False(t, CanModifyTemplate(ctx, template))
 }
 
 func TestEmptyCreatorID_Template(t *testing.T) {
-	// Template with empty CreatorID
+	// Template with zero CreatorID
 	template := domain.Template{
-		ID:        "tmpl_test",
-		CreatorID: "",
-		Published: false,
+		ReferenceID: "tmpl_test",
+		CreatorID:   0,
+		Published:   false,
 	}
-	ctx := authenticatedContext("")
+	ctx := authenticatedContext(0)
 
-	// Empty matches empty
+	// Zero matches zero
 	assert.True(t, CanModifyTemplate(ctx, template))
 }
 
 func TestEmptyCustomerID_Deployment(t *testing.T) {
-	// Deployment with empty CustomerID
+	// Deployment with zero CustomerID
 	deployment := domain.Deployment{
-		ID:         "deploy_test",
-		CustomerID: "",
+		ReferenceID: "deploy_test",
+		CustomerID:  0,
 	}
-	ctx := authenticatedContext("")
+	ctx := authenticatedContext(0)
 
-	// Empty matches empty
+	// Zero matches zero
 	assert.True(t, CanViewDeployment(ctx, deployment))
 }
 
@@ -415,9 +415,9 @@ func TestEmptyCustomerID_Deployment(t *testing.T) {
 // Node Authorization Tests
 // =============================================================================
 
-func sampleNode(creatorID string) domain.Node {
+func sampleNode(creatorID int) domain.Node {
 	return domain.Node{
-		ID:           "node_test",
+		ReferenceID:  "node_test",
 		Name:         "Test Node",
 		CreatorID:    creatorID,
 		SSHHost:      "192.168.1.100",
@@ -430,9 +430,9 @@ func sampleNode(creatorID string) domain.Node {
 	}
 }
 
-func sampleSSHKey(creatorID string) domain.SSHKey {
+func sampleSSHKey(creatorID int) domain.SSHKey {
 	return domain.SSHKey{
-		ID:          "sshkey_test",
+		ReferenceID: "sshkey_test",
 		CreatorID:   creatorID,
 		Name:        "Test Key",
 		Fingerprint: "SHA256:abc123",
@@ -441,29 +441,29 @@ func sampleSSHKey(creatorID string) domain.SSHKey {
 }
 
 func TestCanViewNode_CreatorOnly(t *testing.T) {
-	node := sampleNode("creator_123")
+	node := sampleNode(123)
 
 	// Unauthenticated cannot view
 	assert.False(t, CanViewNode(unauthenticatedContext(), node))
 
 	// Different user cannot view
-	assert.False(t, CanViewNode(authenticatedContext("other_user"), node))
+	assert.False(t, CanViewNode(authenticatedContext(999), node))
 
 	// Creator can view
-	assert.True(t, CanViewNode(authenticatedContext("creator_123"), node))
+	assert.True(t, CanViewNode(authenticatedContext(123), node))
 }
 
 func TestCanManageNode_CreatorOnly(t *testing.T) {
-	node := sampleNode("creator_123")
+	node := sampleNode(123)
 
 	// Unauthenticated cannot manage
 	assert.False(t, CanManageNode(unauthenticatedContext(), node))
 
 	// Different user cannot manage
-	assert.False(t, CanManageNode(authenticatedContext("other_user"), node))
+	assert.False(t, CanManageNode(authenticatedContext(999), node))
 
 	// Creator can manage
-	assert.True(t, CanManageNode(authenticatedContext("creator_123"), node))
+	assert.True(t, CanManageNode(authenticatedContext(123), node))
 }
 
 func TestCanCreateNode_AuthenticatedOnly(t *testing.T) {
@@ -471,7 +471,7 @@ func TestCanCreateNode_AuthenticatedOnly(t *testing.T) {
 	assert.False(t, CanCreateNode(unauthenticatedContext()))
 
 	// Any authenticated user can create
-	assert.True(t, CanCreateNode(authenticatedContext("any_user")))
+	assert.True(t, CanCreateNode(authenticatedContext(1)))
 }
 
 // =============================================================================
@@ -479,29 +479,29 @@ func TestCanCreateNode_AuthenticatedOnly(t *testing.T) {
 // =============================================================================
 
 func TestCanViewSSHKey_CreatorOnly(t *testing.T) {
-	key := sampleSSHKey("creator_123")
+	key := sampleSSHKey(123)
 
 	// Unauthenticated cannot view
 	assert.False(t, CanViewSSHKey(unauthenticatedContext(), key))
 
 	// Different user cannot view
-	assert.False(t, CanViewSSHKey(authenticatedContext("other_user"), key))
+	assert.False(t, CanViewSSHKey(authenticatedContext(999), key))
 
 	// Creator can view
-	assert.True(t, CanViewSSHKey(authenticatedContext("creator_123"), key))
+	assert.True(t, CanViewSSHKey(authenticatedContext(123), key))
 }
 
 func TestCanManageSSHKey_CreatorOnly(t *testing.T) {
-	key := sampleSSHKey("creator_123")
+	key := sampleSSHKey(123)
 
 	// Unauthenticated cannot manage
 	assert.False(t, CanManageSSHKey(unauthenticatedContext(), key))
 
 	// Different user cannot manage
-	assert.False(t, CanManageSSHKey(authenticatedContext("other_user"), key))
+	assert.False(t, CanManageSSHKey(authenticatedContext(999), key))
 
 	// Creator can manage
-	assert.True(t, CanManageSSHKey(authenticatedContext("creator_123"), key))
+	assert.True(t, CanManageSSHKey(authenticatedContext(123), key))
 }
 
 func TestCanCreateSSHKey_AuthenticatedOnly(t *testing.T) {
@@ -509,5 +509,5 @@ func TestCanCreateSSHKey_AuthenticatedOnly(t *testing.T) {
 	assert.False(t, CanCreateSSHKey(unauthenticatedContext()))
 
 	// Any authenticated user can create
-	assert.True(t, CanCreateSSHKey(authenticatedContext("any_user")))
+	assert.True(t, CanCreateSSHKey(authenticatedContext(1)))
 }

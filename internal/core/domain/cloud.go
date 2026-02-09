@@ -70,8 +70,9 @@ func (p ProviderType) DisplayName() string {
 
 // CloudCredential represents encrypted cloud provider credentials.
 type CloudCredential struct {
-	ID                   string       `json:"id"`
-	CreatorID            string       `json:"creator_id"`
+	ID                   int          `json:"-"`
+	ReferenceID          string       `json:"id"`
+	CreatorID            int          `json:"-"`
 	Name                 string       `json:"name"`
 	Provider             ProviderType `json:"provider"`
 	CredentialsEncrypted []byte       `json:"-"` // Never serialize
@@ -86,7 +87,7 @@ func GenerateCredentialID() string {
 }
 
 // NewCloudCredential creates a new cloud credential with validation.
-func NewCloudCredential(creatorID, name string, provider ProviderType, encryptedCreds []byte, defaultRegion string) (*CloudCredential, error) {
+func NewCloudCredential(creatorID int, name string, provider ProviderType, encryptedCreds []byte, defaultRegion string) (*CloudCredential, error) {
 	if err := ValidateCredentialName(name); err != nil {
 		return nil, err
 	}
@@ -96,13 +97,13 @@ func NewCloudCredential(creatorID, name string, provider ProviderType, encrypted
 	if len(encryptedCreds) == 0 {
 		return nil, ErrCredentialsRequired
 	}
-	if creatorID == "" {
+	if creatorID == 0 {
 		return nil, errors.New("creator ID is required")
 	}
 
 	now := time.Now()
 	return &CloudCredential{
-		ID:                   GenerateCredentialID(),
+		ReferenceID:          GenerateCredentialID(),
 		CreatorID:            creatorID,
 		Name:                 name,
 		Provider:             provider,
@@ -182,9 +183,11 @@ func ValidateProvisionTransition(from, to ProvisionStatus) error {
 
 // CloudProvision represents an asynchronous cloud instance provisioning job.
 type CloudProvision struct {
-	ID                 string          `json:"id"`
-	CreatorID          string          `json:"creator_id"`
-	CredentialID       string          `json:"credential_id"`
+	ID                 int             `json:"-"`
+	ReferenceID        string          `json:"id"`
+	CreatorID          int             `json:"-"`
+	CredentialID       int             `json:"-"`
+	CredentialRefID    string          `json:"credential_id"`
 	Provider           ProviderType    `json:"provider"`
 	Status             ProvisionStatus `json:"status"`
 	InstanceName       string          `json:"instance_name"`
@@ -207,11 +210,11 @@ func GenerateProvisionID() string {
 }
 
 // NewCloudProvision creates a new cloud provision with validation.
-func NewCloudProvision(creatorID, credentialID string, provider ProviderType, instanceName, region, size string) (*CloudProvision, error) {
-	if creatorID == "" {
+func NewCloudProvision(creatorID, credentialID int, provider ProviderType, instanceName, region, size string) (*CloudProvision, error) {
+	if creatorID == 0 {
 		return nil, errors.New("creator ID is required")
 	}
-	if credentialID == "" {
+	if credentialID == 0 {
 		return nil, ErrProvisionCredentialRequired
 	}
 	if !provider.IsValid() {
@@ -229,7 +232,7 @@ func NewCloudProvision(creatorID, credentialID string, provider ProviderType, in
 
 	now := time.Now()
 	return &CloudProvision{
-		ID:           GenerateProvisionID(),
+		ReferenceID:  GenerateProvisionID(),
 		CreatorID:    creatorID,
 		CredentialID: credentialID,
 		Provider:     provider,

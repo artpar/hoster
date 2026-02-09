@@ -76,10 +76,10 @@ func (k SSHKey) GetReferencedStructs() []jsonapi.MarshalIdentifier {
 // Note: The encrypted private key is NEVER included in the response.
 func SSHKeyFromDomain(k *domain.SSHKey) SSHKey {
 	return SSHKey{
-		ID:          k.ID,
+		ID:          k.ReferenceID,
 		Name:        k.Name,
 		Fingerprint: k.Fingerprint,
-		CreatorID:   k.CreatorID,
+		CreatorID:   "",
 		CreatedAt:   k.CreatedAt,
 		// PrivateKey is intentionally NOT included for security
 	}
@@ -269,7 +269,7 @@ func (r SSHKeyResource) Create(obj interface{}, req api2go.Request) (api2go.Resp
 
 	// Create domain SSH key
 	domainKey := &domain.SSHKey{
-		ID:                  domain.GenerateSSHKeyID(),
+		ReferenceID:         domain.GenerateSSHKeyID(),
 		CreatorID:           authCtx.UserID,
 		Name:                sshKey.Name,
 		PrivateKeyEncrypted: encryptedKey,

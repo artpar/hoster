@@ -15,7 +15,7 @@ func TestNewTemplate_ValidInput(t *testing.T) {
 	template, err := NewTemplate("WordPress Blog", "1.0.0", validComposeSpec)
 	require.NoError(t, err)
 
-	assert.NotEmpty(t, template.ID)
+	assert.NotEmpty(t, template.ReferenceID)
 	assert.Equal(t, "WordPress Blog", template.Name)
 	assert.Equal(t, "wordpress-blog", template.Slug)
 	assert.Equal(t, "1.0.0", template.Version)

@@ -15,14 +15,14 @@ func TestNewDeployment_ValidInput(t *testing.T) {
 	template := createValidTemplate()
 	variables := map[string]string{"DB_PASSWORD": "secret123"}
 
-	deployment, err := NewDeployment(template, "customer-123", variables)
+	deployment, err := NewDeployment(template, 1, variables)
 	require.NoError(t, err)
 
-	assert.NotEmpty(t, deployment.ID)
+	assert.NotEmpty(t, deployment.ReferenceID)
 	assert.Contains(t, deployment.Name, template.Slug)
 	assert.Equal(t, template.ID, deployment.TemplateID)
 	assert.Equal(t, template.Version, deployment.TemplateVersion)
-	assert.Equal(t, "customer-123", deployment.CustomerID)
+	assert.Equal(t, 1, deployment.CustomerID)
 	assert.Equal(t, StatusPending, deployment.Status)
 	assert.Equal(t, "secret123", deployment.Variables["DB_PASSWORD"])
 	assert.NotZero(t, deployment.CreatedAt)
@@ -32,7 +32,7 @@ func TestNewDeployment_MissingRequiredVariable(t *testing.T) {
 	template := createValidTemplate()
 	variables := map[string]string{} // Missing DB_PASSWORD
 
-	_, err := NewDeployment(template, "customer-123", variables)
+	_, err := NewDeployment(template, 1, variables)
 	assert.ErrorIs(t, err, ErrMissingVariable)
 }
 
@@ -41,7 +41,7 @@ func TestNewDeployment_UnpublishedTemplate(t *testing.T) {
 	template.Published = false
 	variables := map[string]string{"DB_PASSWORD": "secret123"}
 
-	_, err := NewDeployment(template, "customer-123", variables)
+	_, err := NewDeployment(template, 1, variables)
 	assert.ErrorIs(t, err, ErrTemplateNotPublished)
 }
 
@@ -307,11 +307,12 @@ func TestValidateDeploymentVariables_OptionalMissing(t *testing.T) {
 
 func createValidTemplate() Template {
 	return Template{
-		ID:        "template-123",
-		Name:      "WordPress Blog",
-		Slug:      "wordpress-blog",
-		Version:   "1.0.0",
-		Published: true,
+		ID:          1,
+		ReferenceID: "template-123",
+		Name:        "WordPress Blog",
+		Slug:        "wordpress-blog",
+		Version:     "1.0.0",
+		Published:   true,
 		Variables: []Variable{
 			{Name: "DB_PASSWORD", Label: "Database Password", Type: VarTypePassword, Required: true},
 		},
@@ -320,11 +321,12 @@ func createValidTemplate() Template {
 
 func createPendingDeployment() *Deployment {
 	return &Deployment{
-		ID:              "deployment-123",
+		ID:              1,
+		ReferenceID:     "deployment-123",
 		Name:            "wordpress-blog-abc123",
-		TemplateID:      "template-123",
+		TemplateID:      1,
 		TemplateVersion: "1.0.0",
-		CustomerID:      "customer-123",
+		CustomerID:      1,
 		Status:          StatusPending,
 		Variables:       map[string]string{"DB_PASSWORD": "secret123"},
 	}

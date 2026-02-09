@@ -13,6 +13,9 @@ import (
 
 // Store defines the persistence interface for Hoster entities.
 type Store interface {
+	// User resolution (upsert user from APIGate reference ID)
+	ResolveUser(ctx context.Context, referenceID, email, name, planID string) (int, error)
+
 	// Template operations
 	CreateTemplate(ctx context.Context, template *domain.Template) error
 	GetTemplate(ctx context.Context, id string) (*domain.Template, error)
@@ -28,7 +31,7 @@ type Store interface {
 	DeleteDeployment(ctx context.Context, id string) error
 	ListDeployments(ctx context.Context, opts ListOptions) ([]domain.Deployment, error)
 	ListDeploymentsByTemplate(ctx context.Context, templateID string, opts ListOptions) ([]domain.Deployment, error)
-	ListDeploymentsByCustomer(ctx context.Context, customerID string, opts ListOptions) ([]domain.Deployment, error)
+	ListDeploymentsByCustomer(ctx context.Context, customerID int, opts ListOptions) ([]domain.Deployment, error)
 
 	// Proxy-related deployment operations
 	GetDeploymentByDomain(ctx context.Context, hostname string) (*domain.Deployment, error)
@@ -49,7 +52,7 @@ type Store interface {
 	GetNode(ctx context.Context, id string) (*domain.Node, error)
 	UpdateNode(ctx context.Context, node *domain.Node) error
 	DeleteNode(ctx context.Context, id string) error
-	ListNodesByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.Node, error)
+	ListNodesByCreator(ctx context.Context, creatorID int, opts ListOptions) ([]domain.Node, error)
 	ListOnlineNodes(ctx context.Context) ([]domain.Node, error)
 	ListCheckableNodes(ctx context.Context) ([]domain.Node, error) // Returns nodes not in maintenance mode
 
@@ -57,19 +60,19 @@ type Store interface {
 	CreateSSHKey(ctx context.Context, key *domain.SSHKey) error
 	GetSSHKey(ctx context.Context, id string) (*domain.SSHKey, error)
 	DeleteSSHKey(ctx context.Context, id string) error
-	ListSSHKeysByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.SSHKey, error)
+	ListSSHKeysByCreator(ctx context.Context, creatorID int, opts ListOptions) ([]domain.SSHKey, error)
 
 	// Cloud Credential operations
 	CreateCloudCredential(ctx context.Context, cred *domain.CloudCredential) error
 	GetCloudCredential(ctx context.Context, id string) (*domain.CloudCredential, error)
 	DeleteCloudCredential(ctx context.Context, id string) error
-	ListCloudCredentialsByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.CloudCredential, error)
+	ListCloudCredentialsByCreator(ctx context.Context, creatorID int, opts ListOptions) ([]domain.CloudCredential, error)
 
 	// Cloud Provision operations
 	CreateCloudProvision(ctx context.Context, prov *domain.CloudProvision) error
 	GetCloudProvision(ctx context.Context, id string) (*domain.CloudProvision, error)
 	UpdateCloudProvision(ctx context.Context, prov *domain.CloudProvision) error
-	ListCloudProvisionsByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.CloudProvision, error)
+	ListCloudProvisionsByCreator(ctx context.Context, creatorID int, opts ListOptions) ([]domain.CloudProvision, error)
 	ListActiveProvisions(ctx context.Context) ([]domain.CloudProvision, error)
 
 	// Transaction support

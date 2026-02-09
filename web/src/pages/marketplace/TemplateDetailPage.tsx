@@ -46,7 +46,12 @@ export function TemplateDetailPage() {
     navigate(`/deployments/${deploymentId}`);
   };
 
+  const isZeroDate = (dateString: string) => {
+    return !dateString || dateString.startsWith('0001-01-01');
+  };
+
   const formatDate = (dateString: string) => {
+    if (isZeroDate(dateString)) return null;
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
@@ -169,14 +174,16 @@ export function TemplateDetailPage() {
           {/* Info Card */}
           <Card>
             <CardContent className="pt-6 space-y-4">
-              <div className="flex items-center gap-3 text-sm">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p className="text-muted-foreground">Published</p>
-                  <p className="font-medium">{formatDate(template.attributes.created_at)}</p>
+              {!isZeroDate(template.attributes.created_at) && (
+                <div className="flex items-center gap-3 text-sm">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-muted-foreground">Published</p>
+                    <p className="font-medium">{formatDate(template.attributes.created_at)}</p>
+                  </div>
                 </div>
-              </div>
-              {template.attributes.updated_at !== template.attributes.created_at && (
+              )}
+              {!isZeroDate(template.attributes.updated_at) && template.attributes.updated_at !== template.attributes.created_at && (
                 <div className="flex items-center gap-3 text-sm">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <div>

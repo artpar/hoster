@@ -44,11 +44,11 @@ func (c CloudCredential) GetReferencedStructs() []jsonapi.MarshalIdentifier { re
 // CloudCredentialFromDomain converts a domain.CloudCredential to a JSON:API CloudCredential.
 func CloudCredentialFromDomain(c *domain.CloudCredential) CloudCredential {
 	return CloudCredential{
-		ID:            c.ID,
+		ID:            c.ReferenceID,
 		Name:          c.Name,
 		Provider:      string(c.Provider),
 		DefaultRegion: c.DefaultRegion,
-		CreatorID:     c.CreatorID,
+		CreatorID:     "",
 		CreatedAt:     c.CreatedAt,
 		UpdatedAt:     c.UpdatedAt,
 	}

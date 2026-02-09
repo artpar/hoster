@@ -489,7 +489,7 @@ func (h *MonitoringHandlers) EventsHandler(w http.ResponseWriter, r *http.Reques
 	var eventEntries []eventEntry
 	for _, e := range events {
 		eventEntries = append(eventEntries, eventEntry{
-			ID:        e.ID,
+			ID:        e.ReferenceID,
 			Type:      string(e.Type),
 			Container: e.Container,
 			Message:   e.Message,

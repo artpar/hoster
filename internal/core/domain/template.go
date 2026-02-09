@@ -122,7 +122,8 @@ type Resources struct {
 
 // Template represents a deployable package definition.
 type Template struct {
-	ID                   string       `json:"id"`
+	ID                   int          `json:"-"`
+	ReferenceID          string       `json:"id"`
 	Name                 string       `json:"name"`
 	Slug                 string       `json:"slug"`
 	Description          string       `json:"description,omitempty"`
@@ -136,7 +137,7 @@ type Template struct {
 	Category             string       `json:"category,omitempty"`
 	Tags                 []string     `json:"tags,omitempty"`
 	Published            bool         `json:"published"`
-	CreatorID            string       `json:"creator_id"`
+	CreatorID            int          `json:"-"`
 	CreatedAt            time.Time    `json:"created_at"`
 	UpdatedAt            time.Time    `json:"updated_at"`
 }
@@ -156,7 +157,7 @@ func NewTemplate(name, version, composeSpec string) (*Template, error) {
 
 	now := time.Now().UTC()
 	return &Template{
-		ID:          uuid.New().String(),
+		ReferenceID: "tmpl_" + uuid.New().String()[:8],
 		Name:        name,
 		Slug:        GenerateSlug(name),
 		Version:     version,

@@ -220,12 +220,12 @@ func (h *HealthChecker) checkNode(ctx context.Context, node *domain.Node) {
 // pingNode checks if a node is reachable and Docker is running.
 func (h *HealthChecker) pingNode(ctx context.Context, node *domain.Node) error {
 	// Skip nodes without SSH key configured
-	if node.SSHKeyID == "" {
+	if node.SSHKeyID == 0 {
 		return domain.ErrSSHHostRequired
 	}
 
 	// Get the SSH key and decrypt it
-	sshKey, err := h.store.GetSSHKey(ctx, node.SSHKeyID)
+	sshKey, err := h.store.GetSSHKey(ctx, node.SSHKeyRefID)
 	if err != nil {
 		return err
 	}

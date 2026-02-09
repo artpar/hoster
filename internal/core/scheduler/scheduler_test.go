@@ -14,9 +14,9 @@ import (
 
 func makeNode(id, name string, status domain.NodeStatus, caps []string, cpu float64, mem, disk int64) domain.Node {
 	return domain.Node{
-		ID:           id,
+		ReferenceID:  id,
 		Name:         name,
-		CreatorID:    "creator_1",
+		CreatorID:    1,
 		Status:       status,
 		Capabilities: caps,
 		Capacity: domain.NodeCapacity{
@@ -32,9 +32,9 @@ func makeNode(id, name string, status domain.NodeStatus, caps []string, cpu floa
 
 func makeNodeWithUsage(id string, caps []string, cpuTotal, cpuUsed float64, memTotal, memUsed, diskTotal, diskUsed int64) domain.Node {
 	return domain.Node{
-		ID:           id,
+		ReferenceID:  id,
 		Name:         id,
-		CreatorID:    "creator_1",
+		CreatorID:    1,
 		Status:       domain.NodeStatusOnline,
 		Capabilities: caps,
 		Capacity: domain.NodeCapacity{
@@ -263,7 +263,7 @@ func TestScoreNode_WithRequired(t *testing.T) {
 
 func TestScoreNode_ZeroCapacity(t *testing.T) {
 	node := domain.Node{
-		ID:       "node_1",
+		ReferenceID: "node_1",
 		Status:   domain.NodeStatusOnline,
 		Capacity: domain.NodeCapacity{}, // All zeros
 	}
@@ -289,8 +289,8 @@ func TestFilterOnlineNodes(t *testing.T) {
 
 	result := FilterOnlineNodes(nodes)
 	assert.Len(t, result, 2)
-	assert.Equal(t, "online_1", result[0].ID)
-	assert.Equal(t, "online_2", result[1].ID)
+	assert.Equal(t, "online_1", result[0].ReferenceID)
+	assert.Equal(t, "online_2", result[1].ReferenceID)
 }
 
 func TestFilterByCapabilities(t *testing.T) {
@@ -307,7 +307,7 @@ func TestFilterByCapabilities(t *testing.T) {
 	// Require both GPU and standard
 	result = FilterByCapabilities(nodes, []string{"gpu", "standard"})
 	assert.Len(t, result, 1)
-	assert.Equal(t, "gpu_and_standard", result[0].ID)
+	assert.Equal(t, "gpu_and_standard", result[0].ReferenceID)
 
 	// Empty required should return all
 	result = FilterByCapabilities(nodes, []string{})
@@ -324,7 +324,7 @@ func TestFilterByPlanCapabilities(t *testing.T) {
 	// Plan allows only standard
 	result := FilterByPlanCapabilities(nodes, []string{"standard"})
 	assert.Len(t, result, 1)
-	assert.Equal(t, "standard_only", result[0].ID)
+	assert.Equal(t, "standard_only", result[0].ReferenceID)
 
 	// Plan allows standard and gpu
 	result = FilterByPlanCapabilities(nodes, []string{"standard", "gpu"})
@@ -351,7 +351,7 @@ func TestFilterByCapacity(t *testing.T) {
 	required = domain.Resources{CPUCores: 6, MemoryMB: 12000, DiskMB: 80000}
 	result = FilterByCapacity(nodes, required)
 	assert.Len(t, result, 1) // Only large
-	assert.Equal(t, "large", result[0].ID)
+	assert.Equal(t, "large", result[0].ReferenceID)
 }
 
 func TestSortByScore(t *testing.T) {
@@ -365,9 +365,9 @@ func TestSortByScore(t *testing.T) {
 	result := SortByScore(nodes, required)
 
 	assert.Len(t, result, 3)
-	assert.Equal(t, "idle", result[0].ID) // Highest score (most available)
-	assert.Equal(t, "half", result[1].ID)
-	assert.Equal(t, "busy", result[2].ID) // Lowest score (least available)
+	assert.Equal(t, "idle", result[0].ReferenceID) // Highest score (most available)
+	assert.Equal(t, "half", result[1].ReferenceID)
+	assert.Equal(t, "busy", result[2].ReferenceID) // Lowest score (least available)
 }
 
 // =============================================================================

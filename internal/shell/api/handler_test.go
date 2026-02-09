@@ -39,10 +39,10 @@ func (s *stubStore) CreateTemplate(ctx context.Context, t *domain.Template) erro
 	if s.err != nil {
 		return s.err
 	}
-	if _, exists := s.templates[t.ID]; exists {
-		return store.NewStoreError("CreateTemplate", "template", t.ID, "already exists", store.ErrDuplicateID)
+	if _, exists := s.templates[t.ReferenceID]; exists {
+		return store.NewStoreError("CreateTemplate", "template", t.ReferenceID, "already exists", store.ErrDuplicateID)
 	}
-	s.templates[t.ID] = t
+	s.templates[t.ReferenceID] = t
 	return nil
 }
 
@@ -73,10 +73,10 @@ func (s *stubStore) UpdateTemplate(ctx context.Context, t *domain.Template) erro
 	if s.err != nil {
 		return s.err
 	}
-	if _, ok := s.templates[t.ID]; !ok {
-		return store.NewStoreError("UpdateTemplate", "template", t.ID, "not found", store.ErrNotFound)
+	if _, ok := s.templates[t.ReferenceID]; !ok {
+		return store.NewStoreError("UpdateTemplate", "template", t.ReferenceID, "not found", store.ErrNotFound)
 	}
-	s.templates[t.ID] = t
+	s.templates[t.ReferenceID] = t
 	return nil
 }
 
@@ -106,10 +106,10 @@ func (s *stubStore) CreateDeployment(ctx context.Context, d *domain.Deployment) 
 	if s.err != nil {
 		return s.err
 	}
-	if _, exists := s.deployments[d.ID]; exists {
-		return store.NewStoreError("CreateDeployment", "deployment", d.ID, "already exists", store.ErrDuplicateID)
+	if _, exists := s.deployments[d.ReferenceID]; exists {
+		return store.NewStoreError("CreateDeployment", "deployment", d.ReferenceID, "already exists", store.ErrDuplicateID)
 	}
-	s.deployments[d.ID] = d
+	s.deployments[d.ReferenceID] = d
 	return nil
 }
 
@@ -128,10 +128,10 @@ func (s *stubStore) UpdateDeployment(ctx context.Context, d *domain.Deployment) 
 	if s.err != nil {
 		return s.err
 	}
-	if _, ok := s.deployments[d.ID]; !ok {
-		return store.NewStoreError("UpdateDeployment", "deployment", d.ID, "not found", store.ErrNotFound)
+	if _, ok := s.deployments[d.ReferenceID]; !ok {
+		return store.NewStoreError("UpdateDeployment", "deployment", d.ReferenceID, "not found", store.ErrNotFound)
 	}
-	s.deployments[d.ID] = d
+	s.deployments[d.ReferenceID] = d
 	return nil
 }
 
@@ -163,14 +163,14 @@ func (s *stubStore) ListDeploymentsByTemplate(ctx context.Context, templateID st
 	}
 	var result []domain.Deployment
 	for _, d := range s.deployments {
-		if d.TemplateID == templateID {
+		if d.TemplateRefID == templateID {
 			result = append(result, *d)
 		}
 	}
 	return result, nil
 }
 
-func (s *stubStore) ListDeploymentsByCustomer(ctx context.Context, customerID string, opts store.ListOptions) ([]domain.Deployment, error) {
+func (s *stubStore) ListDeploymentsByCustomer(ctx context.Context, customerID int, opts store.ListOptions) ([]domain.Deployment, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -218,6 +218,10 @@ func (s *stubStore) Close() error {
 	return nil
 }
 
+func (s *stubStore) ResolveUser(ctx context.Context, referenceID, email, name, planID string) (int, error) {
+	return 1, nil // Stub - always returns user ID 1
+}
+
 func (s *stubStore) CreateUsageEvent(ctx context.Context, event *domain.MeterEvent) error {
 	return nil // Stub - no-op for tests
 }
@@ -255,7 +259,7 @@ func (s *stubStore) DeleteNode(ctx context.Context, id string) error {
 	return nil // Stub - no-op for tests
 }
 
-func (s *stubStore) ListNodesByCreator(ctx context.Context, creatorID string, opts store.ListOptions) ([]domain.Node, error) {
+func (s *stubStore) ListNodesByCreator(ctx context.Context, creatorID int, opts store.ListOptions) ([]domain.Node, error) {
 	return nil, nil // Stub - empty for tests
 }
 
@@ -280,7 +284,7 @@ func (s *stubStore) DeleteSSHKey(ctx context.Context, id string) error {
 	return nil // Stub - no-op for tests
 }
 
-func (s *stubStore) ListSSHKeysByCreator(ctx context.Context, creatorID string, opts store.ListOptions) ([]domain.SSHKey, error) {
+func (s *stubStore) ListSSHKeysByCreator(ctx context.Context, creatorID int, opts store.ListOptions) ([]domain.SSHKey, error) {
 	return nil, nil // Stub - empty for tests
 }
 
@@ -305,7 +309,7 @@ func (s *stubStore) GetCloudCredential(ctx context.Context, id string) (*domain.
 	return nil, nil
 }
 func (s *stubStore) DeleteCloudCredential(ctx context.Context, id string) error { return nil }
-func (s *stubStore) ListCloudCredentialsByCreator(ctx context.Context, creatorID string, opts store.ListOptions) ([]domain.CloudCredential, error) {
+func (s *stubStore) ListCloudCredentialsByCreator(ctx context.Context, creatorID int, opts store.ListOptions) ([]domain.CloudCredential, error) {
 	return nil, nil
 }
 
@@ -319,7 +323,7 @@ func (s *stubStore) GetCloudProvision(ctx context.Context, id string) (*domain.C
 func (s *stubStore) UpdateCloudProvision(ctx context.Context, p *domain.CloudProvision) error {
 	return nil
 }
-func (s *stubStore) ListCloudProvisionsByCreator(ctx context.Context, creatorID string, opts store.ListOptions) ([]domain.CloudProvision, error) {
+func (s *stubStore) ListCloudProvisionsByCreator(ctx context.Context, creatorID int, opts store.ListOptions) ([]domain.CloudProvision, error) {
 	return nil, nil
 }
 func (s *stubStore) ListActiveProvisions(ctx context.Context) ([]domain.CloudProvision, error) {
@@ -480,24 +484,24 @@ func parseResponse[T any](t *testing.T, body io.Reader) T {
 func createTestTemplate(id, name string) *domain.Template {
 	now := time.Now()
 	return &domain.Template{
-		ID:          id,
+		ReferenceID: id,
 		Name:        name,
 		Slug:        name,
 		Version:     "1.0.0",
 		ComposeSpec: "services:\n  web:\n    image: nginx",
-		CreatorID:   "user-123",
+		CreatorID:   1,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
 }
 
 // createTestDeployment creates a valid deployment for testing.
-func createTestDeployment(id, templateID, customerID string) *domain.Deployment {
+func createTestDeployment(id, templateID string, customerID int) *domain.Deployment {
 	now := time.Now()
 	return &domain.Deployment{
-		ID:              id,
+		ReferenceID:     id,
 		Name:            "Test Deployment",
-		TemplateID:      templateID,
+		TemplateRefID:   templateID,
 		TemplateVersion: "1.0.0",
 		CustomerID:      customerID,
 		Status:          domain.StatusPending,
@@ -599,11 +603,11 @@ func TestCreateTemplate_Success(t *testing.T) {
 		Name:        "Test Template",
 		Version:     "1.0.0",
 		ComposeSpec: "services:\n  web:\n    image: nginx",
-		CreatorID:   "user-123",
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/templates", body)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "user-123") // Auth via header
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)
@@ -623,11 +627,11 @@ func TestCreateTemplate_MissingName(t *testing.T) {
 	body := jsonBody(t, CreateTemplateRequest{
 		Version:     "1.0.0",
 		ComposeSpec: "services:\n  web:\n    image: nginx",
-		CreatorID:   "user-123",
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/templates", body)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "user-123") // Auth via header
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)
@@ -645,11 +649,11 @@ func TestCreateTemplate_MissingVersion(t *testing.T) {
 	body := jsonBody(t, CreateTemplateRequest{
 		Name:        "Test Template",
 		ComposeSpec: "services:\n  web:\n    image: nginx",
-		CreatorID:   "user-123",
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/templates", body)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "user-123") // Auth via header
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)
@@ -664,13 +668,13 @@ func TestCreateTemplate_MissingComposeSpec(t *testing.T) {
 	h, _, _ := newTestHandler()
 
 	body := jsonBody(t, CreateTemplateRequest{
-		Name:      "Test Template",
-		Version:   "1.0.0",
-		CreatorID: "user-123",
+		Name:    "Test Template",
+		Version: "1.0.0",
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/templates", body)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "user-123") // Auth via header
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)
@@ -681,7 +685,7 @@ func TestCreateTemplate_MissingComposeSpec(t *testing.T) {
 	assert.Equal(t, "validation_error", resp.Code)
 }
 
-func TestCreateTemplate_MissingCreatorID(t *testing.T) {
+func TestCreateTemplate_Unauthenticated(t *testing.T) {
 	h, _, _ := newTestHandler()
 
 	body := jsonBody(t, CreateTemplateRequest{
@@ -692,14 +696,15 @@ func TestCreateTemplate_MissingCreatorID(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/templates", body)
 	req.Header.Set("Content-Type", "application/json")
+	// No X-User-ID header = unauthenticated
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
 	resp := parseResponse[ErrorResponse](t, w.Body)
-	assert.Equal(t, "validation_error", resp.Code)
+	assert.Equal(t, "auth_required", resp.Code)
 }
 
 func TestCreateTemplate_InvalidJSON(t *testing.T) {
@@ -707,6 +712,7 @@ func TestCreateTemplate_InvalidJSON(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/templates", bytes.NewReader([]byte("invalid json")))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "user-123") // Auth via header
 	w := httptest.NewRecorder()
 
 	h.Routes().ServeHTTP(w, req)
@@ -721,7 +727,7 @@ func TestGetTemplate_Success(t *testing.T) {
 	h, s, _ := newTestHandler()
 
 	template := createTestTemplate("tmpl_123", "Test Template")
-	s.templates[template.ID] = template
+	s.templates[template.ReferenceID] = template
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/templates/tmpl_123", nil)
 	w := httptest.NewRecorder()
@@ -805,7 +811,7 @@ func TestUpdateTemplate_Success(t *testing.T) {
 	h, s, _ := newTestHandler()
 
 	template := createTestTemplate("tmpl_123", "Original Name")
-	s.templates[template.ID] = template
+	s.templates[template.ReferenceID] = template
 
 	body := jsonBody(t, UpdateTemplateRequest{
 		Name:        "Updated Name",
@@ -846,7 +852,7 @@ func TestUpdateTemplate_Published(t *testing.T) {
 
 	template := createTestTemplate("tmpl_123", "Test Template")
 	template.Published = true
-	s.templates[template.ID] = template
+	s.templates[template.ReferenceID] = template
 
 	body := jsonBody(t, UpdateTemplateRequest{
 		Name: "Updated Name",
@@ -868,7 +874,7 @@ func TestDeleteTemplate_Success(t *testing.T) {
 	h, s, _ := newTestHandler()
 
 	template := createTestTemplate("tmpl_123", "Test Template")
-	s.templates[template.ID] = template
+	s.templates[template.ReferenceID] = template
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/templates/tmpl_123", nil)
 	w := httptest.NewRecorder()
@@ -894,10 +900,10 @@ func TestDeleteTemplate_HasDeployments(t *testing.T) {
 	h, s, _ := newTestHandler()
 
 	template := createTestTemplate("tmpl_123", "Test Template")
-	s.templates[template.ID] = template
+	s.templates[template.ReferenceID] = template
 
-	deployment := createTestDeployment("depl_456", "tmpl_123", "customer-1")
-	s.deployments[deployment.ID] = deployment
+	deployment := createTestDeployment("depl_456", "tmpl_123", 1)
+	s.deployments[deployment.ReferenceID] = deployment
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/templates/tmpl_123", nil)
 	w := httptest.NewRecorder()
@@ -915,7 +921,7 @@ func TestPublishTemplate_Success(t *testing.T) {
 
 	template := createTestTemplate("tmpl_123", "Test Template")
 	template.Published = false
-	s.templates[template.ID] = template
+	s.templates[template.ReferenceID] = template
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/templates/tmpl_123/publish", nil)
 	w := httptest.NewRecorder()
@@ -933,7 +939,7 @@ func TestPublishTemplate_AlreadyPublished(t *testing.T) {
 
 	template := createTestTemplate("tmpl_123", "Test Template")
 	template.Published = true
-	s.templates[template.ID] = template
+	s.templates[template.ReferenceID] = template
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/templates/tmpl_123/publish", nil)
 	w := httptest.NewRecorder()
@@ -966,7 +972,7 @@ func TestCreateDeployment_Success(t *testing.T) {
 
 	template := createTestTemplate("tmpl_123", "Test Template")
 	template.Published = true
-	s.templates[template.ID] = template
+	s.templates[template.ReferenceID] = template
 
 	body := jsonBody(t, CreateDeploymentRequest{
 		TemplateID: "tmpl_123",
@@ -1015,7 +1021,7 @@ func TestCreateDeployment_MissingCustomerID(t *testing.T) {
 
 	template := createTestTemplate("tmpl_123", "Test Template")
 	template.Published = true
-	s.templates[template.ID] = template
+	s.templates[template.ReferenceID] = template
 
 	body := jsonBody(t, CreateDeploymentRequest{
 		TemplateID: "tmpl_123",
@@ -1061,7 +1067,7 @@ func TestCreateDeployment_TemplateNotPublished(t *testing.T) {
 
 	template := createTestTemplate("tmpl_123", "Test Template")
 	template.Published = false
-	s.templates[template.ID] = template
+	s.templates[template.ReferenceID] = template
 
 	body := jsonBody(t, CreateDeploymentRequest{
 		TemplateID: "tmpl_123",
@@ -1097,8 +1103,8 @@ func TestCreateDeployment_InvalidJSON(t *testing.T) {
 func TestGetDeployment_Success(t *testing.T) {
 	h, s, _ := newTestHandler()
 
-	deployment := createTestDeployment("depl_123", "tmpl_456", "customer-1")
-	s.deployments[deployment.ID] = deployment
+	deployment := createTestDeployment("depl_123", "tmpl_456", 1)
+	s.deployments[deployment.ReferenceID] = deployment
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/deployments/depl_123", nil)
 	w := httptest.NewRecorder()
@@ -1128,8 +1134,8 @@ func TestGetDeployment_NotFound(t *testing.T) {
 func TestListDeployments_Success(t *testing.T) {
 	h, s, _ := newTestHandler()
 
-	s.deployments["depl_1"] = createTestDeployment("depl_1", "tmpl_123", "customer-1")
-	s.deployments["depl_2"] = createTestDeployment("depl_2", "tmpl_123", "customer-1")
+	s.deployments["depl_1"] = createTestDeployment("depl_1", "tmpl_123", 1)
+	s.deployments["depl_2"] = createTestDeployment("depl_2", "tmpl_123", 1)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/deployments", nil)
 	req.Header.Set("X-User-ID", "customer-1") // Auth via header
@@ -1161,8 +1167,8 @@ func TestListDeployments_Empty(t *testing.T) {
 func TestListDeployments_FilterByTemplate(t *testing.T) {
 	h, s, _ := newTestHandler()
 
-	s.deployments["depl_1"] = createTestDeployment("depl_1", "tmpl_123", "customer-1")
-	s.deployments["depl_2"] = createTestDeployment("depl_2", "tmpl_456", "customer-1")
+	s.deployments["depl_1"] = createTestDeployment("depl_1", "tmpl_123", 1)
+	s.deployments["depl_2"] = createTestDeployment("depl_2", "tmpl_456", 1)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/deployments?template_id=tmpl_123", nil)
 	req.Header.Set("X-User-ID", "customer-1") // Auth via header
@@ -1180,8 +1186,8 @@ func TestListDeployments_FilterByTemplate(t *testing.T) {
 func TestListDeployments_FilterByCustomer(t *testing.T) {
 	h, s, _ := newTestHandler()
 
-	s.deployments["depl_1"] = createTestDeployment("depl_1", "tmpl_123", "customer-1")
-	s.deployments["depl_2"] = createTestDeployment("depl_2", "tmpl_123", "customer-2")
+	s.deployments["depl_1"] = createTestDeployment("depl_1", "tmpl_123", 1)
+	s.deployments["depl_2"] = createTestDeployment("depl_2", "tmpl_123", 2)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/deployments?customer_id=customer-1", nil)
 	req.Header.Set("X-User-ID", "customer-1") // Auth via header
@@ -1193,14 +1199,14 @@ func TestListDeployments_FilterByCustomer(t *testing.T) {
 
 	resp := parseResponse[ListDeploymentsResponse](t, w.Body)
 	assert.Len(t, resp.Deployments, 1)
-	assert.Equal(t, "customer-1", resp.Deployments[0].CustomerID)
+	assert.Equal(t, "1", resp.Deployments[0].CustomerID)
 }
 
 func TestDeleteDeployment_Success(t *testing.T) {
 	h, s, _ := newTestHandler()
 
-	deployment := createTestDeployment("depl_123", "tmpl_456", "customer-1")
-	s.deployments[deployment.ID] = deployment
+	deployment := createTestDeployment("depl_123", "tmpl_456", 1)
+	s.deployments[deployment.ReferenceID] = deployment
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/deployments/depl_123", nil)
 	req.Header.Set("X-User-ID", "customer-1") // Auth via header
@@ -1226,15 +1232,15 @@ func TestDeleteDeployment_NotFound(t *testing.T) {
 func TestStartDeployment_Success(t *testing.T) {
 	h, s, _ := newTestHandler()
 
-	deployment := createTestDeployment("depl_123", "tmpl_456", "customer-1")
+	deployment := createTestDeployment("depl_123", "tmpl_456", 1)
 	deployment.Status = domain.StatusPending
 	deployment.NodeID = "node-1" // Node required for starting
-	s.deployments[deployment.ID] = deployment
+	s.deployments[deployment.ReferenceID] = deployment
 
 	// Also need the template for deployment start
 	template := createTestTemplate("tmpl_456", "Test Template")
 	template.Published = true
-	s.templates[template.ID] = template
+	s.templates[template.ReferenceID] = template
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments/depl_123/start", nil)
 	w := httptest.NewRecorder()
@@ -1261,9 +1267,9 @@ func TestStartDeployment_NotFound(t *testing.T) {
 func TestStartDeployment_AlreadyRunning(t *testing.T) {
 	h, s, _ := newTestHandler()
 
-	deployment := createTestDeployment("depl_123", "tmpl_456", "customer-1")
+	deployment := createTestDeployment("depl_123", "tmpl_456", 1)
 	deployment.Status = domain.StatusRunning
-	s.deployments[deployment.ID] = deployment
+	s.deployments[deployment.ReferenceID] = deployment
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments/depl_123/start", nil)
 	w := httptest.NewRecorder()
@@ -1279,9 +1285,9 @@ func TestStartDeployment_AlreadyRunning(t *testing.T) {
 func TestStopDeployment_Success(t *testing.T) {
 	h, s, _ := newTestHandler()
 
-	deployment := createTestDeployment("depl_123", "tmpl_456", "customer-1")
+	deployment := createTestDeployment("depl_123", "tmpl_456", 1)
 	deployment.Status = domain.StatusRunning
-	s.deployments[deployment.ID] = deployment
+	s.deployments[deployment.ReferenceID] = deployment
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments/depl_123/stop", nil)
 	w := httptest.NewRecorder()
@@ -1297,9 +1303,9 @@ func TestStopDeployment_Success(t *testing.T) {
 func TestStopDeployment_NotRunning(t *testing.T) {
 	h, s, _ := newTestHandler()
 
-	deployment := createTestDeployment("depl_123", "tmpl_456", "customer-1")
+	deployment := createTestDeployment("depl_123", "tmpl_456", 1)
 	deployment.Status = domain.StatusPending
-	s.deployments[deployment.ID] = deployment
+	s.deployments[deployment.ReferenceID] = deployment
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments/depl_123/stop", nil)
 	w := httptest.NewRecorder()

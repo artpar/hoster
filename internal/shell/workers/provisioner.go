@@ -137,7 +137,7 @@ func (p *Provisioner) runCycle() {
 }
 
 func (p *Provisioner) processProvision(ctx context.Context, prov *domain.CloudProvision) {
-	logger := p.logger.With("provision_id", prov.ID, "provider", prov.Provider, "status", prov.Status)
+	logger := p.logger.With("provision_id", prov.ReferenceID, "provider", prov.Provider, "status", prov.Status)
 
 	switch prov.Status {
 	case domain.ProvisionStatusPending:
@@ -180,7 +180,7 @@ func (p *Provisioner) stepCreateInstance(ctx context.Context, prov *domain.Cloud
 	}
 
 	sshKey := &domain.SSHKey{
-		ID:                  domain.GenerateSSHKeyID(),
+		ReferenceID:         domain.GenerateSSHKeyID(),
 		CreatorID:           prov.CreatorID,
 		Name:                fmt.Sprintf("cloud-%s", prov.InstanceName),
 		PrivateKeyEncrypted: encryptedKey,
@@ -193,12 +193,12 @@ func (p *Provisioner) stepCreateInstance(ctx context.Context, prov *domain.Cloud
 		return
 	}
 
-	prov.SSHKeyID = sshKey.ID
+	prov.SSHKeyID = sshKey.ReferenceID
 	prov.SetStep("Creating cloud instance")
 	p.store.UpdateCloudProvision(ctx, prov)
 
 	// Get credentials and create provider client
-	cred, err := p.store.GetCloudCredential(ctx, prov.CredentialID)
+	cred, err := p.store.GetCloudCredential(ctx, prov.CredentialRefID)
 	if err != nil {
 		p.failProvision(ctx, prov, "failed to get credentials: "+err.Error(), logger)
 		return
@@ -258,7 +258,7 @@ func (p *Provisioner) stepConfigureInstance(ctx context.Context, prov *domain.Cl
 }
 
 func (p *Provisioner) stepFinalize(ctx context.Context, prov *domain.CloudProvision, logger *slog.Logger) {
-	if prov.NodeID != "" {
+	if prov.NodeID != "" { // NodeID is string reference ID
 		// Already have a node, mark as ready
 		prov.Transition(domain.ProvisionStatusReady)
 		prov.SetStep("Complete")
@@ -284,21 +284,21 @@ func (p *Provisioner) stepFinalize(ctx context.Context, prov *domain.CloudProvis
 		return
 	}
 
-	node.SSHKeyID = prov.SSHKeyID
+	node.SSHKeyRefID = prov.SSHKeyID
 	node.ProviderType = string(prov.Provider)
-	node.ProvisionID = prov.ID
+	node.ProvisionID = prov.ReferenceID
 
 	if err := p.store.CreateNode(ctx, node); err != nil {
 		p.failProvision(ctx, prov, "failed to store node: "+err.Error(), logger)
 		return
 	}
 
-	prov.NodeID = node.ID
+	prov.NodeID = node.ReferenceID
 	prov.Transition(domain.ProvisionStatusReady)
 	prov.SetStep("Complete")
 	p.store.UpdateCloudProvision(ctx, prov)
 
-	logger.Info("provision complete", "node_id", node.ID, "ip", prov.PublicIP)
+	logger.Info("provision complete", "node_id", node.ReferenceID, "ip", prov.PublicIP)
 }
 
 func (p *Provisioner) failProvision(ctx context.Context, prov *domain.CloudProvision, errMsg string, logger *slog.Logger) {

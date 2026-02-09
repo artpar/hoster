@@ -63,9 +63,9 @@ func (p CloudProvision) GetReferencedStructs() []jsonapi.MarshalIdentifier { ret
 
 func CloudProvisionFromDomain(p *domain.CloudProvision) CloudProvision {
 	return CloudProvision{
-		ID:                 p.ID,
-		CreatorID:          p.CreatorID,
-		CredentialID:       p.CredentialID,
+		ID:                 p.ReferenceID,
+		CreatorID:          "",
+		CredentialID:       p.CredentialRefID,
 		Provider:           string(p.Provider),
 		Status:             string(p.Status),
 		InstanceName:       p.InstanceName,
@@ -186,7 +186,7 @@ func (r CloudProvisionResource) Create(obj interface{}, req api2go.Request) (api
 	}
 
 	domainProv, err := domain.NewCloudProvision(
-		authCtx.UserID, prov.CredentialID, cred.Provider, prov.InstanceName, prov.Region, prov.Size,
+		authCtx.UserID, cred.ID, cred.Provider, prov.InstanceName, prov.Region, prov.Size,
 	)
 	if err != nil {
 		return &Response{Code: http.StatusBadRequest}, api2go.NewHTTPError(err, err.Error(), http.StatusBadRequest)

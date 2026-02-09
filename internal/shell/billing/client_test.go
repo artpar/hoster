@@ -58,7 +58,7 @@ func TestAPIGateClient_MeterUsage_Success(t *testing.T) {
 
 	event := domain.NewMeterEvent(
 		"evt-123",
-		"user-456",
+		456,
 		domain.EventDeploymentCreated,
 		"depl-789",
 		"deployment",
@@ -71,7 +71,7 @@ func TestAPIGateClient_MeterUsage_Success(t *testing.T) {
 	require.Len(t, receivedRequest.Data, 1)
 	assert.Equal(t, "usage_events", receivedRequest.Data[0].Type)
 	assert.Equal(t, "evt-123", receivedRequest.Data[0].Attributes.ID)
-	assert.Equal(t, "user-456", receivedRequest.Data[0].Attributes.UserID)
+	assert.Equal(t, "456", receivedRequest.Data[0].Attributes.UserID)
 	assert.Equal(t, "deployment.created", receivedRequest.Data[0].Attributes.EventType)
 	assert.Equal(t, "depl-789", receivedRequest.Data[0].Attributes.ResourceID)
 	assert.Equal(t, "tmpl-001", receivedRequest.Data[0].Attributes.Metadata["template_id"])
@@ -89,8 +89,8 @@ func TestAPIGateClient_MeterUsageBatch_Success(t *testing.T) {
 	client := NewAPIGateClient(Config{BaseURL: server.URL}, nil)
 
 	events := []domain.MeterEvent{
-		domain.NewMeterEvent("evt-1", "user-1", domain.EventDeploymentCreated, "depl-1", "deployment"),
-		domain.NewMeterEvent("evt-2", "user-1", domain.EventDeploymentStarted, "depl-1", "deployment"),
+		domain.NewMeterEvent("evt-1", 1, domain.EventDeploymentCreated, "depl-1", "deployment"),
+		domain.NewMeterEvent("evt-2", 1, domain.EventDeploymentStarted, "depl-1", "deployment"),
 	}
 
 	err := client.MeterUsageBatch(context.Background(), events)
@@ -124,7 +124,7 @@ func TestAPIGateClient_MeterUsage_ServerError(t *testing.T) {
 
 	client := NewAPIGateClient(Config{BaseURL: server.URL}, nil)
 
-	event := domain.NewMeterEvent("evt-1", "user-1", domain.EventDeploymentCreated, "depl-1", "deployment")
+	event := domain.NewMeterEvent("evt-1", 1, domain.EventDeploymentCreated, "depl-1", "deployment")
 
 	err := client.MeterUsage(context.Background(), event)
 	assert.Error(t, err)
@@ -138,7 +138,7 @@ func TestAPIGateClient_MeterUsage_NetworkError(t *testing.T) {
 		Timeout: 1 * time.Second,
 	}, nil)
 
-	event := domain.NewMeterEvent("evt-1", "user-1", domain.EventDeploymentCreated, "depl-1", "deployment")
+	event := domain.NewMeterEvent("evt-1", 1, domain.EventDeploymentCreated, "depl-1", "deployment")
 
 	err := client.MeterUsage(context.Background(), event)
 	assert.Error(t, err)
@@ -147,7 +147,7 @@ func TestAPIGateClient_MeterUsage_NetworkError(t *testing.T) {
 func TestNoopClient_MeterUsage(t *testing.T) {
 	client := NewNoopClient(nil)
 
-	event := domain.NewMeterEvent("evt-1", "user-1", domain.EventDeploymentCreated, "depl-1", "deployment")
+	event := domain.NewMeterEvent("evt-1", 1, domain.EventDeploymentCreated, "depl-1", "deployment")
 
 	err := client.MeterUsage(context.Background(), event)
 	assert.NoError(t, err)
@@ -157,8 +157,8 @@ func TestNoopClient_MeterUsageBatch(t *testing.T) {
 	client := NewNoopClient(nil)
 
 	events := []domain.MeterEvent{
-		domain.NewMeterEvent("evt-1", "user-1", domain.EventDeploymentCreated, "depl-1", "deployment"),
-		domain.NewMeterEvent("evt-2", "user-1", domain.EventDeploymentStarted, "depl-1", "deployment"),
+		domain.NewMeterEvent("evt-1", 1, domain.EventDeploymentCreated, "depl-1", "deployment"),
+		domain.NewMeterEvent("evt-2", 1, domain.EventDeploymentStarted, "depl-1", "deployment"),
 	}
 
 	err := client.MeterUsageBatch(context.Background(), events)

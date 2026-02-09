@@ -344,7 +344,7 @@ func TestValidateCapabilities(t *testing.T) {
 func TestNewNode(t *testing.T) {
 	t.Run("valid node creation", func(t *testing.T) {
 		node, err := NewNode(
-			"creator_123",
+			1,
 			"Production Server",
 			"192.168.1.100",
 			"deploy",
@@ -353,10 +353,10 @@ func TestNewNode(t *testing.T) {
 		)
 
 		require.NoError(t, err)
-		assert.NotEmpty(t, node.ID)
-		assert.True(t, len(node.ID) > 5)
+		assert.NotEmpty(t, node.ReferenceID)
+		assert.True(t, len(node.ReferenceID) > 5)
 		assert.Equal(t, "Production Server", node.Name)
-		assert.Equal(t, "creator_123", node.CreatorID)
+		assert.Equal(t, 1, node.CreatorID)
 		assert.Equal(t, "192.168.1.100", node.SSHHost)
 		assert.Equal(t, 22, node.SSHPort)
 		assert.Equal(t, "deploy", node.SSHUser)
@@ -368,32 +368,32 @@ func TestNewNode(t *testing.T) {
 	})
 
 	t.Run("invalid name", func(t *testing.T) {
-		_, err := NewNode("creator_123", "", "192.168.1.100", "deploy", 22, []string{"standard"})
+		_, err := NewNode(1, "", "192.168.1.100", "deploy", 22, []string{"standard"})
 		assert.ErrorIs(t, err, ErrNodeNameRequired)
 	})
 
 	t.Run("invalid host", func(t *testing.T) {
-		_, err := NewNode("creator_123", "Server", "", "deploy", 22, []string{"standard"})
+		_, err := NewNode(1, "Server", "", "deploy", 22, []string{"standard"})
 		assert.ErrorIs(t, err, ErrSSHHostRequired)
 	})
 
 	t.Run("invalid port", func(t *testing.T) {
-		_, err := NewNode("creator_123", "Server", "192.168.1.100", "deploy", 0, []string{"standard"})
+		_, err := NewNode(1, "Server", "192.168.1.100", "deploy", 0, []string{"standard"})
 		assert.ErrorIs(t, err, ErrSSHPortInvalid)
 	})
 
 	t.Run("invalid user", func(t *testing.T) {
-		_, err := NewNode("creator_123", "Server", "192.168.1.100", "", 22, []string{"standard"})
+		_, err := NewNode(1, "Server", "192.168.1.100", "", 22, []string{"standard"})
 		assert.ErrorIs(t, err, ErrSSHUserRequired)
 	})
 
 	t.Run("no capabilities", func(t *testing.T) {
-		_, err := NewNode("creator_123", "Server", "192.168.1.100", "deploy", 22, []string{})
+		_, err := NewNode(1, "Server", "192.168.1.100", "deploy", 22, []string{})
 		assert.ErrorIs(t, err, ErrCapabilitiesRequired)
 	})
 
 	t.Run("no creator ID", func(t *testing.T) {
-		_, err := NewNode("", "Server", "192.168.1.100", "deploy", 22, []string{"standard"})
+		_, err := NewNode(0, "Server", "192.168.1.100", "deploy", 22, []string{"standard"})
 		assert.Error(t, err)
 	})
 }

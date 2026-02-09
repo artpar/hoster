@@ -143,13 +143,15 @@ func (c NodeCapacity) UsagePercent() float64 {
 
 // Node represents a worker node registered by a creator.
 type Node struct {
-	ID              string       `json:"id"`
+	ID              int          `json:"-"`
+	ReferenceID     string       `json:"id"`
 	Name            string       `json:"name"`
-	CreatorID       string       `json:"creator_id"`
+	CreatorID       int          `json:"-"`
 	SSHHost         string       `json:"ssh_host"`
 	SSHPort         int          `json:"ssh_port"`
 	SSHUser         string       `json:"ssh_user"`
-	SSHKeyID        string       `json:"ssh_key_id,omitempty"`
+	SSHKeyID        int          `json:"-"`
+	SSHKeyRefID     string       `json:"ssh_key_id,omitempty"`
 	DockerSocket    string       `json:"docker_socket"`
 	Status          NodeStatus   `json:"status"`
 	Capabilities    []string     `json:"capabilities"`
@@ -158,7 +160,7 @@ type Node struct {
 	LastHealthCheck *time.Time   `json:"last_health_check,omitempty"`
 	ErrorMessage    string       `json:"error_message,omitempty"`
 	ProviderType    string       `json:"provider_type,omitempty"`  // "manual", "aws", "digitalocean", "hetzner"
-	ProvisionID     string       `json:"provision_id,omitempty"`   // Links to cloud_provisions.id
+	ProvisionID     string       `json:"provision_id,omitempty"`   // Links to cloud_provisions reference_id
 	BaseDomain      string       `json:"base_domain,omitempty"`    // Per-node base domain for deployments
 	CreatedAt       time.Time    `json:"created_at"`
 	UpdatedAt       time.Time    `json:"updated_at"`
@@ -171,7 +173,7 @@ func GenerateNodeID() string {
 
 // NewNode creates a new node with validated fields.
 // Returns error if any validation fails.
-func NewNode(creatorID, name, sshHost, sshUser string, sshPort int, capabilities []string) (*Node, error) {
+func NewNode(creatorID int, name, sshHost, sshUser string, sshPort int, capabilities []string) (*Node, error) {
 	if err := ValidateNodeName(name); err != nil {
 		return nil, err
 	}
@@ -188,13 +190,13 @@ func NewNode(creatorID, name, sshHost, sshUser string, sshPort int, capabilities
 		return nil, err
 	}
 
-	if creatorID == "" {
+	if creatorID == 0 {
 		return nil, errors.New("creator ID is required")
 	}
 
 	now := time.Now()
 	return &Node{
-		ID:           GenerateNodeID(),
+		ReferenceID:  GenerateNodeID(),
 		Name:         name,
 		CreatorID:    creatorID,
 		SSHHost:      sshHost,
@@ -258,8 +260,9 @@ func (n *Node) SSHAddress() string {
 
 // SSHKey represents an encrypted SSH private key.
 type SSHKey struct {
-	ID                  string    `json:"id"`
-	CreatorID           string    `json:"creator_id"`
+	ID                  int       `json:"-"`
+	ReferenceID         string    `json:"id"`
+	CreatorID           int       `json:"-"`
 	Name                string    `json:"name"`
 	PrivateKeyEncrypted []byte    `json:"-"` // Never serialize
 	Fingerprint         string    `json:"fingerprint"`

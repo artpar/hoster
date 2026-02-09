@@ -48,7 +48,11 @@ func createTestTemplate(t *testing.T, store Store) *domain.Template {
 		"services:\n  web:\n    image: nginx",
 	)
 	require.NoError(t, err)
-	template.CreatorID = "creator-123"
+
+	// Resolve user to get integer creator ID
+	creatorID, err := store.ResolveUser(context.Background(), "creator-123", "", "", "")
+	require.NoError(t, err)
+	template.CreatorID = creatorID
 
 	err = store.CreateTemplate(context.Background(), template)
 	require.NoError(t, err)
@@ -67,7 +71,9 @@ func createPublishedTemplate(t *testing.T, store Store) *domain.Template {
 
 func createTestDeployment(t *testing.T, store Store, template *domain.Template) *domain.Deployment {
 	t.Helper()
-	deployment, err := domain.NewDeployment(*template, "customer-123", nil)
+	customerID, err := store.ResolveUser(context.Background(), "customer-123", "", "", "")
+	require.NoError(t, err)
+	deployment, err := domain.NewDeployment(*template, customerID, nil)
 	require.NoError(t, err)
 	err = store.CreateDeployment(context.Background(), deployment)
 	require.NoError(t, err)
@@ -88,15 +94,17 @@ func TestCreateTemplate_Success(t *testing.T) {
 		"services:\n  web:\n    image: nginx",
 	)
 	require.NoError(t, err)
-	template.CreatorID = "creator-123"
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
+	template.CreatorID = creatorID
 
 	err = store.CreateTemplate(ctx, template)
 	require.NoError(t, err)
 
 	// Verify template was created
-	retrieved, err := store.GetTemplate(ctx, template.ID)
+	retrieved, err := store.GetTemplate(ctx, template.ReferenceID)
 	require.NoError(t, err)
-	assert.Equal(t, template.ID, retrieved.ID)
+	assert.Equal(t, template.ReferenceID, retrieved.ReferenceID)
 	assert.Equal(t, template.Name, retrieved.Name)
 	assert.Equal(t, template.Slug, retrieved.Slug)
 	assert.Equal(t, template.Version, retrieved.Version)
@@ -132,7 +140,9 @@ func TestCreateTemplate_DuplicateSlug(t *testing.T) {
 		"services:\n  web:\n    image: nginx",
 	)
 	require.NoError(t, err)
-	duplicate.CreatorID = "creator-456"
+	creatorID, err := store.ResolveUser(ctx, "creator-456", "", "", "")
+	require.NoError(t, err)
+	duplicate.CreatorID = creatorID
 
 	err = store.CreateTemplate(ctx, duplicate)
 	require.Error(t, err)
@@ -145,9 +155,9 @@ func TestGetTemplate_Success(t *testing.T) {
 
 	template := createTestTemplate(t, store)
 
-	retrieved, err := store.GetTemplate(ctx, template.ID)
+	retrieved, err := store.GetTemplate(ctx, template.ReferenceID)
 	require.NoError(t, err)
-	assert.Equal(t, template.ID, retrieved.ID)
+	assert.Equal(t, template.ReferenceID, retrieved.ReferenceID)
 	assert.Equal(t, template.Name, retrieved.Name)
 }
 
@@ -168,7 +178,7 @@ func TestGetTemplateBySlug_Success(t *testing.T) {
 
 	retrieved, err := store.GetTemplateBySlug(ctx, template.Slug)
 	require.NoError(t, err)
-	assert.Equal(t, template.ID, retrieved.ID)
+	assert.Equal(t, template.ReferenceID, retrieved.ReferenceID)
 	assert.Equal(t, template.Slug, retrieved.Slug)
 }
 
@@ -186,7 +196,7 @@ func TestUpdateTemplate_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify update
-	retrieved, err := store.GetTemplate(ctx, template.ID)
+	retrieved, err := store.GetTemplate(ctx, template.ReferenceID)
 	require.NoError(t, err)
 	assert.Equal(t, "Updated description", retrieved.Description)
 }
@@ -197,11 +207,11 @@ func TestDeleteTemplate_Success(t *testing.T) {
 
 	template := createTestTemplate(t, store)
 
-	err := store.DeleteTemplate(ctx, template.ID)
+	err := store.DeleteTemplate(ctx, template.ReferenceID)
 	require.NoError(t, err)
 
 	// Verify deletion
-	_, err = store.GetTemplate(ctx, template.ID)
+	_, err = store.GetTemplate(ctx, template.ReferenceID)
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 
@@ -215,16 +225,18 @@ func TestCreateDeployment_Success(t *testing.T) {
 
 	template := createPublishedTemplate(t, store)
 
-	deployment, err := domain.NewDeployment(*template, "customer-123", nil)
+	customerID, err := store.ResolveUser(ctx, "customer-123", "", "", "")
+	require.NoError(t, err)
+	deployment, err := domain.NewDeployment(*template, customerID, nil)
 	require.NoError(t, err)
 
 	err = store.CreateDeployment(ctx, deployment)
 	require.NoError(t, err)
 
 	// Verify deployment was created
-	retrieved, err := store.GetDeployment(ctx, deployment.ID)
+	retrieved, err := store.GetDeployment(ctx, deployment.ReferenceID)
 	require.NoError(t, err)
-	assert.Equal(t, deployment.ID, retrieved.ID)
+	assert.Equal(t, deployment.ReferenceID, retrieved.ReferenceID)
 	assert.Equal(t, deployment.Name, retrieved.Name)
 	assert.Equal(t, deployment.TemplateID, retrieved.TemplateID)
 	assert.Equal(t, deployment.CustomerID, retrieved.CustomerID)
@@ -235,17 +247,19 @@ func TestCreateDeployment_ForeignKeyError(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a deployment struct manually with fake template ID
+	customerID, err := store.ResolveUser(ctx, "customer-123", "", "", "")
+	require.NoError(t, err)
 	deployment := &domain.Deployment{
-		ID:         "test-deployment-id",
-		Name:       "Test Deployment",
-		TemplateID: "nonexistent-template-id",
-		CustomerID: "customer-123",
-		Status:     domain.StatusPending,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		ReferenceID: "test-deployment-id",
+		Name:        "Test Deployment",
+		TemplateID:  99999, // nonexistent template
+		CustomerID:  customerID,
+		Status:      domain.StatusPending,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}
 
-	err := store.CreateDeployment(ctx, deployment)
+	err = store.CreateDeployment(ctx, deployment)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrForeignKey)
 }
@@ -257,9 +271,9 @@ func TestGetDeployment_Success(t *testing.T) {
 	template := createPublishedTemplate(t, store)
 	deployment := createTestDeployment(t, store, template)
 
-	retrieved, err := store.GetDeployment(ctx, deployment.ID)
+	retrieved, err := store.GetDeployment(ctx, deployment.ReferenceID)
 	require.NoError(t, err)
-	assert.Equal(t, deployment.ID, retrieved.ID)
+	assert.Equal(t, deployment.ReferenceID, retrieved.ReferenceID)
 }
 
 func TestGetDeployment_NotFound(t *testing.T) {
@@ -288,7 +302,7 @@ func TestUpdateDeployment_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify update
-	retrieved, err := store.GetDeployment(ctx, deployment.ID)
+	retrieved, err := store.GetDeployment(ctx, deployment.ReferenceID)
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusScheduled, retrieved.Status)
 }
@@ -300,11 +314,11 @@ func TestDeleteDeployment_Success(t *testing.T) {
 	template := createPublishedTemplate(t, store)
 	deployment := createTestDeployment(t, store, template)
 
-	err := store.DeleteDeployment(ctx, deployment.ID)
+	err := store.DeleteDeployment(ctx, deployment.ReferenceID)
 	require.NoError(t, err)
 
 	// Verify deletion
-	_, err = store.GetDeployment(ctx, deployment.ID)
+	_, err = store.GetDeployment(ctx, deployment.ReferenceID)
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 
@@ -316,17 +330,17 @@ func TestListDeploymentsByTemplate_Success(t *testing.T) {
 	deployment1 := createTestDeployment(t, store, template)
 	deployment2 := createTestDeployment(t, store, template)
 
-	deployments, err := store.ListDeploymentsByTemplate(ctx, template.ID, DefaultListOptions())
+	deployments, err := store.ListDeploymentsByTemplate(ctx, template.ReferenceID, DefaultListOptions())
 	require.NoError(t, err)
 	assert.Len(t, deployments, 2)
 
 	// Verify both deployments are in the list
 	ids := make(map[string]bool)
 	for _, d := range deployments {
-		ids[d.ID] = true
+		ids[d.ReferenceID] = true
 	}
-	assert.True(t, ids[deployment1.ID])
-	assert.True(t, ids[deployment2.ID])
+	assert.True(t, ids[deployment1.ReferenceID])
+	assert.True(t, ids[deployment2.ReferenceID])
 }
 
 func TestListDeploymentsByCustomer_Success(t *testing.T) {
@@ -339,7 +353,7 @@ func TestListDeploymentsByCustomer_Success(t *testing.T) {
 	deployments, err := store.ListDeploymentsByCustomer(ctx, deployment.CustomerID, DefaultListOptions())
 	require.NoError(t, err)
 	assert.Len(t, deployments, 1)
-	assert.Equal(t, deployment.ID, deployments[0].ID)
+	assert.Equal(t, deployment.ReferenceID, deployments[0].ReferenceID)
 }
 
 // =============================================================================
@@ -356,7 +370,9 @@ func TestTemplate_VariablesSerialization(t *testing.T) {
 		"services:\n  web:\n    image: nginx\n    environment:\n      DB_PASSWORD: ${DB_PASSWORD}",
 	)
 	require.NoError(t, err)
-	template.CreatorID = "creator-123"
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
+	template.CreatorID = creatorID
 	template.Variables = []domain.Variable{
 		{Name: "DB_PASSWORD", Label: "Database Password", Type: domain.VarTypePassword, Required: true},
 		{Name: "API_KEY", Label: "API Key", Type: domain.VarTypeString},
@@ -365,7 +381,7 @@ func TestTemplate_VariablesSerialization(t *testing.T) {
 	err = store.CreateTemplate(ctx, template)
 	require.NoError(t, err)
 
-	retrieved, err := store.GetTemplate(ctx, template.ID)
+	retrieved, err := store.GetTemplate(ctx, template.ReferenceID)
 	require.NoError(t, err)
 	require.Len(t, retrieved.Variables, 2)
 	assert.Equal(t, "DB_PASSWORD", retrieved.Variables[0].Name)
@@ -378,7 +394,9 @@ func TestDeployment_VariablesSerialization(t *testing.T) {
 
 	template := createPublishedTemplate(t, store)
 
-	deployment, err := domain.NewDeployment(*template, "customer-123", map[string]string{
+	customerID, err := store.ResolveUser(ctx, "customer-123", "", "", "")
+	require.NoError(t, err)
+	deployment, err := domain.NewDeployment(*template, customerID, map[string]string{
 		"DB_PASSWORD": "secret123",
 		"API_KEY":     "abc123",
 	})
@@ -387,7 +405,7 @@ func TestDeployment_VariablesSerialization(t *testing.T) {
 	err = store.CreateDeployment(ctx, deployment)
 	require.NoError(t, err)
 
-	retrieved, err := store.GetDeployment(ctx, deployment.ID)
+	retrieved, err := store.GetDeployment(ctx, deployment.ReferenceID)
 	require.NoError(t, err)
 	assert.Equal(t, "secret123", retrieved.Variables["DB_PASSWORD"])
 	assert.Equal(t, "abc123", retrieved.Variables["API_KEY"])
@@ -410,7 +428,7 @@ func TestDeployment_ContainersSerialization(t *testing.T) {
 	err := store.UpdateDeployment(ctx, deployment)
 	require.NoError(t, err)
 
-	retrieved, err := store.GetDeployment(ctx, deployment.ID)
+	retrieved, err := store.GetDeployment(ctx, deployment.ReferenceID)
 	require.NoError(t, err)
 	require.Len(t, retrieved.Containers, 2)
 	assert.Equal(t, "abc123", retrieved.Containers[0].ID)
@@ -423,7 +441,7 @@ func TestTemplate_EmptyVariables(t *testing.T) {
 
 	template := createTestTemplate(t, store)
 
-	retrieved, err := store.GetTemplate(ctx, template.ID)
+	retrieved, err := store.GetTemplate(ctx, template.ReferenceID)
 	require.NoError(t, err)
 	// Empty slice or nil - both are acceptable
 	assert.Empty(t, retrieved.Variables)
@@ -438,6 +456,8 @@ func TestListTemplates_WithPagination(t *testing.T) {
 	ctx := context.Background()
 
 	// Create 5 templates
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
 	for i := 0; i < 5; i++ {
 		template, err := domain.NewTemplate(
 			"Template "+string(rune('A'+i)),
@@ -445,7 +465,7 @@ func TestListTemplates_WithPagination(t *testing.T) {
 			"services:\n  web:\n    image: nginx",
 		)
 		require.NoError(t, err)
-		template.CreatorID = "creator-123"
+		template.CreatorID = creatorID
 		err = store.CreateTemplate(ctx, template)
 		require.NoError(t, err)
 	}
@@ -473,8 +493,10 @@ func TestListDeployments_WithPagination(t *testing.T) {
 	template := createPublishedTemplate(t, store)
 
 	// Create 3 deployments
+	customerID, err := store.ResolveUser(ctx, "customer-123", "", "", "")
+	require.NoError(t, err)
 	for i := 0; i < 3; i++ {
-		deployment, err := domain.NewDeployment(*template, "customer-123", nil)
+		deployment, err := domain.NewDeployment(*template, customerID, nil)
 		require.NoError(t, err)
 		err = store.CreateDeployment(ctx, deployment)
 		require.NoError(t, err)
@@ -533,7 +555,11 @@ func TestWithTx_CommitSuccess(t *testing.T) {
 
 	var createdID string
 
-	err := store.WithTx(ctx, func(txStore Store) error {
+	// Resolve user before transaction
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
+
+	err = store.WithTx(ctx, func(txStore Store) error {
 		template, err := domain.NewTemplate(
 			"Transaction Test",
 			"1.0.0",
@@ -542,8 +568,8 @@ func TestWithTx_CommitSuccess(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		template.CreatorID = "creator-123"
-		createdID = template.ID
+		template.CreatorID = creatorID
+		createdID = template.ReferenceID
 		return txStore.CreateTemplate(ctx, template)
 	})
 	require.NoError(t, err)
@@ -560,7 +586,11 @@ func TestWithTx_RollbackOnError(t *testing.T) {
 
 	var createdID string
 
-	err := store.WithTx(ctx, func(txStore Store) error {
+	// Resolve user before transaction
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
+
+	err = store.WithTx(ctx, func(txStore Store) error {
 		template, err := domain.NewTemplate(
 			"Rollback Test",
 			"1.0.0",
@@ -569,8 +599,8 @@ func TestWithTx_RollbackOnError(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		template.CreatorID = "creator-123"
-		createdID = template.ID
+		template.CreatorID = creatorID
+		createdID = template.ReferenceID
 
 		if err := txStore.CreateTemplate(ctx, template); err != nil {
 			return err
@@ -588,9 +618,14 @@ func TestWithTx_RollbackOnError(t *testing.T) {
 
 func TestWithTx_ContextCancellation(t *testing.T) {
 	store := setupTestStore(t)
+
+	// Resolve user before cancelling context
+	creatorID, err := store.ResolveUser(context.Background(), "creator-123", "", "", "")
+	require.NoError(t, err)
+
 	ctx, cancel := context.WithCancel(context.Background())
 
-	err := store.WithTx(ctx, func(txStore Store) error {
+	err = store.WithTx(ctx, func(txStore Store) error {
 		// Cancel context during transaction
 		cancel()
 
@@ -602,7 +637,7 @@ func TestWithTx_ContextCancellation(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		template.CreatorID = "creator-123"
+		template.CreatorID = creatorID
 		return txStore.CreateTemplate(ctx, template)
 	})
 	// Should get context cancelled error
@@ -614,9 +649,13 @@ func TestWithTx_AllTemplateOperations(t *testing.T) {
 	store := setupEmptyTestStore(t)
 	ctx := context.Background()
 
-	var templateID, templateSlug string
+	var templateRefID, templateSlug string
 
-	err := store.WithTx(ctx, func(txStore Store) error {
+	// Resolve user before transaction
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
+
+	err = store.WithTx(ctx, func(txStore Store) error {
 		// Create template
 		template, err := domain.NewTemplate(
 			"Tx Template Operations",
@@ -626,8 +665,8 @@ func TestWithTx_AllTemplateOperations(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		template.CreatorID = "creator-123"
-		templateID = template.ID
+		template.CreatorID = creatorID
+		templateRefID = template.ReferenceID
 		templateSlug = template.Slug
 
 		if err := txStore.CreateTemplate(ctx, template); err != nil {
@@ -635,7 +674,7 @@ func TestWithTx_AllTemplateOperations(t *testing.T) {
 		}
 
 		// Get template
-		retrieved, err := txStore.GetTemplate(ctx, templateID)
+		retrieved, err := txStore.GetTemplate(ctx, templateRefID)
 		if err != nil {
 			return err
 		}
@@ -648,7 +687,7 @@ func TestWithTx_AllTemplateOperations(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if retrievedBySlug.ID != templateID {
+		if retrievedBySlug.ReferenceID != templateRefID {
 			return assert.AnError
 		}
 
@@ -669,12 +708,12 @@ func TestWithTx_AllTemplateOperations(t *testing.T) {
 		}
 
 		// Delete template
-		if err := txStore.DeleteTemplate(ctx, templateID); err != nil {
+		if err := txStore.DeleteTemplate(ctx, templateRefID); err != nil {
 			return err
 		}
 
 		// Verify deleted
-		_, err = txStore.GetTemplate(ctx, templateID)
+		_, err = txStore.GetTemplate(ctx, templateRefID)
 		if !errors.Is(err, ErrNotFound) {
 			return assert.AnError
 		}
@@ -692,26 +731,30 @@ func TestWithTx_AllDeploymentOperations(t *testing.T) {
 	// First create a template outside the transaction
 	template := createPublishedTemplate(t, store)
 
-	var deploymentID string
+	var deploymentRefID string
 
-	err := store.WithTx(ctx, func(txStore Store) error {
+	// Resolve customer before transaction
+	customerID, err := store.ResolveUser(ctx, "customer-tx", "", "", "")
+	require.NoError(t, err)
+
+	err = store.WithTx(ctx, func(txStore Store) error {
 		// Create deployment
-		deployment, err := domain.NewDeployment(*template, "customer-tx", nil)
+		deployment, err := domain.NewDeployment(*template, customerID, nil)
 		if err != nil {
 			return err
 		}
-		deploymentID = deployment.ID
+		deploymentRefID = deployment.ReferenceID
 
 		if err := txStore.CreateDeployment(ctx, deployment); err != nil {
 			return err
 		}
 
 		// Get deployment
-		retrieved, err := txStore.GetDeployment(ctx, deploymentID)
+		retrieved, err := txStore.GetDeployment(ctx, deploymentRefID)
 		if err != nil {
 			return err
 		}
-		if retrieved.CustomerID != "customer-tx" {
+		if retrieved.CustomerID != customerID {
 			return assert.AnError
 		}
 
@@ -732,7 +775,7 @@ func TestWithTx_AllDeploymentOperations(t *testing.T) {
 		}
 
 		// List by template
-		deploymentsByTemplate, err := txStore.ListDeploymentsByTemplate(ctx, template.ID, DefaultListOptions())
+		deploymentsByTemplate, err := txStore.ListDeploymentsByTemplate(ctx, template.ReferenceID, DefaultListOptions())
 		if err != nil {
 			return err
 		}
@@ -741,7 +784,7 @@ func TestWithTx_AllDeploymentOperations(t *testing.T) {
 		}
 
 		// List by customer
-		deploymentsByCustomer, err := txStore.ListDeploymentsByCustomer(ctx, "customer-tx", DefaultListOptions())
+		deploymentsByCustomer, err := txStore.ListDeploymentsByCustomer(ctx, customerID, DefaultListOptions())
 		if err != nil {
 			return err
 		}
@@ -750,12 +793,12 @@ func TestWithTx_AllDeploymentOperations(t *testing.T) {
 		}
 
 		// Delete deployment
-		if err := txStore.DeleteDeployment(ctx, deploymentID); err != nil {
+		if err := txStore.DeleteDeployment(ctx, deploymentRefID); err != nil {
 			return err
 		}
 
 		// Verify deleted
-		_, err = txStore.GetDeployment(ctx, deploymentID)
+		_, err = txStore.GetDeployment(ctx, deploymentRefID)
 		if !errors.Is(err, ErrNotFound) {
 			return assert.AnError
 		}
@@ -770,9 +813,13 @@ func TestWithTx_NestedTx(t *testing.T) {
 	store := setupTestStore(t)
 	ctx := context.Background()
 
-	var templateID string
+	var templateRefID string
 
-	err := store.WithTx(ctx, func(txStore Store) error {
+	// Resolve user before transaction
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
+
+	err = store.WithTx(ctx, func(txStore Store) error {
 		// Create template
 		template, err := domain.NewTemplate(
 			"Nested Tx Test",
@@ -782,8 +829,8 @@ func TestWithTx_NestedTx(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		template.CreatorID = "creator-123"
-		templateID = template.ID
+		template.CreatorID = creatorID
+		templateRefID = template.ReferenceID
 
 		if err := txStore.CreateTemplate(ctx, template); err != nil {
 			return err
@@ -792,14 +839,14 @@ func TestWithTx_NestedTx(t *testing.T) {
 		// Nested transaction (should just run the function)
 		return txStore.WithTx(ctx, func(nestedTxStore Store) error {
 			// Should be able to access the template created above
-			_, err := nestedTxStore.GetTemplate(ctx, templateID)
+			_, err := nestedTxStore.GetTemplate(ctx, templateRefID)
 			return err
 		})
 	})
 	require.NoError(t, err)
 
 	// Verify template was persisted
-	retrieved, err := store.GetTemplate(ctx, templateID)
+	retrieved, err := store.GetTemplate(ctx, templateRefID)
 	require.NoError(t, err)
 	assert.Equal(t, "Nested Tx Test", retrieved.Name)
 }
@@ -836,7 +883,11 @@ func TestWithTx_UpdateTemplateNotFound(t *testing.T) {
 	store := setupTestStore(t)
 	ctx := context.Background()
 
-	err := store.WithTx(ctx, func(txStore Store) error {
+	// Resolve user before transaction
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
+
+	err = store.WithTx(ctx, func(txStore Store) error {
 		template, err := domain.NewTemplate(
 			"Nonexistent Template",
 			"1.0.0",
@@ -845,7 +896,7 @@ func TestWithTx_UpdateTemplateNotFound(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		template.CreatorID = "creator-123"
+		template.CreatorID = creatorID
 
 		// Try to update without creating
 		err = txStore.UpdateTemplate(ctx, template)
@@ -909,13 +960,15 @@ func TestTemplate_UnicodeFields(t *testing.T) {
 		"services:\n  web:\n    image: nginx",
 	)
 	require.NoError(t, err)
-	template.CreatorID = "creator-123"
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
+	template.CreatorID = creatorID
 	template.Description = "テスト Template 中文 émoji 🚀"
 
 	err = store.CreateTemplate(ctx, template)
 	require.NoError(t, err)
 
-	retrieved, err := store.GetTemplate(ctx, template.ID)
+	retrieved, err := store.GetTemplate(ctx, template.ReferenceID)
 	require.NoError(t, err)
 	assert.Equal(t, "テスト Template 中文 émoji 🚀", retrieved.Description)
 }
@@ -936,12 +989,14 @@ func TestTemplate_VeryLongComposeSpec(t *testing.T) {
 		longSpec,
 	)
 	require.NoError(t, err)
-	template.CreatorID = "creator-123"
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
+	template.CreatorID = creatorID
 
 	err = store.CreateTemplate(ctx, template)
 	require.NoError(t, err)
 
-	retrieved, err := store.GetTemplate(ctx, template.ID)
+	retrieved, err := store.GetTemplate(ctx, template.ReferenceID)
 	require.NoError(t, err)
 	assert.Equal(t, longSpec, retrieved.ComposeSpec)
 }
@@ -975,7 +1030,7 @@ func TestDeployment_WithStartedAtAndStoppedAt(t *testing.T) {
 	require.NoError(t, err)
 
 	// Retrieve and verify StartedAt
-	retrieved, err := store.GetDeployment(ctx, deployment.ID)
+	retrieved, err := store.GetDeployment(ctx, deployment.ReferenceID)
 	require.NoError(t, err)
 	require.NotNil(t, retrieved.StartedAt)
 	assert.Equal(t, now.Format(time.RFC3339), retrieved.StartedAt.Format(time.RFC3339))
@@ -1012,7 +1067,7 @@ func TestDeployment_WithStoppedAt(t *testing.T) {
 	require.NoError(t, err)
 
 	// Retrieve and verify both timestamps
-	retrieved, err := store.GetDeployment(ctx, deployment.ID)
+	retrieved, err := store.GetDeployment(ctx, deployment.ReferenceID)
 	require.NoError(t, err)
 	require.NotNil(t, retrieved.StartedAt)
 	require.NotNil(t, retrieved.StoppedAt)
@@ -1028,7 +1083,9 @@ func TestDeployment_CreateWithStartedAt(t *testing.T) {
 	template := createPublishedTemplate(t, store)
 
 	// Create deployment with StartedAt already set (edge case)
-	deployment, err := domain.NewDeployment(*template, "customer-123", nil)
+	customerID, err := store.ResolveUser(ctx, "customer-123", "", "", "")
+	require.NoError(t, err)
+	deployment, err := domain.NewDeployment(*template, customerID, nil)
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
 	deployment.StartedAt = &now
@@ -1036,7 +1093,7 @@ func TestDeployment_CreateWithStartedAt(t *testing.T) {
 	err = store.CreateDeployment(ctx, deployment)
 	require.NoError(t, err)
 
-	retrieved, err := store.GetDeployment(ctx, deployment.ID)
+	retrieved, err := store.GetDeployment(ctx, deployment.ReferenceID)
 	require.NoError(t, err)
 	require.NotNil(t, retrieved.StartedAt)
 	assert.Equal(t, now.Format(time.RFC3339), retrieved.StartedAt.Format(time.RFC3339))
@@ -1055,12 +1112,12 @@ func TestTemplate_CorruptedVariablesJSON(t *testing.T) {
 
 	// Directly corrupt the variables JSON in the database
 	_, err := store.(*SQLiteStore).db.ExecContext(ctx,
-		`UPDATE templates SET variables = ? WHERE id = ?`,
-		`{"invalid json`, template.ID)
+		`UPDATE templates SET variables = ? WHERE reference_id = ?`,
+		`{"invalid json`, template.ReferenceID)
 	require.NoError(t, err)
 
 	// Try to retrieve - should fail with parse error
-	_, err = store.GetTemplate(ctx, template.ID)
+	_, err = store.GetTemplate(ctx, template.ReferenceID)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrInvalidData))
 }
@@ -1074,12 +1131,12 @@ func TestTemplate_CorruptedTagsJSON(t *testing.T) {
 
 	// Directly corrupt the tags JSON in the database
 	_, err := store.(*SQLiteStore).db.ExecContext(ctx,
-		`UPDATE templates SET tags = ? WHERE id = ?`,
-		`[invalid json`, template.ID)
+		`UPDATE templates SET tags = ? WHERE reference_id = ?`,
+		`[invalid json`, template.ReferenceID)
 	require.NoError(t, err)
 
 	// Try to retrieve - should fail with parse error
-	_, err = store.GetTemplate(ctx, template.ID)
+	_, err = store.GetTemplate(ctx, template.ReferenceID)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrInvalidData))
 }
@@ -1094,12 +1151,12 @@ func TestDeployment_CorruptedVariablesJSON(t *testing.T) {
 
 	// Corrupt the variables JSON
 	_, err := store.(*SQLiteStore).db.ExecContext(ctx,
-		`UPDATE deployments SET variables = ? WHERE id = ?`,
-		`{invalid`, deployment.ID)
+		`UPDATE deployments SET variables = ? WHERE reference_id = ?`,
+		`{invalid`, deployment.ReferenceID)
 	require.NoError(t, err)
 
 	// Try to retrieve - should fail
-	_, err = store.GetDeployment(ctx, deployment.ID)
+	_, err = store.GetDeployment(ctx, deployment.ReferenceID)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrInvalidData))
 }
@@ -1114,12 +1171,12 @@ func TestDeployment_CorruptedDomainsJSON(t *testing.T) {
 
 	// Corrupt the domains JSON
 	_, err := store.(*SQLiteStore).db.ExecContext(ctx,
-		`UPDATE deployments SET domains = ? WHERE id = ?`,
-		`[{broken`, deployment.ID)
+		`UPDATE deployments SET domains = ? WHERE reference_id = ?`,
+		`[{broken`, deployment.ReferenceID)
 	require.NoError(t, err)
 
 	// Try to retrieve - should fail
-	_, err = store.GetDeployment(ctx, deployment.ID)
+	_, err = store.GetDeployment(ctx, deployment.ReferenceID)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrInvalidData))
 }
@@ -1134,12 +1191,12 @@ func TestDeployment_CorruptedContainersJSON(t *testing.T) {
 
 	// Corrupt the containers JSON
 	_, err := store.(*SQLiteStore).db.ExecContext(ctx,
-		`UPDATE deployments SET containers = ? WHERE id = ?`,
-		`[{invalid`, deployment.ID)
+		`UPDATE deployments SET containers = ? WHERE reference_id = ?`,
+		`[{invalid`, deployment.ReferenceID)
 	require.NoError(t, err)
 
 	// Try to retrieve - should fail
-	_, err = store.GetDeployment(ctx, deployment.ID)
+	_, err = store.GetDeployment(ctx, deployment.ReferenceID)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrInvalidData))
 }
@@ -1157,8 +1214,8 @@ func TestListTemplates_CorruptedVariablesJSON(t *testing.T) {
 
 	// Directly corrupt the variables JSON
 	_, err := store.(*SQLiteStore).db.ExecContext(ctx,
-		`UPDATE templates SET variables = ? WHERE id = ?`,
-		`{"broken`, template.ID)
+		`UPDATE templates SET variables = ? WHERE reference_id = ?`,
+		`{"broken`, template.ReferenceID)
 	require.NoError(t, err)
 
 	// ListTemplates should fail when converting corrupted row
@@ -1177,8 +1234,8 @@ func TestListDeployments_CorruptedVariablesJSON(t *testing.T) {
 
 	// Corrupt the variables JSON
 	_, err := store.(*SQLiteStore).db.ExecContext(ctx,
-		`UPDATE deployments SET variables = ? WHERE id = ?`,
-		`{corrupt`, deployment.ID)
+		`UPDATE deployments SET variables = ? WHERE reference_id = ?`,
+		`{corrupt`, deployment.ReferenceID)
 	require.NoError(t, err)
 
 	// ListDeployments should fail
@@ -1197,12 +1254,12 @@ func TestListDeploymentsByTemplate_CorruptedData(t *testing.T) {
 
 	// Corrupt the domains JSON
 	_, err := store.(*SQLiteStore).db.ExecContext(ctx,
-		`UPDATE deployments SET domains = ? WHERE id = ?`,
-		`{broken`, deployment.ID)
+		`UPDATE deployments SET domains = ? WHERE reference_id = ?`,
+		`{broken`, deployment.ReferenceID)
 	require.NoError(t, err)
 
 	// ListDeploymentsByTemplate should fail
-	_, err = store.ListDeploymentsByTemplate(ctx, template.ID, ListOptions{})
+	_, err = store.ListDeploymentsByTemplate(ctx, template.ReferenceID, ListOptions{})
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrInvalidData))
 }
@@ -1217,8 +1274,8 @@ func TestListDeploymentsByCustomer_CorruptedData(t *testing.T) {
 
 	// Corrupt the containers JSON
 	_, err := store.(*SQLiteStore).db.ExecContext(ctx,
-		`UPDATE deployments SET containers = ? WHERE id = ?`,
-		`{broken`, deployment.ID)
+		`UPDATE deployments SET containers = ? WHERE reference_id = ?`,
+		`{broken`, deployment.ReferenceID)
 	require.NoError(t, err)
 
 	// ListDeploymentsByCustomer should fail
@@ -1240,8 +1297,8 @@ func TestGetTemplateBySlug_CorruptedTags(t *testing.T) {
 
 	// Corrupt the tags JSON
 	_, err := store.(*SQLiteStore).db.ExecContext(ctx,
-		`UPDATE templates SET tags = ? WHERE id = ?`,
-		`{notarray`, template.ID)
+		`UPDATE templates SET tags = ? WHERE reference_id = ?`,
+		`{notarray`, template.ReferenceID)
 	require.NoError(t, err)
 
 	// GetTemplateBySlug should fail
@@ -1262,7 +1319,9 @@ func TestDeployment_CreateWithStoppedAt(t *testing.T) {
 	template := createPublishedTemplate(t, store)
 
 	// Create deployment with both StartedAt and StoppedAt set
-	deployment, err := domain.NewDeployment(*template, "customer-123", nil)
+	customerID, err := store.ResolveUser(ctx, "customer-123", "", "", "")
+	require.NoError(t, err)
+	deployment, err := domain.NewDeployment(*template, customerID, nil)
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
 	startedAt := now.Add(-1 * time.Hour)
@@ -1272,7 +1331,7 @@ func TestDeployment_CreateWithStoppedAt(t *testing.T) {
 	err = store.CreateDeployment(ctx, deployment)
 	require.NoError(t, err)
 
-	retrieved, err := store.GetDeployment(ctx, deployment.ID)
+	retrieved, err := store.GetDeployment(ctx, deployment.ReferenceID)
 	require.NoError(t, err)
 	require.NotNil(t, retrieved.StartedAt)
 	require.NotNil(t, retrieved.StoppedAt)
@@ -1295,7 +1354,7 @@ func TestGetTemplate_ContextCancelled(t *testing.T) {
 	cancel()
 
 	// Should fail with context error
-	_, err := store.GetTemplate(ctx, template.ID)
+	_, err := store.GetTemplate(ctx, template.ReferenceID)
 	require.Error(t, err)
 }
 
@@ -1310,7 +1369,7 @@ func TestGetDeployment_ContextCancelled(t *testing.T) {
 	cancel()
 
 	// Should fail with context error
-	_, err := store.GetDeployment(ctx, deployment.ID)
+	_, err := store.GetDeployment(ctx, deployment.ReferenceID)
 	require.Error(t, err)
 }
 
@@ -1340,7 +1399,7 @@ func TestDeleteTemplate_ContextCancelled(t *testing.T) {
 	cancel()
 
 	// Should fail with context error
-	err := store.DeleteTemplate(ctx, template.ID)
+	err := store.DeleteTemplate(ctx, template.ReferenceID)
 	require.Error(t, err)
 }
 
@@ -1355,7 +1414,7 @@ func TestDeleteDeployment_ContextCancelled(t *testing.T) {
 	cancel()
 
 	// Should fail with context error
-	err := store.DeleteDeployment(ctx, deployment.ID)
+	err := store.DeleteDeployment(ctx, deployment.ReferenceID)
 	require.Error(t, err)
 }
 
@@ -1398,12 +1457,16 @@ func TestListDeploymentsByTemplate_ContextCancelled(t *testing.T) {
 func TestListDeploymentsByCustomer_ContextCancelled(t *testing.T) {
 	store := setupTestStore(t)
 
+	// Resolve user before cancelling context
+	customerID, err := store.ResolveUser(context.Background(), "customer-123", "", "", "")
+	require.NoError(t, err)
+
 	// Cancel context immediately
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	// Should fail with context error
-	_, err := store.ListDeploymentsByCustomer(ctx, "customer-123", ListOptions{})
+	_, err = store.ListDeploymentsByCustomer(ctx, customerID, ListOptions{})
 	require.Error(t, err)
 }
 
@@ -1412,7 +1475,9 @@ func TestCreateTemplate_ContextCancelled(t *testing.T) {
 
 	template, err := domain.NewTemplate("Test", "1.0.0", "services:\n  web:\n    image: nginx")
 	require.NoError(t, err)
-	template.CreatorID = "creator-123"
+	creatorID, err := store.ResolveUser(context.Background(), "creator-123", "", "", "")
+	require.NoError(t, err)
+	template.CreatorID = creatorID
 
 	// Cancel context immediately
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1442,7 +1507,9 @@ func TestCreateDeployment_ContextCancelled(t *testing.T) {
 	store := setupTestStore(t)
 	template := createPublishedTemplate(t, store)
 
-	deployment, err := domain.NewDeployment(*template, "customer-123", nil)
+	customerID, err := store.ResolveUser(context.Background(), "customer-123", "", "", "")
+	require.NoError(t, err)
+	deployment, err := domain.NewDeployment(*template, customerID, nil)
 	require.NoError(t, err)
 
 	// Cancel context immediately
@@ -1497,8 +1564,10 @@ func TestWithTx_ContextCancelled(t *testing.T) {
 // Node Tests
 // =============================================================================
 
-func createTestNode(t *testing.T, store Store, creatorID string) *domain.Node {
+func createTestNode(t *testing.T, s Store, creatorRef string) *domain.Node {
 	t.Helper()
+	creatorID, err := s.ResolveUser(context.Background(), creatorRef, "", "", "")
+	require.NoError(t, err)
 	// Generate unique name using timestamp
 	uniqueName := "test-node-" + time.Now().Format("150405.000000000")
 	node, err := domain.NewNode(creatorID, uniqueName, "192.168.1.100", "root", 22, []string{"standard"})
@@ -1512,7 +1581,7 @@ func createTestNode(t *testing.T, store Store, creatorID string) *domain.Node {
 		MemoryUsedMB: 4096,
 		DiskUsedMB:   20000,
 	}
-	err = store.CreateNode(context.Background(), node)
+	err = s.CreateNode(context.Background(), node)
 	require.NoError(t, err)
 	return node
 }
@@ -1521,7 +1590,9 @@ func TestCreateNode_Success(t *testing.T) {
 	store := setupTestStore(t)
 	ctx := context.Background()
 
-	node, err := domain.NewNode("creator-123", "my-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
+	node, err := domain.NewNode(creatorID, "my-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
 	require.NoError(t, err)
 	node.Capabilities = []string{"standard", "ssd"}
 
@@ -1529,11 +1600,11 @@ func TestCreateNode_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it was stored
-	retrieved, err := store.GetNode(ctx, node.ID)
+	retrieved, err := store.GetNode(ctx, node.ReferenceID)
 	require.NoError(t, err)
-	assert.Equal(t, node.ID, retrieved.ID)
+	assert.Equal(t, node.ReferenceID, retrieved.ReferenceID)
 	assert.Equal(t, "my-node", retrieved.Name)
-	assert.Equal(t, "creator-123", retrieved.CreatorID)
+	assert.Equal(t, creatorID, retrieved.CreatorID)
 	assert.Equal(t, "10.0.0.1", retrieved.SSHHost)
 	assert.Equal(t, 22, retrieved.SSHPort)
 	assert.Equal(t, "ubuntu", retrieved.SSHUser)
@@ -1545,13 +1616,15 @@ func TestCreateNode_DuplicateID(t *testing.T) {
 	store := setupTestStore(t)
 	ctx := context.Background()
 
-	node1, _ := domain.NewNode("creator-123", "node-1", "10.0.0.1", "ubuntu", 22, []string{"standard"})
-	err := store.CreateNode(ctx, node1)
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
+	node1, _ := domain.NewNode(creatorID, "node-1", "10.0.0.1", "ubuntu", 22, []string{"standard"})
+	err = store.CreateNode(ctx, node1)
 	require.NoError(t, err)
 
 	// Try to create with same ID
-	node2, _ := domain.NewNode("creator-123", "node-2", "10.0.0.2", "ubuntu", 22, []string{"standard"})
-	node2.ID = node1.ID
+	node2, _ := domain.NewNode(creatorID, "node-2", "10.0.0.2", "ubuntu", 22, []string{"standard"})
+	node2.ReferenceID = node1.ReferenceID
 	err = store.CreateNode(ctx, node2)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrDuplicateID))
@@ -1561,12 +1634,14 @@ func TestCreateNode_DuplicateNameSameCreator(t *testing.T) {
 	store := setupTestStore(t)
 	ctx := context.Background()
 
-	node1, _ := domain.NewNode("creator-123", "my-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
-	err := store.CreateNode(ctx, node1)
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
+	node1, _ := domain.NewNode(creatorID, "my-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
+	err = store.CreateNode(ctx, node1)
 	require.NoError(t, err)
 
 	// Try to create with same name for same creator
-	node2, _ := domain.NewNode("creator-123", "my-node", "10.0.0.2", "ubuntu", 22, []string{"standard"})
+	node2, _ := domain.NewNode(creatorID, "my-node", "10.0.0.2", "ubuntu", 22, []string{"standard"})
 	err = store.CreateNode(ctx, node2)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrDuplicateKey))
@@ -1576,12 +1651,16 @@ func TestCreateNode_SameNameDifferentCreator(t *testing.T) {
 	store := setupTestStore(t)
 	ctx := context.Background()
 
-	node1, _ := domain.NewNode("creator-123", "my-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
-	err := store.CreateNode(ctx, node1)
+	creatorID1, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
+	node1, _ := domain.NewNode(creatorID1, "my-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
+	err = store.CreateNode(ctx, node1)
 	require.NoError(t, err)
 
 	// Different creator should be able to use same name
-	node2, _ := domain.NewNode("creator-456", "my-node", "10.0.0.2", "ubuntu", 22, []string{"standard"})
+	creatorID2, err := store.ResolveUser(ctx, "creator-456", "", "", "")
+	require.NoError(t, err)
+	node2, _ := domain.NewNode(creatorID2, "my-node", "10.0.0.2", "ubuntu", 22, []string{"standard"})
 	err = store.CreateNode(ctx, node2)
 	require.NoError(t, err)
 }
@@ -1610,7 +1689,7 @@ func TestUpdateNode_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify update
-	retrieved, err := store.GetNode(ctx, node.ID)
+	retrieved, err := store.GetNode(ctx, node.ReferenceID)
 	require.NoError(t, err)
 	assert.Equal(t, domain.NodeStatusOnline, retrieved.Status)
 	assert.Equal(t, []string{"standard", "gpu", "high-memory"}, retrieved.Capabilities)
@@ -1622,8 +1701,10 @@ func TestUpdateNode_NotFound(t *testing.T) {
 	store := setupTestStore(t)
 	ctx := context.Background()
 
-	node, _ := domain.NewNode("creator-123", "ghost-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
-	err := store.UpdateNode(ctx, node)
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
+	node, _ := domain.NewNode(creatorID, "ghost-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
+	err = store.UpdateNode(ctx, node)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrNotFound))
 }
@@ -1633,11 +1714,11 @@ func TestDeleteNode_Success(t *testing.T) {
 	ctx := context.Background()
 	node := createTestNode(t, store, "creator-123")
 
-	err := store.DeleteNode(ctx, node.ID)
+	err := store.DeleteNode(ctx, node.ReferenceID)
 	require.NoError(t, err)
 
 	// Verify deleted
-	_, err = store.GetNode(ctx, node.ID)
+	_, err = store.GetNode(ctx, node.ReferenceID)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrNotFound))
 }
@@ -1661,15 +1742,19 @@ func TestListNodesByCreator_Success(t *testing.T) {
 	createTestNode(t, store, "creator-b")
 
 	// List nodes for creator-a
-	nodes, err := store.ListNodesByCreator(ctx, "creator-a", DefaultListOptions())
+	creatorAID, err := store.ResolveUser(ctx, "creator-a", "", "", "")
+	require.NoError(t, err)
+	nodes, err := store.ListNodesByCreator(ctx, creatorAID, DefaultListOptions())
 	require.NoError(t, err)
 	assert.Len(t, nodes, 2)
 	for _, n := range nodes {
-		assert.Equal(t, "creator-a", n.CreatorID)
+		assert.Equal(t, creatorAID, n.CreatorID)
 	}
 
 	// List nodes for creator-b
-	nodes, err = store.ListNodesByCreator(ctx, "creator-b", DefaultListOptions())
+	creatorBID, err := store.ResolveUser(ctx, "creator-b", "", "", "")
+	require.NoError(t, err)
+	nodes, err = store.ListNodesByCreator(ctx, creatorBID, DefaultListOptions())
 	require.NoError(t, err)
 	assert.Len(t, nodes, 1)
 }
@@ -1730,19 +1815,21 @@ func TestListCheckableNodes_Success(t *testing.T) {
 // SSH Key Tests
 // =============================================================================
 
-func createTestSSHKey(t *testing.T, store Store, creatorID, name string) *domain.SSHKey {
+func createTestSSHKey(t *testing.T, s Store, creatorRef, name string) *domain.SSHKey {
 	t.Helper()
+	creatorID, err := s.ResolveUser(context.Background(), creatorRef, "", "", "")
+	require.NoError(t, err)
 	// Use UUID-like unique ID to avoid collisions
-	uniqueID := "key-" + creatorID + "-" + name + "-" + time.Now().Format("150405.000000000")
+	uniqueID := "key-" + creatorRef + "-" + name + "-" + time.Now().Format("150405.000000000")
 	key := &domain.SSHKey{
-		ID:                  uniqueID,
+		ReferenceID:         uniqueID,
 		CreatorID:           creatorID,
 		Name:                name,
 		PrivateKeyEncrypted: []byte("encrypted-key-data"),
 		Fingerprint:         "SHA256:abc123xyz",
 		CreatedAt:           time.Now(),
 	}
-	err := store.CreateSSHKey(context.Background(), key)
+	err = s.CreateSSHKey(context.Background(), key)
 	require.NoError(t, err)
 	return key
 }
@@ -1751,24 +1838,26 @@ func TestCreateSSHKey_Success(t *testing.T) {
 	store := setupTestStore(t)
 	ctx := context.Background()
 
+	creatorID, err := store.ResolveUser(ctx, "creator-456", "", "", "")
+	require.NoError(t, err)
 	key := &domain.SSHKey{
-		ID:                  "key-123",
-		CreatorID:           "creator-456",
+		ReferenceID:         "key-123",
+		CreatorID:           creatorID,
 		Name:                "my-ssh-key",
 		PrivateKeyEncrypted: []byte("encrypted-private-key"),
 		Fingerprint:         "SHA256:fingerprint123",
 		CreatedAt:           time.Now(),
 	}
 
-	err := store.CreateSSHKey(ctx, key)
+	err = store.CreateSSHKey(ctx, key)
 	require.NoError(t, err)
 
 	// Verify retrieval
-	retrieved, err := store.GetSSHKey(ctx, key.ID)
+	retrieved, err := store.GetSSHKey(ctx, key.ReferenceID)
 	require.NoError(t, err)
-	assert.Equal(t, key.ID, retrieved.ID)
+	assert.Equal(t, key.ReferenceID, retrieved.ReferenceID)
 	assert.Equal(t, "my-ssh-key", retrieved.Name)
-	assert.Equal(t, "creator-456", retrieved.CreatorID)
+	assert.Equal(t, creatorID, retrieved.CreatorID)
 	assert.Equal(t, "SHA256:fingerprint123", retrieved.Fingerprint)
 	assert.Equal(t, []byte("encrypted-private-key"), retrieved.PrivateKeyEncrypted)
 }
@@ -1780,15 +1869,17 @@ func TestCreateSSHKey_DuplicateNameSameCreator(t *testing.T) {
 	createTestSSHKey(t, store, "creator-123", "my-key")
 
 	// Try to create with same name for same creator
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
 	key2 := &domain.SSHKey{
-		ID:                  "key-different",
-		CreatorID:           "creator-123",
+		ReferenceID:         "key-different",
+		CreatorID:           creatorID,
 		Name:                "my-key",
 		PrivateKeyEncrypted: []byte("data"),
 		Fingerprint:         "SHA256:xyz",
 		CreatedAt:           time.Now(),
 	}
-	err := store.CreateSSHKey(ctx, key2)
+	err = store.CreateSSHKey(ctx, key2)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrDuplicateKey))
 }
@@ -1807,11 +1898,11 @@ func TestDeleteSSHKey_Success(t *testing.T) {
 	ctx := context.Background()
 	key := createTestSSHKey(t, store, "creator-123", "my-key")
 
-	err := store.DeleteSSHKey(ctx, key.ID)
+	err := store.DeleteSSHKey(ctx, key.ReferenceID)
 	require.NoError(t, err)
 
 	// Verify deleted
-	_, err = store.GetSSHKey(ctx, key.ID)
+	_, err = store.GetSSHKey(ctx, key.ReferenceID)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrNotFound))
 }
@@ -1835,11 +1926,13 @@ func TestListSSHKeysByCreator_Success(t *testing.T) {
 	createTestSSHKey(t, store, "creator-b", "key1")
 
 	// List keys for creator-a
-	keys, err := store.ListSSHKeysByCreator(ctx, "creator-a", DefaultListOptions())
+	creatorAID, err := store.ResolveUser(ctx, "creator-a", "", "", "")
+	require.NoError(t, err)
+	keys, err := store.ListSSHKeysByCreator(ctx, creatorAID, DefaultListOptions())
 	require.NoError(t, err)
 	assert.Len(t, keys, 2)
 	for _, k := range keys {
-		assert.Equal(t, "creator-a", k.CreatorID)
+		assert.Equal(t, creatorAID, k.CreatorID)
 	}
 }
 
@@ -1851,13 +1944,15 @@ func TestNode_WithSSHKey(t *testing.T) {
 	key := createTestSSHKey(t, store, "creator-123", "deploy-key")
 
 	// Create node with SSH key reference
-	node, _ := domain.NewNode("creator-123", "my-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
+	node, _ := domain.NewNode(creatorID, "my-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
 	node.SSHKeyID = key.ID
-	err := store.CreateNode(ctx, node)
+	err = store.CreateNode(ctx, node)
 	require.NoError(t, err)
 
 	// Retrieve and verify
-	retrieved, err := store.GetNode(ctx, node.ID)
+	retrieved, err := store.GetNode(ctx, node.ReferenceID)
 	require.NoError(t, err)
 	assert.Equal(t, key.ID, retrieved.SSHKeyID)
 }
@@ -1866,13 +1961,15 @@ func TestNode_CapabilitiesSerialization(t *testing.T) {
 	store := setupTestStore(t)
 	ctx := context.Background()
 
-	node, _ := domain.NewNode("creator-123", "my-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
+	creatorID, err := store.ResolveUser(ctx, "creator-123", "", "", "")
+	require.NoError(t, err)
+	node, _ := domain.NewNode(creatorID, "my-node", "10.0.0.1", "ubuntu", 22, []string{"standard"})
 	node.Capabilities = []string{"gpu", "high-memory", "ssd", "standard"}
 
-	err := store.CreateNode(ctx, node)
+	err = store.CreateNode(ctx, node)
 	require.NoError(t, err)
 
-	retrieved, err := store.GetNode(ctx, node.ID)
+	retrieved, err := store.GetNode(ctx, node.ReferenceID)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"gpu", "high-memory", "ssd", "standard"}, retrieved.Capabilities)
 }
@@ -1891,7 +1988,7 @@ func TestNode_LastHealthCheck(t *testing.T) {
 	err := store.UpdateNode(ctx, node)
 	require.NoError(t, err)
 
-	retrieved, err := store.GetNode(ctx, node.ID)
+	retrieved, err := store.GetNode(ctx, node.ReferenceID)
 	require.NoError(t, err)
 	require.NotNil(t, retrieved.LastHealthCheck)
 	assert.Equal(t, now.UTC().Truncate(time.Second), retrieved.LastHealthCheck.UTC().Truncate(time.Second))

@@ -94,12 +94,12 @@ func (n Node) GetReferencedStructs() []jsonapi.MarshalIdentifier {
 // NodeFromDomain converts a domain.Node to a JSON:API Node.
 func NodeFromDomain(n *domain.Node) Node {
 	return Node{
-		ID:              n.ID,
+		ID:              n.ReferenceID,
 		Name:            n.Name,
 		SSHHost:         n.SSHHost,
 		SSHPort:         n.SSHPort,
 		SSHUser:         n.SSHUser,
-		SSHKeyID:        n.SSHKeyID,
+		SSHKeyID:        n.SSHKeyRefID,
 		DockerSocket:    n.DockerSocket,
 		Status:          string(n.Status),
 		Capabilities:    n.Capabilities,
@@ -107,7 +107,7 @@ func NodeFromDomain(n *domain.Node) Node {
 		Location:        n.Location,
 		LastHealthCheck: n.LastHealthCheck,
 		ErrorMessage:    n.ErrorMessage,
-		CreatorID:       n.CreatorID,
+		CreatorID:       "",
 		CreatedAt:       n.CreatedAt,
 		UpdatedAt:       n.UpdatedAt,
 	}
@@ -116,12 +116,12 @@ func NodeFromDomain(n *domain.Node) Node {
 // ToDomain converts the JSON:API Node to a domain.Node.
 func (n Node) ToDomain() *domain.Node {
 	return &domain.Node{
-		ID:              n.ID,
+		ReferenceID:     n.ID,
 		Name:            n.Name,
 		SSHHost:         n.SSHHost,
 		SSHPort:         n.SSHPort,
 		SSHUser:         n.SSHUser,
-		SSHKeyID:        n.SSHKeyID,
+		SSHKeyRefID:     n.SSHKeyID,
 		DockerSocket:    n.DockerSocket,
 		Status:          domain.NodeStatus(n.Status),
 		Capabilities:    n.Capabilities,
@@ -129,7 +129,6 @@ func (n Node) ToDomain() *domain.Node {
 		Location:        n.Location,
 		LastHealthCheck: n.LastHealthCheck,
 		ErrorMessage:    n.ErrorMessage,
-		CreatorID:       n.CreatorID,
 		CreatedAt:       n.CreatedAt,
 		UpdatedAt:       n.UpdatedAt,
 	}
@@ -294,7 +293,18 @@ func (r NodeResource) Create(obj interface{}, req api2go.Request) (api2go.Respon
 	}
 
 	// Apply optional fields
-	domainNode.SSHKeyID = node.SSHKeyID
+	if node.SSHKeyID != "" {
+		sshKey, err := r.Store.GetSSHKey(ctx, node.SSHKeyID)
+		if err != nil {
+			return &Response{Code: http.StatusBadRequest}, api2go.NewHTTPError(
+				fmt.Errorf("SSH key not found"),
+				"SSH key not found",
+				http.StatusBadRequest,
+			)
+		}
+		domainNode.SSHKeyID = sshKey.ID
+		domainNode.SSHKeyRefID = sshKey.ReferenceID
+	}
 	domainNode.DockerSocket = node.DockerSocket
 	domainNode.Location = node.Location
 
@@ -397,7 +407,16 @@ func (r NodeResource) Update(obj interface{}, req api2go.Request) (api2go.Respon
 		existing.Capabilities = node.Capabilities
 	}
 	if node.SSHKeyID != "" {
-		existing.SSHKeyID = node.SSHKeyID
+		sshKey, err := r.Store.GetSSHKey(ctx, node.SSHKeyID)
+		if err != nil {
+			return &Response{Code: http.StatusBadRequest}, api2go.NewHTTPError(
+				fmt.Errorf("SSH key not found"),
+				"SSH key not found",
+				http.StatusBadRequest,
+			)
+		}
+		existing.SSHKeyID = sshKey.ID
+		existing.SSHKeyRefID = sshKey.ReferenceID
 	}
 	if node.DockerSocket != "" {
 		existing.DockerSocket = node.DockerSocket

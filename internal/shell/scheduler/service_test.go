@@ -74,15 +74,15 @@ func testStore(t *testing.T) store.Store {
 }
 
 // testNode creates a test node
-func testNode(id, creatorID, name string, status domain.NodeStatus, caps []string) domain.Node {
+func testNode(id string, creatorID int, name string, status domain.NodeStatus, caps []string) domain.Node {
 	return domain.Node{
-		ID:           id,
+		ReferenceID:  id,
 		Name:         name,
 		CreatorID:    creatorID,
 		SSHHost:      "192.168.1.100",
 		SSHPort:      22,
 		SSHUser:      "deploy",
-		SSHKeyID:     "key-1",
+		SSHKeyID:     1,
 		Status:       status,
 		Capabilities: caps,
 		Capacity: domain.NodeCapacity{
@@ -97,9 +97,9 @@ func testNode(id, creatorID, name string, status domain.NodeStatus, caps []strin
 }
 
 // testTemplate creates a test template
-func testTemplate(id, creatorID string, caps []string, resources domain.Resources) *domain.Template {
+func testTemplate(id string, creatorID int, caps []string, resources domain.Resources) *domain.Template {
 	return &domain.Template{
-		ID:                   id,
+		ReferenceID:          id,
 		Name:                 "Test Template",
 		CreatorID:            creatorID,
 		RequiredCapabilities: caps,
@@ -127,10 +127,10 @@ func TestScheduleDeployment_NoNodePool_ReturnsLocal(t *testing.T) {
 	localClient := &mockDockerClient{}
 	service := NewService(s, nil, localClient, nil)
 
-	template := testTemplate("tmpl-1", "creator-1", nil, domain.Resources{})
+	template := testTemplate("tmpl-1", 1, nil, domain.Resources{})
 	req := ScheduleDeploymentRequest{
 		Template:  template,
-		CreatorID: "creator-1",
+		CreatorID: 1,
 	}
 
 	result, err := service.ScheduleDeployment(context.Background(), req)
@@ -147,18 +147,25 @@ func TestScheduleDeployment_NoNodesForCreator_ReturnsLocal(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 
+	// Create users first (required for foreign key constraints)
+	_, err := s.ResolveUser(ctx, "creator-1", "", "", "free")
+	require.NoError(t, err)
+	otherCreatorID, err := s.ResolveUser(ctx, "other-creator", "", "", "free")
+	require.NoError(t, err)
+
 	// Create SSH key first (required for foreign key constraint)
 	sshKey := &domain.SSHKey{
-		ID:                  "key-1",
+		ReferenceID:         "key-1",
 		Name:                "Test Key",
-		CreatorID:           "other-creator",
+		CreatorID:           otherCreatorID,
 		PrivateKeyEncrypted: []byte("encrypted-key"),
 		Fingerprint:         "SHA256:test",
 	}
-	err := s.CreateSSHKey(ctx, sshKey)
+	err = s.CreateSSHKey(ctx, sshKey)
 	require.NoError(t, err)
 
-	node := testNode("node-1", "other-creator", "Node 1", domain.NodeStatusOnline, []string{"standard"})
+	node := testNode("node-1", otherCreatorID, "Node 1", domain.NodeStatusOnline, []string{"standard"})
+	node.SSHKeyID = sshKey.ID
 	err = s.CreateNode(ctx, &node)
 	require.NoError(t, err)
 
@@ -167,10 +174,10 @@ func TestScheduleDeployment_NoNodesForCreator_ReturnsLocal(t *testing.T) {
 	// so this test verifies the local fallback behavior
 	service := NewService(s, nil, localClient, nil)
 
-	template := testTemplate("tmpl-1", "creator-1", nil, domain.Resources{})
+	template := testTemplate("tmpl-1", 1, nil, domain.Resources{})
 	req := ScheduleDeploymentRequest{
 		Template:  template,
-		CreatorID: "creator-1",
+		CreatorID: 1,
 	}
 
 	result, err := service.ScheduleDeployment(ctx, req)
@@ -221,40 +228,40 @@ func TestFilterNodesByCreator(t *testing.T) {
 	tests := []struct {
 		name      string
 		nodes     []domain.Node
-		creatorID string
+		creatorID int
 		expected  int
 	}{
 		{
 			name:      "empty nodes",
 			nodes:     []domain.Node{},
-			creatorID: "creator-1",
+			creatorID: 1,
 			expected:  0,
 		},
 		{
-			name: "empty creator ID returns all",
+			name: "zero creator ID returns all",
 			nodes: []domain.Node{
-				testNode("n1", "c1", "Node 1", domain.NodeStatusOnline, []string{"standard"}),
-				testNode("n2", "c2", "Node 2", domain.NodeStatusOnline, []string{"standard"}),
+				testNode("n1", 1, "Node 1", domain.NodeStatusOnline, []string{"standard"}),
+				testNode("n2", 2, "Node 2", domain.NodeStatusOnline, []string{"standard"}),
 			},
-			creatorID: "",
+			creatorID: 0,
 			expected:  2,
 		},
 		{
 			name: "filters by creator",
 			nodes: []domain.Node{
-				testNode("n1", "c1", "Node 1", domain.NodeStatusOnline, []string{"standard"}),
-				testNode("n2", "c1", "Node 2", domain.NodeStatusOnline, []string{"standard"}),
-				testNode("n3", "c2", "Node 3", domain.NodeStatusOnline, []string{"standard"}),
+				testNode("n1", 1, "Node 1", domain.NodeStatusOnline, []string{"standard"}),
+				testNode("n2", 1, "Node 2", domain.NodeStatusOnline, []string{"standard"}),
+				testNode("n3", 2, "Node 3", domain.NodeStatusOnline, []string{"standard"}),
 			},
-			creatorID: "c1",
+			creatorID: 1,
 			expected:  2,
 		},
 		{
 			name: "no matching creator",
 			nodes: []domain.Node{
-				testNode("n1", "c1", "Node 1", domain.NodeStatusOnline, []string{"standard"}),
+				testNode("n1", 1, "Node 1", domain.NodeStatusOnline, []string{"standard"}),
 			},
-			creatorID: "c2",
+			creatorID: 2,
 			expected:  0,
 		},
 	}

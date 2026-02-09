@@ -109,7 +109,7 @@ func TestHealthChecker_RunCycle_NoNodes(t *testing.T) {
 }
 
 func TestHealthChecker_RunCycle_WithNodes(t *testing.T) {
-	node := createTestNode("node-1", "creator-1")
+	node := createTestNode("node-1", 1)
 	s := &mockStore{
 		nodes:   []domain.Node{node},
 		sshKeys: map[string]*domain.SSHKey{},
@@ -132,8 +132,8 @@ func TestHealthChecker_RunCycle_WithNodes(t *testing.T) {
 }
 
 func TestHealthChecker_RunCycle_SkipsNodeWithoutSSHKey(t *testing.T) {
-	node := createTestNode("node-1", "creator-1")
-	node.SSHKeyID = "" // No SSH key
+	node := createTestNode("node-1", 1)
+	node.SSHKeyID = 0 // No SSH key
 
 	s := &mockStore{
 		nodes:   []domain.Node{node},
@@ -160,7 +160,7 @@ func TestHealthChecker_RunCycle_SkipsNodeWithoutSSHKey(t *testing.T) {
 // =============================================================================
 
 func TestHealthChecker_CheckNodeNow_MaintenanceMode(t *testing.T) {
-	node := createTestNode("node-1", "creator-1")
+	node := createTestNode("node-1", 1)
 	node.Status = domain.NodeStatusMaintenance
 
 	s := &mockStore{
@@ -200,7 +200,7 @@ func TestHealthChecker_RunCycle_ConcurrencyLimit(t *testing.T) {
 	// Create more nodes than the concurrency limit
 	nodes := make([]domain.Node, 10)
 	for i := range 10 {
-		nodes[i] = createTestNode("node-"+string(rune('0'+i)), "creator-1")
+		nodes[i] = createTestNode("node-"+string(rune('0'+i)), 1)
 	}
 
 	s := &mockStore{
@@ -257,7 +257,7 @@ func (m *mockStore) GetNode(ctx context.Context, id string) (*domain.Node, error
 		return m.getNodeResult, nil
 	}
 	for i := range m.nodes {
-		if m.nodes[i].ID == id {
+		if m.nodes[i].ReferenceID == id {
 			return &m.nodes[i], nil
 		}
 	}
@@ -284,16 +284,16 @@ func (m *mockStore) GetSSHKey(ctx context.Context, id string) (*domain.SSHKey, e
 // Test Helpers
 // =============================================================================
 
-func createTestNode(id, creatorID string) domain.Node {
+func createTestNode(id string, creatorID int) domain.Node {
 	now := time.Now()
 	return domain.Node{
-		ID:           id,
+		ReferenceID:  id,
 		Name:         "Test Node " + id,
 		CreatorID:    creatorID,
 		SSHHost:      "192.168.1.100",
 		SSHPort:      22,
 		SSHUser:      "deploy",
-		SSHKeyID:     "sshkey-1",
+		SSHKeyID:     1,
 		DockerSocket: "/var/run/docker.sock",
 		Status:       domain.NodeStatusOnline,
 		Capabilities: []string{"standard"},

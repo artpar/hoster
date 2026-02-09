@@ -108,11 +108,13 @@ type ContainerInfo struct {
 
 // Deployment represents a running instance of a template.
 type Deployment struct {
-	ID              string            `json:"id"`
+	ID              int               `json:"-"`
+	ReferenceID     string            `json:"id"`
 	Name            string            `json:"name"`
-	TemplateID      string            `json:"template_id"`
+	TemplateID      int               `json:"-"`
+	TemplateRefID   string            `json:"template_id"`
 	TemplateVersion string            `json:"template_version"`
-	CustomerID      string            `json:"customer_id"`
+	CustomerID      int               `json:"-"`
 	NodeID          string            `json:"node_id,omitempty"`
 	Status          DeploymentStatus  `json:"status"`
 	Variables       map[string]string `json:"variables,omitempty"`
@@ -128,7 +130,7 @@ type Deployment struct {
 }
 
 // NewDeployment creates a new deployment from a template.
-func NewDeployment(template Template, customerID string, variables map[string]string) (*Deployment, error) {
+func NewDeployment(template Template, customerID int, variables map[string]string) (*Deployment, error) {
 	// Validate template is published
 	if !template.Published {
 		return nil, ErrTemplateNotPublished
@@ -142,9 +144,10 @@ func NewDeployment(template Template, customerID string, variables map[string]st
 
 	now := time.Now().UTC()
 	return &Deployment{
-		ID:              uuid.New().String(),
+		ReferenceID:     uuid.New().String(),
 		Name:            GenerateDeploymentName(template.Slug),
 		TemplateID:      template.ID,
+		TemplateRefID:   template.ReferenceID,
 		TemplateVersion: template.Version,
 		CustomerID:      customerID,
 		Status:          StatusPending,

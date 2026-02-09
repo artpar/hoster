@@ -88,7 +88,7 @@ func (t Template) GetReferencedStructs() []jsonapi.MarshalIdentifier {
 // TemplateFromDomain converts a domain.Template to a JSON:API Template.
 func TemplateFromDomain(t *domain.Template) Template {
 	return Template{
-		ID:                   t.ID,
+		ID:                   t.ReferenceID,
 		Name:                 t.Name,
 		Slug:                 t.Slug,
 		Description:          t.Description,
@@ -101,7 +101,7 @@ func TemplateFromDomain(t *domain.Template) Template {
 		Category:             t.Category,
 		Tags:                 t.Tags,
 		Published:            t.Published,
-		CreatorID:            t.CreatorID,
+		CreatorID:            "",
 		CreatedAt:            t.CreatedAt,
 		UpdatedAt:            t.UpdatedAt,
 	}
@@ -110,7 +110,7 @@ func TemplateFromDomain(t *domain.Template) Template {
 // ToDomain converts the JSON:API Template to a domain.Template.
 func (t Template) ToDomain() *domain.Template {
 	return &domain.Template{
-		ID:                   t.ID,
+		ReferenceID:          t.ID,
 		Name:                 t.Name,
 		Slug:                 t.Slug,
 		Description:          t.Description,
@@ -123,7 +123,6 @@ func (t Template) ToDomain() *domain.Template {
 		Category:             t.Category,
 		Tags:                 t.Tags,
 		Published:            t.Published,
-		CreatorID:            t.CreatorID,
 		CreatedAt:            t.CreatedAt,
 		UpdatedAt:            t.UpdatedAt,
 	}
@@ -268,7 +267,7 @@ func (r TemplateResource) Create(obj interface{}, req api2go.Request) (api2go.Re
 
 	now := time.Now()
 	domainTemplate := &domain.Template{
-		ID:                   "tmpl_" + uuid.New().String()[:8],
+		ReferenceID:          "tmpl_" + uuid.New().String()[:8],
 		Name:                 template.Name,
 		Slug:                 domain.Slugify(template.Name),
 		Version:              template.Version,

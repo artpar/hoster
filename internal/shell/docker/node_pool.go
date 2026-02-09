@@ -77,11 +77,11 @@ func (p *NodePool) GetClient(ctx context.Context, nodeID string) (Client, error)
 	}
 
 	// Get SSH key from store
-	if node.SSHKeyID == "" {
+	if node.SSHKeyID == 0 {
 		return nil, fmt.Errorf("node %s has no SSH key configured", nodeID)
 	}
 
-	sshKey, err := p.store.GetSSHKey(ctx, node.SSHKeyID)
+	sshKey, err := p.store.GetSSHKey(ctx, node.SSHKeyRefID)
 	if err != nil {
 		return nil, fmt.Errorf("get SSH key: %w", err)
 	}
@@ -110,7 +110,7 @@ func (p *NodePool) GetClient(ctx context.Context, nodeID string) (Client, error)
 func (p *NodePool) GetClientForNode(ctx context.Context, node *domain.Node, privateKey []byte) (Client, error) {
 	// Fast path: check if client exists
 	p.mu.RLock()
-	client, exists := p.clients[node.ID]
+	client, exists := p.clients[node.ReferenceID]
 	p.mu.RUnlock()
 
 	if exists {
@@ -122,7 +122,7 @@ func (p *NodePool) GetClientForNode(ctx context.Context, node *domain.Node, priv
 	defer p.mu.Unlock()
 
 	// Double-check after acquiring write lock
-	if client, exists := p.clients[node.ID]; exists {
+	if client, exists := p.clients[node.ReferenceID]; exists {
 		return client, nil
 	}
 
@@ -133,7 +133,7 @@ func (p *NodePool) GetClientForNode(ctx context.Context, node *domain.Node, priv
 	}
 
 	// Cache the client
-	p.clients[node.ID] = client
+	p.clients[node.ReferenceID] = client
 
 	return client, nil
 }

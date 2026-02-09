@@ -54,7 +54,7 @@ func (m *mockStore) ListDeployments(ctx context.Context, opts store.ListOptions)
 func (m *mockStore) ListDeploymentsByTemplate(ctx context.Context, templateID string, opts store.ListOptions) ([]domain.Deployment, error) {
 	return nil, nil
 }
-func (m *mockStore) ListDeploymentsByCustomer(ctx context.Context, customerID string, opts store.ListOptions) ([]domain.Deployment, error) {
+func (m *mockStore) ListDeploymentsByCustomer(ctx context.Context, customerID int, opts store.ListOptions) ([]domain.Deployment, error) {
 	return nil, nil
 }
 func (m *mockStore) CreateUsageEvent(ctx context.Context, e *domain.MeterEvent) error { return nil }
@@ -74,7 +74,7 @@ func (m *mockStore) CreateNode(ctx context.Context, n *domain.Node) error       
 func (m *mockStore) GetNode(ctx context.Context, id string) (*domain.Node, error)      { return nil, nil }
 func (m *mockStore) UpdateNode(ctx context.Context, n *domain.Node) error              { return nil }
 func (m *mockStore) DeleteNode(ctx context.Context, id string) error                   { return nil }
-func (m *mockStore) ListNodesByCreator(ctx context.Context, creatorID string, opts store.ListOptions) ([]domain.Node, error) {
+func (m *mockStore) ListNodesByCreator(ctx context.Context, creatorID int, opts store.ListOptions) ([]domain.Node, error) {
 	return nil, nil
 }
 func (m *mockStore) ListOnlineNodes(ctx context.Context) ([]domain.Node, error)    { return nil, nil }
@@ -84,7 +84,7 @@ func (m *mockStore) GetSSHKey(ctx context.Context, id string) (*domain.SSHKey, e
 	return nil, nil
 }
 func (m *mockStore) DeleteSSHKey(ctx context.Context, id string) error { return nil }
-func (m *mockStore) ListSSHKeysByCreator(ctx context.Context, creatorID string, opts store.ListOptions) ([]domain.SSHKey, error) {
+func (m *mockStore) ListSSHKeysByCreator(ctx context.Context, creatorID int, opts store.ListOptions) ([]domain.SSHKey, error) {
 	return nil, nil
 }
 func (m *mockStore) CreateCloudCredential(ctx context.Context, c *domain.CloudCredential) error {
@@ -94,7 +94,7 @@ func (m *mockStore) GetCloudCredential(ctx context.Context, id string) (*domain.
 	return nil, nil
 }
 func (m *mockStore) DeleteCloudCredential(ctx context.Context, id string) error { return nil }
-func (m *mockStore) ListCloudCredentialsByCreator(ctx context.Context, creatorID string, opts store.ListOptions) ([]domain.CloudCredential, error) {
+func (m *mockStore) ListCloudCredentialsByCreator(ctx context.Context, creatorID int, opts store.ListOptions) ([]domain.CloudCredential, error) {
 	return nil, nil
 }
 func (m *mockStore) CreateCloudProvision(ctx context.Context, p *domain.CloudProvision) error {
@@ -106,11 +106,14 @@ func (m *mockStore) GetCloudProvision(ctx context.Context, id string) (*domain.C
 func (m *mockStore) UpdateCloudProvision(ctx context.Context, p *domain.CloudProvision) error {
 	return nil
 }
-func (m *mockStore) ListCloudProvisionsByCreator(ctx context.Context, creatorID string, opts store.ListOptions) ([]domain.CloudProvision, error) {
+func (m *mockStore) ListCloudProvisionsByCreator(ctx context.Context, creatorID int, opts store.ListOptions) ([]domain.CloudProvision, error) {
 	return nil, nil
 }
 func (m *mockStore) ListActiveProvisions(ctx context.Context) ([]domain.CloudProvision, error) {
 	return nil, nil
+}
+func (m *mockStore) ResolveUser(ctx context.Context, referenceID, email, name, planID string) (int, error) {
+	return 1, nil
 }
 func (m *mockStore) WithTx(ctx context.Context, fn func(store.Store) error) error { return fn(m) }
 func (m *mockStore) Close() error                                                 { return nil }
@@ -128,19 +131,19 @@ func TestServer_ServeHTTP_Health(t *testing.T) {
 	ms := &mockStore{
 		deployments: map[string]*domain.Deployment{
 			"app1.apps.test.io": {
-				ID:        "depl_1",
-				Status:    domain.StatusRunning,
-				ProxyPort: 30001,
+				ReferenceID: "depl_1",
+				Status:      domain.StatusRunning,
+				ProxyPort:   30001,
 			},
 			"app2.apps.test.io": {
-				ID:        "depl_2",
-				Status:    domain.StatusRunning,
-				ProxyPort: 30002,
+				ReferenceID: "depl_2",
+				Status:      domain.StatusRunning,
+				ProxyPort:   30002,
 			},
 			"app3.apps.test.io": {
-				ID:        "depl_3",
-				Status:    domain.StatusStopped,
-				ProxyPort: 30003,
+				ReferenceID: "depl_3",
+				Status:      domain.StatusStopped,
+				ProxyPort:   30003,
 			},
 		},
 	}
@@ -189,11 +192,11 @@ func TestServer_ServeHTTP_Stopped(t *testing.T) {
 	ms := &mockStore{
 		deployments: map[string]*domain.Deployment{
 			"my-app.apps.test.io": {
-				ID:         "depl_123",
-				NodeID:     "local",
-				ProxyPort:  30001,
-				Status:     domain.StatusStopped,
-				CustomerID: "user_1",
+				ReferenceID: "depl_123",
+				NodeID:      "local",
+				ProxyPort:   30001,
+				Status:      domain.StatusStopped,
+				CustomerID:  1,
 			},
 		},
 	}
@@ -251,11 +254,11 @@ func TestServer_ServeHTTP_RunningDeployment(t *testing.T) {
 	ms := &mockStore{
 		deployments: map[string]*domain.Deployment{
 			"my-app.apps.test.io": {
-				ID:         "depl_123",
-				NodeID:     "local",
-				ProxyPort:  30001, // Wrong port for test
-				Status:     domain.StatusRunning,
-				CustomerID: "user_1",
+				ReferenceID: "depl_123",
+				NodeID:      "local",
+				ProxyPort:   30001, // Wrong port for test
+				Status:      domain.StatusRunning,
+				CustomerID:  1,
 			},
 		},
 	}

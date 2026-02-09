@@ -117,7 +117,7 @@ func (r *Reporter) reportBatch(ctx context.Context) {
 	// Mark events as reported
 	ids := make([]string, len(events))
 	for i, e := range events {
-		ids[i] = e.ID
+		ids[i] = e.ReferenceID
 	}
 
 	if err := r.store.MarkEventsReported(ctx, ids, time.Now()); err != nil {
@@ -142,7 +142,7 @@ func (r *Reporter) ReportNow(ctx context.Context) {
 
 // RecordEvent is a convenience function to record a usage event.
 // It creates the event and stores it for later batch reporting.
-func RecordEvent(ctx context.Context, s store.Store, userID string, eventType domain.EventType, resourceID, resourceType string, metadata map[string]string) error {
+func RecordEvent(ctx context.Context, s store.Store, userID int, eventType domain.EventType, resourceID, resourceType string, metadata map[string]string) error {
 	event := domain.NewMeterEvent(
 		generateEventID(),
 		userID,

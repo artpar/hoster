@@ -24,8 +24,11 @@ const authContextKey contextKey = "auth"
 // Context represents the authentication and authorization context for a request.
 // It is extracted from APIGate-injected headers and stored in the request context.
 type Context struct {
-	// UserID is the authenticated user's unique identifier (from X-User-ID header)
-	UserID string
+	// UserID is the local integer PK from the users table (resolved by middleware).
+	UserID int
+
+	// ReferenceID is the APIGate user ID string (from X-User-ID header, e.g. "user_bc6849d9ab6dc0e5").
+	ReferenceID string
 
 	// PlanID is the user's subscription plan ID (from X-Plan-ID header)
 	PlanID string
@@ -112,10 +115,12 @@ func (h headerGetter) Get(key string) string {
 
 // ExtractFromHeaders extracts auth context from headers using the HeaderGetter interface.
 // This is a pure function that can be tested without HTTP dependencies.
+// Note: UserID (int) is NOT set here — it must be resolved by the middleware
+// via a user upsert against the database. Only ReferenceID is extracted.
 func ExtractFromHeaders(headers HeaderGetter) Context {
-	userID := headers.Get(HeaderUserID)
+	referenceID := headers.Get(HeaderUserID)
 
-	if userID == "" {
+	if referenceID == "" {
 		return Context{Authenticated: false}
 	}
 
@@ -126,7 +131,7 @@ func ExtractFromHeaders(headers HeaderGetter) Context {
 	}
 
 	return Context{
-		UserID:         userID,
+		ReferenceID:    referenceID,
 		PlanID:         headers.Get(HeaderPlanID),
 		PlanLimits:     limits,
 		KeyID:          headers.Get(HeaderKeyID),

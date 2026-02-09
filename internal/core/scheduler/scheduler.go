@@ -165,7 +165,7 @@ func Schedule(req ScheduleRequest) (*ScheduleResult, error) {
 
 	// Select the best node
 	best := candidates[0]
-	result.SelectedNodeID = best.node.ID
+	result.SelectedNodeID = best.node.ReferenceID
 	result.SelectedNode = &best.node
 	result.Score = best.score
 

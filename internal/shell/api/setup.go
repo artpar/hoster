@@ -109,6 +109,7 @@ func SetupAPI(cfg APIConfig) http.Handler {
 	// Always header mode — APIGate injects X-User-ID headers
 	authMW := middleware.NewAuthMiddleware(middleware.AuthConfig{
 		SharedSecret: cfg.AuthSharedSecret,
+		UserResolver: cfg.Store,
 		Logger:       cfg.Logger,
 	})
 	customRouter.Use(authMW.Handler)

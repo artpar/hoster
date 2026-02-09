@@ -10,11 +10,11 @@ package validation
 //
 // Example:
 //
-//	field, msg := ValidateCreateTemplateFields("My App", "1.0.0", "services:", "user-123")
+//	field, msg := ValidateCreateTemplateFields("My App", "1.0.0", "services:", 1)
 //	if field != "" {
 //	    // Handle validation error
 //	}
-func ValidateCreateTemplateFields(name, version, composeSpec, creatorID string) (field, message string) {
+func ValidateCreateTemplateFields(name, version, composeSpec string, creatorID int) (field, message string) {
 	if name == "" {
 		return "name", "name is required"
 	}
@@ -24,7 +24,7 @@ func ValidateCreateTemplateFields(name, version, composeSpec, creatorID string) 
 	if composeSpec == "" {
 		return "compose_spec", "compose_spec is required"
 	}
-	if creatorID == "" {
+	if creatorID == 0 {
 		return "creator_id", "creator_id is required"
 	}
 	return "", ""

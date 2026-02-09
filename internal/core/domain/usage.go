@@ -31,16 +31,19 @@ const (
 // MeterEvent represents a usage event to be reported to APIGate for billing.
 // Events are stored locally and batch-reported to APIGate.
 type MeterEvent struct {
-	// ID is the unique identifier for this event.
-	ID string `json:"id"`
+	// ID is the internal integer primary key (never exposed in API).
+	ID int `json:"-"`
 
-	// UserID is the user who triggered the event.
-	UserID string `json:"user_id"`
+	// ReferenceID is the public-facing identifier for this event.
+	ReferenceID string `json:"id"`
+
+	// UserID is the internal integer FK to users table.
+	UserID int `json:"-"`
 
 	// EventType is the type of usage event.
 	EventType EventType `json:"event_type"`
 
-	// ResourceID is the ID of the resource (e.g., deployment ID).
+	// ResourceID is the ID of the resource (e.g., deployment reference ID).
 	ResourceID string `json:"resource_id"`
 
 	// ResourceType is the type of resource (e.g., "deployment").
@@ -63,10 +66,10 @@ type MeterEvent struct {
 }
 
 // NewMeterEvent creates a new meter event with sensible defaults.
-func NewMeterEvent(id, userID string, eventType EventType, resourceID, resourceType string) MeterEvent {
+func NewMeterEvent(referenceID string, userID int, eventType EventType, resourceID, resourceType string) MeterEvent {
 	now := time.Now()
 	return MeterEvent{
-		ID:           id,
+		ReferenceID:  referenceID,
 		UserID:       userID,
 		EventType:    eventType,
 		ResourceID:   resourceID,

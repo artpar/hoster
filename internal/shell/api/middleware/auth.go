@@ -3,12 +3,23 @@
 package middleware
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 
 	"github.com/artpar/hoster/internal/core/auth"
 )
+
+// =============================================================================
+// User Resolver Interface
+// =============================================================================
+
+// UserResolver resolves an APIGate reference ID to a local integer user ID.
+// The store implements this interface.
+type UserResolver interface {
+	ResolveUser(ctx context.Context, referenceID, email, name, planID string) (int, error)
+}
 
 // =============================================================================
 // Auth Configuration
@@ -19,6 +30,10 @@ type AuthConfig struct {
 	// SharedSecret is an optional secret to validate X-APIGate-Secret header.
 	// If empty, secret validation is skipped.
 	SharedSecret string
+
+	// UserResolver resolves APIGate user reference IDs to local integer IDs.
+	// If nil, UserID in auth context will be 0 (only ReferenceID will be set).
+	UserResolver UserResolver
 
 	// Logger for auth middleware logging.
 	Logger *slog.Logger
@@ -44,6 +59,7 @@ func NewAuthMiddleware(cfg AuthConfig) *AuthMiddleware {
 
 // Handler returns the middleware handler function.
 // This middleware extracts auth context from APIGate-injected headers and stores it in the request context.
+// If a UserResolver is configured, it also resolves the APIGate reference ID to a local integer user ID.
 func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Validate shared secret if configured
@@ -58,8 +74,28 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 			}
 		}
 
-		// Extract auth context from headers
+		// Extract auth context from headers (sets ReferenceID, not UserID)
 		ctx := auth.ExtractFromRequest(r)
+
+		// Resolve integer user ID if authenticated and resolver is available
+		if ctx.Authenticated && m.config.UserResolver != nil {
+			userID, err := m.config.UserResolver.ResolveUser(
+				r.Context(),
+				ctx.ReferenceID,
+				"", // email — not in headers
+				"", // name — not in headers
+				ctx.PlanID,
+			)
+			if err != nil {
+				m.config.Logger.Error("failed to resolve user",
+					"reference_id", ctx.ReferenceID,
+					"error", err,
+				)
+				writeJSONError(w, http.StatusInternalServerError, "Internal Server Error", "Failed to resolve user identity")
+				return
+			}
+			ctx.UserID = userID
+		}
 
 		// Store in request context
 		r = r.WithContext(auth.WithContext(r.Context(), ctx))

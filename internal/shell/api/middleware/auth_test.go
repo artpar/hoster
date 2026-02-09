@@ -24,6 +24,7 @@ func testHandler() http.Handler {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"authenticated": ctx.Authenticated,
 			"user_id":       ctx.UserID,
+			"reference_id":  ctx.ReferenceID,
 			"plan_id":       ctx.PlanID,
 		})
 	})
@@ -50,7 +51,8 @@ func TestAuthMiddleware_ExtractsContext(t *testing.T) {
 	err := json.Unmarshal(rec.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	assert.Equal(t, true, resp["authenticated"])
-	assert.Equal(t, "user_123", resp["user_id"])
+	assert.Equal(t, "user_123", resp["reference_id"])
+	assert.Equal(t, float64(0), resp["user_id"]) // no UserResolver → 0
 	assert.Equal(t, "plan_premium", resp["plan_id"])
 }
 

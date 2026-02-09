@@ -97,8 +97,9 @@ const (
 
 // ContainerEvent represents a container lifecycle event.
 type ContainerEvent struct {
-	ID           string             `json:"id"`
-	DeploymentID string             `json:"deployment_id"`
+	ID           int                `json:"-"`
+	ReferenceID  string             `json:"id"`
+	DeploymentID int                `json:"-"`
 	Type         ContainerEventType `json:"type"`
 	Container    string             `json:"container"`
 	Message      string             `json:"message"`
@@ -107,10 +108,10 @@ type ContainerEvent struct {
 }
 
 // NewContainerEvent creates a new container event.
-func NewContainerEvent(id, deploymentID string, eventType ContainerEventType, container, message string) ContainerEvent {
+func NewContainerEvent(referenceID string, deploymentID int, eventType ContainerEventType, container, message string) ContainerEvent {
 	now := time.Now()
 	return ContainerEvent{
-		ID:           id,
+		ReferenceID:  referenceID,
 		DeploymentID: deploymentID,
 		Type:         eventType,
 		Container:    container,

@@ -62,13 +62,13 @@ func NewOrchestrator(docker Client, logger *slog.Logger, configDir string, store
 // configFiles are written to disk and mounted into containers at their specified paths.
 func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.Deployment, composeSpec string, configFiles []domain.ConfigFile) ([]domain.ContainerInfo, error) {
 	o.logger.Info("starting deployment",
-		"deployment_id", deployment.ID,
-		"template_id", deployment.TemplateID,
+		"deployment_id", deployment.ReferenceID,
+		"template_id", deployment.TemplateRefID,
 		"config_files", len(configFiles),
 	)
 
 	// 1. Write config files to disk
-	configMounts, err := o.writeConfigFiles(deployment.ID, configFiles)
+	configMounts, err := o.writeConfigFiles(deployment.ReferenceID, configFiles)
 	if err != nil {
 		return nil, fmt.Errorf("failed to write config files: %w", err)
 	}
@@ -86,8 +86,8 @@ func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.D
 	)
 
 	// 2. Create network for deployment
-	networkName := coredeployment.NetworkName(deployment.ID)
-	networkID, err := o.createDeploymentNetwork(ctx, deployment.ID, networkName)
+	networkName := coredeployment.NetworkName(deployment.ReferenceID)
+	networkID, err := o.createDeploymentNetwork(ctx, deployment.ReferenceID, networkName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create network: %w", err)
 	}
@@ -98,8 +98,8 @@ func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.D
 		if vol.External {
 			continue // Skip external volumes
 		}
-		volumeName := coredeployment.VolumeName(deployment.ID, vol.Name)
-		if _, err := o.createDeploymentVolume(ctx, deployment.ID, volumeName); err != nil {
+		volumeName := coredeployment.VolumeName(deployment.ReferenceID, vol.Name)
+		if _, err := o.createDeploymentVolume(ctx, deployment.ReferenceID, volumeName); err != nil {
 			// Cleanup network on failure
 			_ = o.docker.RemoveNetwork(networkID)
 			return nil, fmt.Errorf("failed to create volume %s: %w", vol.Name, err)
@@ -125,7 +125,7 @@ func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.D
 	existingContainers, _ := o.docker.ListContainers(ListOptions{
 		All: true,
 		Filters: map[string]string{
-			"label": fmt.Sprintf("%s=%s", LabelDeployment, deployment.ID),
+			"label": fmt.Sprintf("%s=%s", LabelDeployment, deployment.ReferenceID),
 		},
 	})
 
@@ -165,7 +165,7 @@ func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.D
 			o.logger.Debug("using existing container", "service", svc.Name, "container_id", containerID[:12])
 		} else {
 			// Create new container
-			containerName := coredeployment.ContainerName(deployment.ID, svc.Name)
+			containerName := coredeployment.ContainerName(deployment.ReferenceID, svc.Name)
 			isPrimaryService := svc.Name == primaryServiceName
 			spec := o.buildContainerSpec(deployment, svc, containerName, networkName, parsedSpec.Volumes, configMounts, isPrimaryService)
 
@@ -177,7 +177,7 @@ func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.D
 				return nil, fmt.Errorf("failed to create container %s: %w", svc.Name, err)
 			}
 			o.logger.Debug("created container", "service", svc.Name, "container_id", containerID[:12])
-			o.recordEvent(ctx, deployment.ID, domain.EventContainerCreated, svc.Name)
+			o.recordEvent(ctx, deployment.ID, deployment.ReferenceID, domain.EventContainerCreated, svc.Name)
 		}
 
 		createdContainers[svc.Name] = containerID
@@ -195,9 +195,9 @@ func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.D
 
 		// Record event: restarted if existing, started if new
 		if isRestart {
-			o.recordEvent(ctx, deployment.ID, domain.EventContainerRestarted, svc.Name)
+			o.recordEvent(ctx, deployment.ID, deployment.ReferenceID, domain.EventContainerRestarted, svc.Name)
 		} else {
-			o.recordEvent(ctx, deployment.ID, domain.EventContainerStarted, svc.Name)
+			o.recordEvent(ctx, deployment.ID, deployment.ReferenceID, domain.EventContainerStarted, svc.Name)
 		}
 
 		// Get container info
@@ -218,7 +218,7 @@ func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.D
 	}
 
 	o.logger.Info("deployment started",
-		"deployment_id", deployment.ID,
+		"deployment_id", deployment.ReferenceID,
 		"containers", len(containers),
 	)
 
@@ -233,7 +233,7 @@ func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.D
 // Checks every 5 seconds as per CLAUDE.md requirements.
 func (o *Orchestrator) WaitForHealthy(ctx context.Context, deployment *domain.Deployment, timeout time.Duration) error {
 	o.logger.Info("waiting for containers to be healthy",
-		"deployment_id", deployment.ID,
+		"deployment_id", deployment.ReferenceID,
 		"timeout", timeout,
 	)
 
@@ -252,13 +252,13 @@ func (o *Orchestrator) WaitForHealthy(ctx context.Context, deployment *domain.De
 				return err
 			}
 			if allHealthy {
-				o.logger.Info("all containers healthy", "deployment_id", deployment.ID)
+				o.logger.Info("all containers healthy", "deployment_id", deployment.ReferenceID)
 				return nil
 			}
 			if time.Now().After(deadline) {
 				return fmt.Errorf("timeout waiting for containers to become healthy")
 			}
-			o.logger.Debug("containers not yet healthy, waiting...", "deployment_id", deployment.ID)
+			o.logger.Debug("containers not yet healthy, waiting...", "deployment_id", deployment.ReferenceID)
 		}
 	}
 }
@@ -295,13 +295,13 @@ func (o *Orchestrator) checkAllContainersHealthy(deployment *domain.Deployment) 
 
 // StopDeployment stops all containers for a deployment.
 func (o *Orchestrator) StopDeployment(ctx context.Context, deployment *domain.Deployment) error {
-	o.logger.Info("stopping deployment", "deployment_id", deployment.ID)
+	o.logger.Info("stopping deployment", "deployment_id", deployment.ReferenceID)
 
 	// List containers by label
 	containers, err := o.docker.ListContainers(ListOptions{
 		All: true,
 		Filters: map[string]string{
-			"label": fmt.Sprintf("%s=%s", LabelDeployment, deployment.ID),
+			"label": fmt.Sprintf("%s=%s", LabelDeployment, deployment.ReferenceID),
 		},
 	})
 	if err != nil {
@@ -318,12 +318,12 @@ func (o *Orchestrator) StopDeployment(ctx context.Context, deployment *domain.De
 				o.logger.Warn("failed to stop container", "container_id", c.ID[:12], "error", err)
 				// Continue stopping others
 			} else {
-				o.recordEvent(ctx, deployment.ID, domain.EventContainerStopped, serviceName)
+				o.recordEvent(ctx, deployment.ID, deployment.ReferenceID, domain.EventContainerStopped, serviceName)
 			}
 		}
 	}
 
-	o.logger.Info("deployment stopped", "deployment_id", deployment.ID, "containers_stopped", len(containers))
+	o.logger.Info("deployment stopped", "deployment_id", deployment.ReferenceID, "containers_stopped", len(containers))
 	return nil
 }
 
@@ -334,13 +334,13 @@ func (o *Orchestrator) StopDeployment(ctx context.Context, deployment *domain.De
 // RemoveDeployment removes all resources for a deployment.
 // Order: containers → network → volumes
 func (o *Orchestrator) RemoveDeployment(ctx context.Context, deployment *domain.Deployment) error {
-	o.logger.Info("removing deployment", "deployment_id", deployment.ID)
+	o.logger.Info("removing deployment", "deployment_id", deployment.ReferenceID)
 
 	// 1. List and remove containers
 	containers, err := o.docker.ListContainers(ListOptions{
 		All: true,
 		Filters: map[string]string{
-			"label": fmt.Sprintf("%s=%s", LabelDeployment, deployment.ID),
+			"label": fmt.Sprintf("%s=%s", LabelDeployment, deployment.ReferenceID),
 		},
 	})
 	if err != nil {
@@ -362,7 +362,7 @@ func (o *Orchestrator) RemoveDeployment(ctx context.Context, deployment *domain.
 	}
 
 	// 2. Remove network
-	networkName := coredeployment.NetworkName(deployment.ID)
+	networkName := coredeployment.NetworkName(deployment.ReferenceID)
 	if err := o.docker.RemoveNetwork(networkName); err != nil {
 		o.logger.Warn("failed to remove network", "network", networkName, "error", err)
 	} else {
@@ -374,7 +374,7 @@ func (o *Orchestrator) RemoveDeployment(ctx context.Context, deployment *domain.
 	// For now, we track volumes in deployment.Variables or skip automatic cleanup
 	o.logger.Debug("volume cleanup skipped - requires explicit volume list")
 
-	o.logger.Info("deployment removed", "deployment_id", deployment.ID)
+	o.logger.Info("deployment removed", "deployment_id", deployment.ReferenceID)
 	return nil
 }
 
@@ -457,8 +457,8 @@ func (o *Orchestrator) buildContainerSpec(deployment *domain.Deployment, svc com
 		Env:        make(map[string]string),
 		Labels: map[string]string{
 			LabelManaged:    "true",
-			LabelDeployment: deployment.ID,
-			LabelTemplate:   deployment.TemplateID,
+			LabelDeployment: deployment.ReferenceID,
+			LabelTemplate:   deployment.TemplateRefID,
 			LabelService:    svc.Name,
 		},
 		Networks: []string{networkName},
@@ -502,7 +502,7 @@ func (o *Orchestrator) buildContainerSpec(deployment *domain.Deployment, svc com
 		source := v.Source
 		// Replace named volume with deployment-prefixed name
 		if v.Type == compose.VolumeMountTypeVolume {
-			source = coredeployment.VolumeName(deployment.ID, v.Source)
+			source = coredeployment.VolumeName(deployment.ReferenceID, v.Source)
 		}
 		spec.Volumes = append(spec.Volumes, VolumeMount{
 			Source:   source,
@@ -607,7 +607,7 @@ func (o *Orchestrator) RefreshContainerInfo(ctx context.Context, deployment *dom
 	containers, err := o.docker.ListContainers(ListOptions{
 		All: true,
 		Filters: map[string]string{
-			"label": fmt.Sprintf("%s=%s", LabelDeployment, deployment.ID),
+			"label": fmt.Sprintf("%s=%s", LabelDeployment, deployment.ReferenceID),
 		},
 	})
 	if err != nil {
@@ -734,7 +734,7 @@ func (o *Orchestrator) CleanupConfigFiles(deploymentID string) error {
 
 // recordEvent records a container lifecycle event to the database.
 // Failures are logged but do not fail the operation - events are observability.
-func (o *Orchestrator) recordEvent(ctx context.Context, deploymentID string, eventType domain.ContainerEventType, containerName string) {
+func (o *Orchestrator) recordEvent(ctx context.Context, deploymentID int, deploymentRefID string, eventType domain.ContainerEventType, containerName string) {
 	if o.store == nil {
 		return // Event recording disabled
 	}
@@ -750,13 +750,13 @@ func (o *Orchestrator) recordEvent(ctx context.Context, deploymentID string, eve
 	if err := o.store.CreateContainerEvent(ctx, &event); err != nil {
 		o.logger.Warn("failed to record container event",
 			"error", err,
-			"deployment_id", deploymentID,
+			"deployment_id", deploymentRefID,
 			"event_type", eventType,
 			"container", containerName,
 		)
 	} else {
 		o.logger.Debug("recorded container event",
-			"deployment_id", deploymentID,
+			"deployment_id", deploymentRefID,
 			"event_type", eventType,
 			"container", containerName,
 		)

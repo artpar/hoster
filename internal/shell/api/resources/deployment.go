@@ -106,11 +106,11 @@ func (d *Deployment) SetToOneReferenceID(name, ID string) error {
 // DeploymentFromDomain converts a domain.Deployment to a JSON:API Deployment.
 func DeploymentFromDomain(d *domain.Deployment) Deployment {
 	return Deployment{
-		ID:              d.ID,
+		ID:              d.ReferenceID,
 		Name:            d.Name,
-		TemplateID:      d.TemplateID,
+		TemplateID:      d.TemplateRefID,
 		TemplateVersion: d.TemplateVersion,
-		CustomerID:      d.CustomerID,
+		CustomerID:      "",
 		NodeID:          d.NodeID,
 		Status:          string(d.Status),
 		Variables:       d.Variables,
@@ -128,11 +128,10 @@ func DeploymentFromDomain(d *domain.Deployment) Deployment {
 // ToDomain converts the JSON:API Deployment to a domain.Deployment.
 func (d Deployment) ToDomain() *domain.Deployment {
 	return &domain.Deployment{
-		ID:              d.ID,
+		ReferenceID:     d.ID,
 		Name:            d.Name,
-		TemplateID:      d.TemplateID,
+		TemplateRefID:   d.TemplateID,
 		TemplateVersion: d.TemplateVersion,
-		CustomerID:      d.CustomerID,
 		NodeID:          d.NodeID,
 		Status:          domain.DeploymentStatus(d.Status),
 		Variables:       d.Variables,
@@ -218,8 +217,8 @@ func (r DeploymentResource) FindAll(req api2go.Request) (api2go.Responder, error
 	// Filter by template_id or customer_id if provided
 	if templateID, ok := req.QueryParams["filter[template_id]"]; ok && len(templateID) > 0 {
 		deployments, err = r.Store.ListDeploymentsByTemplate(ctx, templateID[0], opts)
-	} else if customerID, ok := req.QueryParams["filter[customer_id]"]; ok && len(customerID) > 0 {
-		deployments, err = r.Store.ListDeploymentsByCustomer(ctx, customerID[0], opts)
+	} else if authCtx.Authenticated {
+		deployments, err = r.Store.ListDeploymentsByCustomer(ctx, authCtx.UserID, opts)
 	} else {
 		deployments, err = r.Store.ListDeployments(ctx, opts)
 	}
@@ -361,9 +360,10 @@ func (r DeploymentResource) Create(obj interface{}, req api2go.Request) (api2go.
 	}
 
 	domainDeployment := &domain.Deployment{
-		ID:              "depl_" + uuid.New().String()[:8],
+		ReferenceID:     "depl_" + uuid.New().String()[:8],
 		Name:            name,
 		TemplateID:      template.ID,
+		TemplateRefID:   template.ReferenceID,
 		TemplateVersion: template.Version,
 		CustomerID:      customerID, // From auth context
 		Status:          domain.StatusPending,
@@ -382,8 +382,8 @@ func (r DeploymentResource) Create(obj interface{}, req api2go.Request) (api2go.
 
 	// Record usage event for billing (F009: Billing Integration)
 	if err := billing.RecordEvent(ctx, r.Store, customerID, domain.EventDeploymentCreated,
-		domainDeployment.ID, "deployment", map[string]string{
-			"template_id": domainDeployment.TemplateID,
+		domainDeployment.ReferenceID, "deployment", map[string]string{
+			"template_id": domainDeployment.TemplateRefID,
 			"name":        domainDeployment.Name,
 		}); err != nil {
 		r.Logger.Warn("failed to record deployment_created event", "error", err)
@@ -447,8 +447,8 @@ func (r DeploymentResource) Delete(id string, req api2go.Request) (api2go.Respon
 
 	// Record usage event for billing (F009: Billing Integration)
 	if err := billing.RecordEvent(ctx, r.Store, deployment.CustomerID, domain.EventDeploymentDeleted,
-		deployment.ID, "deployment", map[string]string{
-			"template_id": deployment.TemplateID,
+		deployment.ReferenceID, "deployment", map[string]string{
+			"template_id": deployment.TemplateRefID,
 			"name":        deployment.Name,
 		}); err != nil {
 		r.Logger.Warn("failed to record deployment_deleted event", "error", err)
@@ -501,7 +501,7 @@ func (r DeploymentResource) StartDeployment(id string, req *http.Request) (api2g
 	}
 
 	// Get the template
-	template, err := r.Store.GetTemplate(ctx, deployment.TemplateID)
+	template, err := r.Store.GetTemplate(ctx, deployment.TemplateRefID)
 	if err != nil {
 		r.Logger.Error("failed to get template", "error", err)
 		return &Response{Code: http.StatusInternalServerError}, err
@@ -537,7 +537,7 @@ func (r DeploymentResource) StartDeployment(id string, req *http.Request) (api2g
 
 	deployment.NodeID = schedResult.NodeID
 	r.Logger.Info("scheduled deployment",
-		"deployment_id", deployment.ID,
+		"deployment_id", deployment.ReferenceID,
 		"node_id", schedResult.NodeID,
 		"is_local", schedResult.IsLocal,
 		"score", schedResult.Score,
@@ -563,7 +563,7 @@ func (r DeploymentResource) StartDeployment(id string, req *http.Request) (api2g
 
 		deployment.ProxyPort = proxyPort
 		r.Logger.Info("allocated proxy port",
-			"deployment_id", deployment.ID,
+			"deployment_id", deployment.ReferenceID,
 			"proxy_port", proxyPort,
 		)
 	}
@@ -619,14 +619,14 @@ func (r DeploymentResource) StartDeployment(id string, req *http.Request) (api2g
 	}
 
 	r.Logger.Info("deployment started",
-		"deployment_id", deployment.ID,
+		"deployment_id", deployment.ReferenceID,
 		"containers", len(containers),
 	)
 
 	// Record usage event for billing (F009: Billing Integration)
 	if err := billing.RecordEvent(ctx, r.Store, deployment.CustomerID, domain.EventDeploymentStarted,
-		deployment.ID, "deployment", map[string]string{
-			"template_id": deployment.TemplateID,
+		deployment.ReferenceID, "deployment", map[string]string{
+			"template_id": deployment.TemplateRefID,
 			"containers":  fmt.Sprintf("%d", len(containers)),
 		}); err != nil {
 		r.Logger.Warn("failed to record deployment_started event", "error", err)
@@ -724,12 +724,12 @@ func (r DeploymentResource) StopDeployment(id string, req *http.Request) (api2go
 		return &Response{Code: http.StatusInternalServerError}, err
 	}
 
-	r.Logger.Info("deployment stopped", "deployment_id", deployment.ID)
+	r.Logger.Info("deployment stopped", "deployment_id", deployment.ReferenceID)
 
 	// Record usage event for billing (F009: Billing Integration)
 	if err := billing.RecordEvent(ctx, r.Store, deployment.CustomerID, domain.EventDeploymentStopped,
-		deployment.ID, "deployment", map[string]string{
-			"template_id": deployment.TemplateID,
+		deployment.ReferenceID, "deployment", map[string]string{
+			"template_id": deployment.TemplateRefID,
 		}); err != nil {
 		r.Logger.Warn("failed to record deployment_stopped event", "error", err)
 	}

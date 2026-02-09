@@ -7,6 +7,7 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -183,11 +184,11 @@ func (s *Server) resolveTarget(ctx context.Context, slug, hostname string) (prox
 	}
 
 	return proxy.ProxyTarget{
-		DeploymentID: deployment.ID,
+		DeploymentID: deployment.ReferenceID,
 		NodeID:       deployment.NodeID,
 		Port:         deployment.ProxyPort,
 		Status:       string(deployment.Status),
-		CustomerID:   deployment.CustomerID,
+		CustomerID:   fmt.Sprintf("%d", deployment.CustomerID),
 	}, nil
 }
 

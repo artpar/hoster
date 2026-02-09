@@ -11,38 +11,38 @@ import (
 // =============================================================================
 
 func TestValidateCreateTemplateFields_AllValid(t *testing.T) {
-	field, msg := ValidateCreateTemplateFields("My App", "1.0.0", "services:", "user-123")
+	field, msg := ValidateCreateTemplateFields("My App", "1.0.0", "services:", 1)
 	assert.Empty(t, field)
 	assert.Empty(t, msg)
 }
 
 func TestValidateCreateTemplateFields_MissingName(t *testing.T) {
-	field, msg := ValidateCreateTemplateFields("", "1.0.0", "services:", "user-123")
+	field, msg := ValidateCreateTemplateFields("", "1.0.0", "services:", 1)
 	assert.Equal(t, "name", field)
 	assert.Equal(t, "name is required", msg)
 }
 
 func TestValidateCreateTemplateFields_MissingVersion(t *testing.T) {
-	field, msg := ValidateCreateTemplateFields("My App", "", "services:", "user-123")
+	field, msg := ValidateCreateTemplateFields("My App", "", "services:", 1)
 	assert.Equal(t, "version", field)
 	assert.Equal(t, "version is required", msg)
 }
 
 func TestValidateCreateTemplateFields_MissingComposeSpec(t *testing.T) {
-	field, msg := ValidateCreateTemplateFields("My App", "1.0.0", "", "user-123")
+	field, msg := ValidateCreateTemplateFields("My App", "1.0.0", "", 1)
 	assert.Equal(t, "compose_spec", field)
 	assert.Equal(t, "compose_spec is required", msg)
 }
 
 func TestValidateCreateTemplateFields_MissingCreatorID(t *testing.T) {
-	field, msg := ValidateCreateTemplateFields("My App", "1.0.0", "services:", "")
+	field, msg := ValidateCreateTemplateFields("My App", "1.0.0", "services:", 0)
 	assert.Equal(t, "creator_id", field)
 	assert.Equal(t, "creator_id is required", msg)
 }
 
 func TestValidateCreateTemplateFields_ChecksInOrder(t *testing.T) {
 	// When multiple fields are missing, first one is reported
-	field, _ := ValidateCreateTemplateFields("", "", "", "")
+	field, _ := ValidateCreateTemplateFields("", "", "", 0)
 	assert.Equal(t, "name", field, "should check name first")
 }
 
@@ -88,7 +88,7 @@ func TestValidateCreateTemplateFields_TableDriven(t *testing.T) {
 		inputName   string
 		version     string
 		composeSpec string
-		creatorID   string
+		creatorID   int
 		wantField   string
 		wantMsg     string
 	}{
@@ -97,7 +97,7 @@ func TestValidateCreateTemplateFields_TableDriven(t *testing.T) {
 			inputName:   "Test App",
 			version:     "2.0.0",
 			composeSpec: "services:\n  web:",
-			creatorID:   "creator-1",
+			creatorID:   1,
 			wantField:   "",
 			wantMsg:     "",
 		},
@@ -106,7 +106,7 @@ func TestValidateCreateTemplateFields_TableDriven(t *testing.T) {
 			inputName:   "  ",
 			version:     "1.0.0",
 			composeSpec: "services:",
-			creatorID:   "user-1",
+			creatorID:   1,
 			wantField:   "",
 			wantMsg:     "",
 		},
@@ -115,7 +115,7 @@ func TestValidateCreateTemplateFields_TableDriven(t *testing.T) {
 			inputName:   "",
 			version:     "1.0.0",
 			composeSpec: "services:",
-			creatorID:   "user-1",
+			creatorID:   1,
 			wantField:   "name",
 			wantMsg:     "name is required",
 		},

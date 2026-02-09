@@ -51,7 +51,8 @@ func NewHandler(s store.Store, d docker.Client, l *slog.Logger, baseDomain, conf
 	}
 	// Create auth middleware (APIGate injects X-User-ID headers)
 	authMW := apimiddleware.NewAuthMiddleware(apimiddleware.AuthConfig{
-		Logger: l,
+		Logger:       l,
+		UserResolver: s,
 	})
 	return &Handler{
 		store:        s,
@@ -80,7 +81,8 @@ func NewHandlerWithScheduler(s store.Store, d docker.Client, sched *scheduler.Se
 	}
 	// Create auth middleware (APIGate injects X-User-ID headers)
 	authMW := apimiddleware.NewAuthMiddleware(apimiddleware.AuthConfig{
-		Logger: l,
+		Logger:       l,
+		UserResolver: s,
 	})
 	return &Handler{
 		store:        s,
@@ -203,6 +205,15 @@ func (h *Handler) handleReady(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 func (h *Handler) handleCreateTemplate(w http.ResponseWriter, r *http.Request) {
+	// Extract auth context (added by auth middleware)
+	authCtx := auth.FromContext(r.Context())
+
+	// Check authorization — templates require an authenticated creator
+	if !authCtx.Authenticated {
+		h.writeError(w, http.StatusUnauthorized, "authentication required", "auth_required")
+		return
+	}
+
 	var req CreateTemplateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeError(w, http.StatusBadRequest, "invalid JSON", "validation_error")
@@ -210,19 +221,20 @@ func (h *Handler) handleCreateTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate required fields using core validation
-	if field, msg := validation.ValidateCreateTemplateFields(req.Name, req.Version, req.ComposeSpec, req.CreatorID); field != "" {
+	// Use auth context's ReferenceID as the creator identifier for validation
+	if field, msg := validation.ValidateCreateTemplateFields(req.Name, req.Version, req.ComposeSpec, authCtx.UserID); field != "" {
 		h.writeError(w, http.StatusBadRequest, msg, "validation_error")
 		return
 	}
 
 	now := time.Now()
 	template := &domain.Template{
-		ID:           "tmpl_" + uuid.New().String()[:8],
+		ReferenceID:  "tmpl_" + uuid.New().String()[:8],
 		Name:         req.Name,
 		Slug:         domain.Slugify(req.Name),
 		Version:      req.Version,
 		ComposeSpec:  req.ComposeSpec,
-		CreatorID:    req.CreatorID,
+		CreatorID:    authCtx.UserID,
 		Description:  req.Description,
 		Category:     req.Category,
 		Tags:         req.Tags,
@@ -495,9 +507,10 @@ func (h *Handler) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 	}
 
 	deployment := &domain.Deployment{
-		ID:              "depl_" + uuid.New().String()[:8],
+		ReferenceID:     "depl_" + uuid.New().String()[:8],
 		Name:            name,
 		TemplateID:      template.ID,
+		TemplateRefID:   template.ReferenceID,
 		TemplateVersion: template.Version,
 		CustomerID:      authCtx.UserID, // Use authenticated user ID from auth context
 		Status:          domain.StatusPending,
@@ -520,11 +533,11 @@ func (h *Handler) handleCreateDeployment(w http.ResponseWriter, r *http.Request)
 		"evt_"+uuid.New().String()[:8],
 		deployment.CustomerID,
 		domain.EventDeploymentCreated,
-		deployment.ID,
+		deployment.ReferenceID,
 		"deployment",
-	).WithMetadata("template_id", deployment.TemplateID)
+	).WithMetadata("template_id", deployment.TemplateRefID)
 	if err := h.billing.MeterUsage(r.Context(), meterEvent); err != nil {
-		h.logger.Warn("failed to meter deployment_created event", "error", err, "deployment_id", deployment.ID)
+		h.logger.Warn("failed to meter deployment_created event", "error", err, "deployment_id", deployment.ReferenceID)
 		// Don't fail the request for billing errors
 	}
 
@@ -591,7 +604,7 @@ func (h *Handler) handleListDeployments(w http.ResponseWriter, r *http.Request) 
 	if templateID := r.URL.Query().Get("template_id"); templateID != "" {
 		filtered := make([]domain.Deployment, 0, len(deployments))
 		for _, d := range deployments {
-			if d.TemplateID == templateID {
+			if d.TemplateRefID == templateID {
 				filtered = append(filtered, d)
 			}
 		}
@@ -655,11 +668,11 @@ func (h *Handler) handleDeleteDeployment(w http.ResponseWriter, r *http.Request)
 		"evt_"+uuid.New().String()[:8],
 		deployment.CustomerID,
 		domain.EventDeploymentDeleted,
-		deployment.ID,
+		deployment.ReferenceID,
 		"deployment",
-	).WithMetadata("template_id", deployment.TemplateID)
+	).WithMetadata("template_id", deployment.TemplateRefID)
 	if err := h.billing.MeterUsage(r.Context(), meterEvent); err != nil {
-		h.logger.Warn("failed to meter deployment_deleted event", "error", err, "deployment_id", deployment.ID)
+		h.logger.Warn("failed to meter deployment_deleted event", "error", err, "deployment_id", deployment.ReferenceID)
 		// Don't fail the request for billing errors
 	}
 
@@ -688,8 +701,8 @@ func (h *Handler) handleStartDeployment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Get the template to fetch compose spec
-	template, err := h.store.GetTemplate(r.Context(), deployment.TemplateID)
+	// Get the template to fetch compose spec (use TemplateRefID for store lookup by reference_id)
+	template, err := h.store.GetTemplate(r.Context(), deployment.TemplateRefID)
 	if err != nil {
 		h.logger.Error("failed to get template", "error", err)
 		h.writeError(w, http.StatusInternalServerError, "failed to get template", "internal_error")
@@ -720,7 +733,7 @@ func (h *Handler) handleStartDeployment(w http.ResponseWriter, r *http.Request) 
 
 	deployment.NodeID = schedResult.NodeID
 	h.logger.Info("scheduled deployment",
-		"deployment_id", deployment.ID,
+		"deployment_id", deployment.ReferenceID,
 		"node_id", schedResult.NodeID,
 		"is_local", schedResult.IsLocal,
 		"score", schedResult.Score,
@@ -778,7 +791,7 @@ func (h *Handler) handleStartDeployment(w http.ResponseWriter, r *http.Request) 
 	}
 
 	h.logger.Info("deployment started",
-		"deployment_id", deployment.ID,
+		"deployment_id", deployment.ReferenceID,
 		"node_id", deployment.NodeID,
 		"containers", len(containers),
 	)
@@ -788,12 +801,12 @@ func (h *Handler) handleStartDeployment(w http.ResponseWriter, r *http.Request) 
 		"evt_"+uuid.New().String()[:8],
 		deployment.CustomerID,
 		domain.EventDeploymentStarted,
-		deployment.ID,
+		deployment.ReferenceID,
 		"deployment",
-	).WithMetadata("template_id", deployment.TemplateID).
+	).WithMetadata("template_id", deployment.TemplateRefID).
 		WithMetadata("node_id", deployment.NodeID)
 	if err := h.billing.MeterUsage(r.Context(), meterEvent); err != nil {
-		h.logger.Warn("failed to meter deployment_started event", "error", err, "deployment_id", deployment.ID)
+		h.logger.Warn("failed to meter deployment_started event", "error", err, "deployment_id", deployment.ReferenceID)
 		// Don't fail the request for billing errors
 	}
 
@@ -867,18 +880,18 @@ func (h *Handler) handleStopDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Info("deployment stopped", "deployment_id", deployment.ID, "node_id", deployment.NodeID)
+	h.logger.Info("deployment stopped", "deployment_id", deployment.ReferenceID, "node_id", deployment.NodeID)
 
 	// Emit billing event for deployment stop
 	meterEvent := domain.NewMeterEvent(
 		"evt_"+uuid.New().String()[:8],
 		deployment.CustomerID,
 		domain.EventDeploymentStopped,
-		deployment.ID,
+		deployment.ReferenceID,
 		"deployment",
-	).WithMetadata("template_id", deployment.TemplateID)
+	).WithMetadata("template_id", deployment.TemplateRefID)
 	if err := h.billing.MeterUsage(r.Context(), meterEvent); err != nil {
-		h.logger.Warn("failed to meter deployment_stopped event", "error", err, "deployment_id", deployment.ID)
+		h.logger.Warn("failed to meter deployment_stopped event", "error", err, "deployment_id", deployment.ReferenceID)
 		// Don't fail the request for billing errors
 	}
 
@@ -905,7 +918,7 @@ func (h *Handler) writeError(w http.ResponseWriter, status int, message, code st
 
 func (h *Handler) templateToResponse(t *domain.Template) TemplateResponse {
 	resp := TemplateResponse{
-		ID:           t.ID,
+		ID:           t.ReferenceID,
 		Name:         t.Name,
 		Slug:         t.Slug,
 		Description:  t.Description,
@@ -917,7 +930,7 @@ func (h *Handler) templateToResponse(t *domain.Template) TemplateResponse {
 		Category:     t.Category,
 		Tags:         t.Tags,
 		Published:    t.Published,
-		CreatorID:    t.CreatorID,
+		CreatorID:    strconv.Itoa(t.CreatorID),
 		CreatedAt:    t.CreatedAt,
 		UpdatedAt:    t.UpdatedAt,
 		ResourceRequirements: ResourcesResponse{
@@ -951,11 +964,11 @@ func (h *Handler) templateToResponse(t *domain.Template) TemplateResponse {
 
 func (h *Handler) deploymentToResponse(d *domain.Deployment) DeploymentResponse {
 	resp := DeploymentResponse{
-		ID:              d.ID,
+		ID:              d.ReferenceID,
 		Name:            d.Name,
-		TemplateID:      d.TemplateID,
+		TemplateID:      d.TemplateRefID,
 		TemplateVersion: d.TemplateVersion,
-		CustomerID:      d.CustomerID,
+		CustomerID:      strconv.Itoa(d.CustomerID),
 		Status:          string(d.Status),
 		Variables:       d.Variables,
 		Domains:         make([]DomainResponse, 0, len(d.Domains)),

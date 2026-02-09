@@ -64,7 +64,7 @@ type ScheduleDeploymentRequest struct {
 	Template *domain.Template
 
 	// CreatorID is the ID of the template creator (to filter nodes by ownership)
-	CreatorID string
+	CreatorID int
 
 	// AllowedCapabilities are the capabilities allowed by the user's plan
 	// If empty, all capabilities are allowed
@@ -106,7 +106,7 @@ type ScheduleDeploymentResult struct {
 // 4. If no suitable node found, fall back to local
 func (s *Service) ScheduleDeployment(ctx context.Context, req ScheduleDeploymentRequest) (*ScheduleDeploymentResult, error) {
 	s.logger.Debug("scheduling deployment",
-		"template_id", req.Template.ID,
+		"template_id", req.Template.ReferenceID,
 		"creator_id", req.CreatorID,
 		"required_capabilities", req.Template.RequiredCapabilities,
 		"preferred_node", req.PreferredNodeID,
@@ -135,15 +135,15 @@ func (s *Service) ScheduleDeployment(ctx context.Context, req ScheduleDeployment
 	// If preferred node specified and available, try to use it
 	if req.PreferredNodeID != "" && req.PreferredNodeID != "local" {
 		for _, node := range creatorNodes {
-			if node.ID == req.PreferredNodeID && node.IsAvailable() {
-				client, err := s.nodePool.GetClient(ctx, node.ID)
+			if node.ReferenceID == req.PreferredNodeID && node.IsAvailable() {
+				client, err := s.nodePool.GetClient(ctx, node.ReferenceID)
 				if err != nil {
-					s.logger.Warn("preferred node unavailable", "node_id", node.ID, "error", err)
+					s.logger.Warn("preferred node unavailable", "node_id", node.ReferenceID, "error", err)
 					break // Try scheduler instead
 				}
 				nodeCopy := node
 				return &ScheduleDeploymentResult{
-					NodeID:  node.ID,
+					NodeID:  node.ReferenceID,
 					Node:    &nodeCopy,
 					Client:  client,
 					IsLocal: false,
@@ -248,8 +248,8 @@ func (s *Service) LocalClient() docker.Client {
 // =============================================================================
 
 // filterNodesByCreator filters nodes to only those owned by the creator.
-func filterNodesByCreator(nodes []domain.Node, creatorID string) []domain.Node {
-	if creatorID == "" {
+func filterNodesByCreator(nodes []domain.Node, creatorID int) []domain.Node {
+	if creatorID == 0 {
 		return nodes
 	}
 

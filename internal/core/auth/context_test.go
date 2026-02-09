@@ -18,7 +18,8 @@ func TestExtractFromHeaders_Unauthenticated(t *testing.T) {
 	ctx := ExtractFromHeaders(headers)
 
 	assert.False(t, ctx.Authenticated)
-	assert.Empty(t, ctx.UserID)
+	assert.Equal(t, 0, ctx.UserID)
+	assert.Empty(t, ctx.ReferenceID)
 }
 
 func TestExtractFromHeaders_EmptyUserID(t *testing.T) {
@@ -40,7 +41,8 @@ func TestExtractFromHeaders_Authenticated(t *testing.T) {
 	ctx := ExtractFromHeaders(headers)
 
 	assert.True(t, ctx.Authenticated)
-	assert.Equal(t, "user_12345", ctx.UserID)
+	assert.Equal(t, "user_12345", ctx.ReferenceID)
+	assert.Equal(t, 0, ctx.UserID) // UserID is resolved by middleware, not extraction
 	assert.Equal(t, "plan_premium", ctx.PlanID)
 	assert.Equal(t, "key_67890", ctx.KeyID)
 	assert.Equal(t, "org_abc", ctx.OrganizationID)
@@ -91,14 +93,15 @@ func TestExtractFromHeaders_EmptyPlanLimits(t *testing.T) {
 }
 
 func TestExtractFromHeaders_PartialHeaders(t *testing.T) {
-	// Only UserID is required for authentication
+	// Only UserID header is required for authentication
 	headers := MapHeaderGetter{
 		HeaderUserID: "user_12345",
 	}
 	ctx := ExtractFromHeaders(headers)
 
 	assert.True(t, ctx.Authenticated)
-	assert.Equal(t, "user_12345", ctx.UserID)
+	assert.Equal(t, "user_12345", ctx.ReferenceID)
+	assert.Equal(t, 0, ctx.UserID) // Resolved by middleware
 	assert.Empty(t, ctx.PlanID)
 	assert.Empty(t, ctx.KeyID)
 	assert.Empty(t, ctx.OrganizationID)
@@ -176,7 +179,8 @@ func TestDefaultPlanLimits(t *testing.T) {
 
 func TestWithContext_AndFromContext(t *testing.T) {
 	authCtx := Context{
-		UserID:        "user_12345",
+		UserID:        1,
+		ReferenceID:   "user_12345",
 		PlanID:        "plan_premium",
 		Authenticated: true,
 	}
@@ -187,7 +191,7 @@ func TestWithContext_AndFromContext(t *testing.T) {
 	retrieved := FromContext(ctx)
 
 	assert.True(t, retrieved.Authenticated)
-	assert.Equal(t, "user_12345", retrieved.UserID)
+	assert.Equal(t, 1, retrieved.UserID)
 	assert.Equal(t, "plan_premium", retrieved.PlanID)
 }
 
@@ -196,7 +200,7 @@ func TestFromContext_NotFound(t *testing.T) {
 	retrieved := FromContext(ctx)
 
 	assert.False(t, retrieved.Authenticated)
-	assert.Empty(t, retrieved.UserID)
+	assert.Equal(t, 0, retrieved.UserID)
 }
 
 func TestFromContext_WrongType(t *testing.T) {
@@ -232,7 +236,8 @@ func TestContext_FullRoundTrip(t *testing.T) {
 
 	// Verify all fields
 	assert.True(t, retrieved.Authenticated)
-	assert.Equal(t, "user_complete", retrieved.UserID)
+	assert.Equal(t, 0, retrieved.UserID) // ExtractFromHeaders does not set UserID (resolved by middleware)
+	assert.Equal(t, "user_complete", retrieved.ReferenceID)
 	assert.Equal(t, "plan_enterprise", retrieved.PlanID)
 	assert.Equal(t, "key_api", retrieved.KeyID)
 	assert.Equal(t, "org_enterprise", retrieved.OrganizationID)

@@ -18,6 +18,18 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// parseSQLiteTime parses a time string that may be RFC3339 (from Go code)
+// or SQLite datetime format "2006-01-02 15:04:05" (from migrations).
+func parseSQLiteTime(s string) time.Time {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t
+	}
+	if t, err := time.Parse("2006-01-02 15:04:05", s); err == nil {
+		return t
+	}
+	return time.Time{}
+}
+
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
@@ -96,12 +108,48 @@ func (s *SQLiteStore) Close() error {
 }
 
 // =============================================================================
+// User Resolution
+// =============================================================================
+
+func (s *SQLiteStore) ResolveUser(ctx context.Context, referenceID, email, name, planID string) (int, error) {
+	return resolveUser(ctx, s.db, referenceID, email, name, planID)
+}
+
+func (s *txSQLiteStore) ResolveUser(ctx context.Context, referenceID, email, name, planID string) (int, error) {
+	return resolveUser(ctx, s.tx, referenceID, email, name, planID)
+}
+
+func resolveUser(ctx context.Context, exec executor, referenceID, email, name, planID string) (int, error) {
+	// Upsert user: insert if not exists, update fields if they changed
+	_, err := exec.ExecContext(ctx, `
+		INSERT INTO users (reference_id, email, name, plan_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+		ON CONFLICT(reference_id) DO UPDATE SET
+			email = CASE WHEN excluded.email != '' THEN excluded.email ELSE users.email END,
+			name = CASE WHEN excluded.name != '' THEN excluded.name ELSE users.name END,
+			plan_id = CASE WHEN excluded.plan_id != '' THEN excluded.plan_id ELSE users.plan_id END,
+			updated_at = datetime('now')
+	`, referenceID, email, name, planID)
+	if err != nil {
+		return 0, fmt.Errorf("resolve user: %w", err)
+	}
+
+	var userID int
+	err = exec.GetContext(ctx, &userID, "SELECT id FROM users WHERE reference_id = ?", referenceID)
+	if err != nil {
+		return 0, fmt.Errorf("resolve user: %w", err)
+	}
+	return userID, nil
+}
+
+// =============================================================================
 // Template Operations
 // =============================================================================
 
 // templateRow represents a template row in the database.
 type templateRow struct {
-	ID                   string  `db:"id"`
+	ID                   int     `db:"id"`
+	ReferenceID          string  `db:"reference_id"`
 	Name                 string  `db:"name"`
 	Slug                 string  `db:"slug"`
 	Description          string  `db:"description"`
@@ -117,7 +165,7 @@ type templateRow struct {
 	Tags                 *string `db:"tags"`
 	RequiredCapabilities *string `db:"required_capabilities"`
 	Published            bool    `db:"published"`
-	CreatorID            string  `db:"creator_id"`
+	CreatorID            int     `db:"creator_id"`
 	CreatedAt            string  `db:"created_at"`
 	UpdatedAt            string  `db:"updated_at"`
 }
@@ -152,26 +200,39 @@ func (s *SQLiteStore) ListTemplates(ctx context.Context, opts ListOptions) ([]do
 
 // deploymentRow represents a deployment row in the database.
 type deploymentRow struct {
-	ID              string  `db:"id"`
-	Name            string  `db:"name"`
-	TemplateID      string  `db:"template_id"`
-	TemplateVersion string  `db:"template_version"`
-	CustomerID      string  `db:"customer_id"`
-	NodeID          string  `db:"node_id"`
-	Status          string  `db:"status"`
-	Variables       *string `db:"variables"`
-	Domains         *string `db:"domains"`
-	Containers      *string `db:"containers"`
-	ResourcesCPU    float64 `db:"resources_cpu_cores"`
-	ResourcesMemory int64   `db:"resources_memory_mb"`
-	ResourcesDisk   int64   `db:"resources_disk_mb"`
-	ProxyPort       *int    `db:"proxy_port"`
-	ErrorMessage    string  `db:"error_message"`
-	CreatedAt       string  `db:"created_at"`
-	UpdatedAt       string  `db:"updated_at"`
-	StartedAt       *string `db:"started_at"`
-	StoppedAt       *string `db:"stopped_at"`
+	ID                  int     `db:"id"`
+	ReferenceID         string  `db:"reference_id"`
+	Name                string  `db:"name"`
+	TemplateID          int     `db:"template_id"`
+	TemplateRefID       *string `db:"template_reference_id"` // populated via JOIN
+	TemplateVersion     string  `db:"template_version"`
+	CustomerID          int     `db:"customer_id"`
+	NodeID              string  `db:"node_id"`
+	Status              string  `db:"status"`
+	Variables           *string `db:"variables"`
+	Domains             *string `db:"domains"`
+	Containers          *string `db:"containers"`
+	ResourcesCPU        float64 `db:"resources_cpu_cores"`
+	ResourcesMemory     int64   `db:"resources_memory_mb"`
+	ResourcesDisk       int64   `db:"resources_disk_mb"`
+	ProxyPort           *int    `db:"proxy_port"`
+	ErrorMessage        string  `db:"error_message"`
+	CreatedAt           string  `db:"created_at"`
+	UpdatedAt           string  `db:"updated_at"`
+	StartedAt           *string `db:"started_at"`
+	StoppedAt           *string `db:"stopped_at"`
 }
+
+// deploymentSelectColumns is the standard column list for deployment queries with template JOIN.
+const deploymentSelectColumns = `
+	d.id, d.reference_id, d.name, d.template_id, t.reference_id AS template_reference_id,
+	d.template_version, d.customer_id, d.node_id, d.status,
+	d.variables, d.domains, d.containers,
+	d.resources_cpu_cores, d.resources_memory_mb, d.resources_disk_mb,
+	d.proxy_port, d.error_message, d.created_at, d.updated_at, d.started_at, d.stopped_at`
+
+// deploymentFromClause is the standard FROM clause for deployment queries with template JOIN.
+const deploymentFromClause = `FROM deployments d LEFT JOIN templates t ON t.id = d.template_id`
 
 func (s *SQLiteStore) CreateDeployment(ctx context.Context, deployment *domain.Deployment) error {
 	return createDeployment(ctx, s.db, deployment)
@@ -197,7 +258,7 @@ func (s *SQLiteStore) ListDeploymentsByTemplate(ctx context.Context, templateID 
 	return listDeploymentsByTemplate(ctx, s.db, templateID, opts)
 }
 
-func (s *SQLiteStore) ListDeploymentsByCustomer(ctx context.Context, customerID string, opts ListOptions) ([]domain.Deployment, error) {
+func (s *SQLiteStore) ListDeploymentsByCustomer(ctx context.Context, customerID int, opts ListOptions) ([]domain.Deployment, error) {
 	return listDeploymentsByCustomer(ctx, s.db, customerID, opts)
 }
 
@@ -284,7 +345,7 @@ func (s *txSQLiteStore) ListDeploymentsByTemplate(ctx context.Context, templateI
 	return listDeploymentsByTemplate(ctx, s.tx, templateID, opts)
 }
 
-func (s *txSQLiteStore) ListDeploymentsByCustomer(ctx context.Context, customerID string, opts ListOptions) ([]domain.Deployment, error) {
+func (s *txSQLiteStore) ListDeploymentsByCustomer(ctx context.Context, customerID int, opts ListOptions) ([]domain.Deployment, error) {
 	return listDeploymentsByCustomer(ctx, s.tx, customerID, opts)
 }
 
@@ -338,7 +399,7 @@ func (s *txSQLiteStore) DeleteNode(ctx context.Context, id string) error {
 	return deleteNode(ctx, s.tx, id)
 }
 
-func (s *txSQLiteStore) ListNodesByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.Node, error) {
+func (s *txSQLiteStore) ListNodesByCreator(ctx context.Context, creatorID int, opts ListOptions) ([]domain.Node, error) {
 	return listNodesByCreator(ctx, s.tx, creatorID, opts)
 }
 
@@ -362,7 +423,7 @@ func (s *txSQLiteStore) DeleteSSHKey(ctx context.Context, id string) error {
 	return deleteSSHKey(ctx, s.tx, id)
 }
 
-func (s *txSQLiteStore) ListSSHKeysByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.SSHKey, error) {
+func (s *txSQLiteStore) ListSSHKeysByCreator(ctx context.Context, creatorID int, opts ListOptions) ([]domain.SSHKey, error) {
 	return listSSHKeysByCreator(ctx, s.tx, creatorID, opts)
 }
 
@@ -378,7 +439,7 @@ func (s *txSQLiteStore) DeleteCloudCredential(ctx context.Context, id string) er
 	return deleteCloudCredential(ctx, s.tx, id)
 }
 
-func (s *txSQLiteStore) ListCloudCredentialsByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.CloudCredential, error) {
+func (s *txSQLiteStore) ListCloudCredentialsByCreator(ctx context.Context, creatorID int, opts ListOptions) ([]domain.CloudCredential, error) {
 	return listCloudCredentialsByCreator(ctx, s.tx, creatorID, opts)
 }
 
@@ -394,7 +455,7 @@ func (s *txSQLiteStore) UpdateCloudProvision(ctx context.Context, prov *domain.C
 	return updateCloudProvision(ctx, s.tx, prov)
 }
 
-func (s *txSQLiteStore) ListCloudProvisionsByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.CloudProvision, error) {
+func (s *txSQLiteStore) ListCloudProvisionsByCreator(ctx context.Context, creatorID int, opts ListOptions) ([]domain.CloudProvision, error) {
 	return listCloudProvisionsByCreator(ctx, s.tx, creatorID, opts)
 }
 
@@ -410,72 +471,80 @@ func createTemplate(ctx context.Context, exec executor, template *domain.Templat
 	// Serialize JSON fields
 	variablesJSON, err := json.Marshal(template.Variables)
 	if err != nil {
-		return NewStoreError("CreateTemplate", "template", template.ID, "failed to serialize variables", ErrInvalidData)
+		return NewStoreError("CreateTemplate", "template", template.ReferenceID, "failed to serialize variables", ErrInvalidData)
 	}
 	configFilesJSON, err := json.Marshal(template.ConfigFiles)
 	if err != nil {
-		return NewStoreError("CreateTemplate", "template", template.ID, "failed to serialize config_files", ErrInvalidData)
+		return NewStoreError("CreateTemplate", "template", template.ReferenceID, "failed to serialize config_files", ErrInvalidData)
 	}
 	tagsJSON, err := json.Marshal(template.Tags)
 	if err != nil {
-		return NewStoreError("CreateTemplate", "template", template.ID, "failed to serialize tags", ErrInvalidData)
+		return NewStoreError("CreateTemplate", "template", template.ReferenceID, "failed to serialize tags", ErrInvalidData)
 	}
 	requiredCapabilitiesJSON, err := json.Marshal(template.RequiredCapabilities)
 	if err != nil {
-		return NewStoreError("CreateTemplate", "template", template.ID, "failed to serialize required_capabilities", ErrInvalidData)
+		return NewStoreError("CreateTemplate", "template", template.ReferenceID, "failed to serialize required_capabilities", ErrInvalidData)
 	}
 
 	query := `
 		INSERT INTO templates (
-			id, name, slug, description, version, compose_spec, variables, config_files,
+			reference_id, name, slug, description, version, compose_spec, variables, config_files,
 			resources_cpu_cores, resources_memory_mb, resources_disk_mb,
 			price_monthly_cents, category, tags, required_capabilities, published, creator_id,
 			created_at, updated_at
 		) VALUES (
-			:id, :name, :slug, :description, :version, :compose_spec, :variables, :config_files,
-			:resources_cpu_cores, :resources_memory_mb, :resources_disk_mb,
-			:price_monthly_cents, :category, :tags, :required_capabilities, :published, :creator_id,
-			:created_at, :updated_at
+			?, ?, ?, ?, ?, ?, ?, ?,
+			?, ?, ?,
+			?, ?, ?, ?, ?, ?,
+			?, ?
 		)`
 
-	row := map[string]any{
-		"id":                    template.ID,
-		"name":                  template.Name,
-		"slug":                  template.Slug,
-		"description":           template.Description,
-		"version":               template.Version,
-		"compose_spec":          template.ComposeSpec,
-		"variables":             string(variablesJSON),
-		"config_files":          string(configFilesJSON),
-		"resources_cpu_cores":   template.ResourceRequirements.CPUCores,
-		"resources_memory_mb":   template.ResourceRequirements.MemoryMB,
-		"resources_disk_mb":     template.ResourceRequirements.DiskMB,
-		"price_monthly_cents":   template.PriceMonthly,
-		"category":              template.Category,
-		"tags":                  string(tagsJSON),
-		"required_capabilities": string(requiredCapabilitiesJSON),
-		"published":             template.Published,
-		"creator_id":            template.CreatorID,
-		"created_at":            template.CreatedAt.Format(time.RFC3339),
-		"updated_at":            template.UpdatedAt.Format(time.RFC3339),
-	}
-
-	_, err = exec.NamedExecContext(ctx, query, row)
+	result, err := exec.ExecContext(ctx, query,
+		template.ReferenceID,
+		template.Name,
+		template.Slug,
+		template.Description,
+		template.Version,
+		template.ComposeSpec,
+		string(variablesJSON),
+		string(configFilesJSON),
+		template.ResourceRequirements.CPUCores,
+		template.ResourceRequirements.MemoryMB,
+		template.ResourceRequirements.DiskMB,
+		template.PriceMonthly,
+		template.Category,
+		string(tagsJSON),
+		string(requiredCapabilitiesJSON),
+		template.Published,
+		template.CreatorID,
+		template.CreatedAt.Format(time.RFC3339),
+		template.UpdatedAt.Format(time.RFC3339),
+	)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint failed: templates.id") {
-			return NewStoreError("CreateTemplate", "template", template.ID, "template with this ID already exists", ErrDuplicateID)
+		if strings.Contains(err.Error(), "UNIQUE constraint failed: templates.reference_id") {
+			return NewStoreError("CreateTemplate", "template", template.ReferenceID, "template with this ID already exists", ErrDuplicateID)
 		}
 		if strings.Contains(err.Error(), "UNIQUE constraint failed: templates.slug") {
-			return NewStoreError("CreateTemplate", "template", template.ID, "template with this slug already exists", ErrDuplicateSlug)
+			return NewStoreError("CreateTemplate", "template", template.ReferenceID, "template with this slug already exists", ErrDuplicateSlug)
 		}
-		return NewStoreError("CreateTemplate", "template", template.ID, err.Error(), err)
+		return NewStoreError("CreateTemplate", "template", template.ReferenceID, err.Error(), err)
 	}
+
+	lastID, err := result.LastInsertId()
+	if err != nil {
+		return NewStoreError("CreateTemplate", "template", template.ReferenceID, "failed to get last insert ID", err)
+	}
+	template.ID = int(lastID)
 
 	return nil
 }
 
 func getTemplate(ctx context.Context, exec executor, id string) (*domain.Template, error) {
-	query := `SELECT * FROM templates WHERE id = ?`
+	query := `SELECT id, reference_id, name, slug, description, version, compose_spec, variables, config_files,
+		resources_cpu_cores, resources_memory_mb, resources_disk_mb,
+		price_monthly_cents, category, tags, required_capabilities, published, creator_id,
+		created_at, updated_at
+		FROM templates WHERE reference_id = ?`
 
 	var row templateRow
 	err := exec.GetContext(ctx, &row, query, id)
@@ -490,7 +559,11 @@ func getTemplate(ctx context.Context, exec executor, id string) (*domain.Templat
 }
 
 func getTemplateBySlug(ctx context.Context, exec executor, slug string) (*domain.Template, error) {
-	query := `SELECT * FROM templates WHERE slug = ?`
+	query := `SELECT id, reference_id, name, slug, description, version, compose_spec, variables, config_files,
+		resources_cpu_cores, resources_memory_mb, resources_disk_mb,
+		price_monthly_cents, category, tags, required_capabilities, published, creator_id,
+		created_at, updated_at
+		FROM templates WHERE slug = ?`
 
 	var row templateRow
 	err := exec.GetContext(ctx, &row, query, slug)
@@ -508,19 +581,19 @@ func updateTemplate(ctx context.Context, exec executor, template *domain.Templat
 	// Serialize JSON fields
 	variablesJSON, err := json.Marshal(template.Variables)
 	if err != nil {
-		return NewStoreError("UpdateTemplate", "template", template.ID, "failed to serialize variables", ErrInvalidData)
+		return NewStoreError("UpdateTemplate", "template", template.ReferenceID, "failed to serialize variables", ErrInvalidData)
 	}
 	configFilesJSON, err := json.Marshal(template.ConfigFiles)
 	if err != nil {
-		return NewStoreError("UpdateTemplate", "template", template.ID, "failed to serialize config_files", ErrInvalidData)
+		return NewStoreError("UpdateTemplate", "template", template.ReferenceID, "failed to serialize config_files", ErrInvalidData)
 	}
 	tagsJSON, err := json.Marshal(template.Tags)
 	if err != nil {
-		return NewStoreError("UpdateTemplate", "template", template.ID, "failed to serialize tags", ErrInvalidData)
+		return NewStoreError("UpdateTemplate", "template", template.ReferenceID, "failed to serialize tags", ErrInvalidData)
 	}
 	requiredCapabilitiesJSON, err := json.Marshal(template.RequiredCapabilities)
 	if err != nil {
-		return NewStoreError("UpdateTemplate", "template", template.ID, "failed to serialize required_capabilities", ErrInvalidData)
+		return NewStoreError("UpdateTemplate", "template", template.ReferenceID, "failed to serialize required_capabilities", ErrInvalidData)
 	}
 
 	query := `
@@ -542,10 +615,10 @@ func updateTemplate(ctx context.Context, exec executor, template *domain.Templat
 			published = :published,
 			creator_id = :creator_id,
 			updated_at = :updated_at
-		WHERE id = :id`
+		WHERE reference_id = :reference_id`
 
 	row := map[string]any{
-		"id":                    template.ID,
+		"reference_id":          template.ReferenceID,
 		"name":                  template.Name,
 		"slug":                  template.Slug,
 		"description":           template.Description,
@@ -567,19 +640,19 @@ func updateTemplate(ctx context.Context, exec executor, template *domain.Templat
 
 	result, err := exec.NamedExecContext(ctx, query, row)
 	if err != nil {
-		return NewStoreError("UpdateTemplate", "template", template.ID, err.Error(), err)
+		return NewStoreError("UpdateTemplate", "template", template.ReferenceID, err.Error(), err)
 	}
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		return NewStoreError("UpdateTemplate", "template", template.ID, "template not found", ErrNotFound)
+		return NewStoreError("UpdateTemplate", "template", template.ReferenceID, "template not found", ErrNotFound)
 	}
 
 	return nil
 }
 
 func deleteTemplate(ctx context.Context, exec executor, id string) error {
-	query := `DELETE FROM templates WHERE id = ?`
+	query := `DELETE FROM templates WHERE reference_id = ?`
 
 	result, err := exec.ExecContext(ctx, query, id)
 	if err != nil {
@@ -596,7 +669,11 @@ func deleteTemplate(ctx context.Context, exec executor, id string) error {
 
 func listTemplates(ctx context.Context, exec executor, opts ListOptions) ([]domain.Template, error) {
 	opts = opts.Normalize()
-	query := `SELECT * FROM templates ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	query := `SELECT id, reference_id, name, slug, description, version, compose_spec, variables, config_files,
+		resources_cpu_cores, resources_memory_mb, resources_disk_mb,
+		price_monthly_cents, category, tags, required_capabilities, published, creator_id,
+		created_at, updated_at
+		FROM templates ORDER BY created_at DESC LIMIT ? OFFSET ?`
 
 	var rows []templateRow
 	err := exec.SelectContext(ctx, &rows, query, opts.Limit, opts.Offset)
@@ -620,15 +697,15 @@ func createDeployment(ctx context.Context, exec executor, deployment *domain.Dep
 	// Serialize JSON fields
 	variablesJSON, err := json.Marshal(deployment.Variables)
 	if err != nil {
-		return NewStoreError("CreateDeployment", "deployment", deployment.ID, "failed to serialize variables", ErrInvalidData)
+		return NewStoreError("CreateDeployment", "deployment", deployment.ReferenceID, "failed to serialize variables", ErrInvalidData)
 	}
 	domainsJSON, err := json.Marshal(deployment.Domains)
 	if err != nil {
-		return NewStoreError("CreateDeployment", "deployment", deployment.ID, "failed to serialize domains", ErrInvalidData)
+		return NewStoreError("CreateDeployment", "deployment", deployment.ReferenceID, "failed to serialize domains", ErrInvalidData)
 	}
 	containersJSON, err := json.Marshal(deployment.Containers)
 	if err != nil {
-		return NewStoreError("CreateDeployment", "deployment", deployment.ID, "failed to serialize containers", ErrInvalidData)
+		return NewStoreError("CreateDeployment", "deployment", deployment.ReferenceID, "failed to serialize containers", ErrInvalidData)
 	}
 
 	var startedAt, stoppedAt *string
@@ -648,55 +725,59 @@ func createDeployment(ctx context.Context, exec executor, deployment *domain.Dep
 
 	query := `
 		INSERT INTO deployments (
-			id, name, template_id, template_version, customer_id, node_id,
+			reference_id, name, template_id, template_version, customer_id, node_id,
 			status, variables, domains, containers,
 			resources_cpu_cores, resources_memory_mb, resources_disk_mb,
 			proxy_port, error_message, created_at, updated_at, started_at, stopped_at
 		) VALUES (
-			:id, :name, :template_id, :template_version, :customer_id, :node_id,
-			:status, :variables, :domains, :containers,
-			:resources_cpu_cores, :resources_memory_mb, :resources_disk_mb,
-			:proxy_port, :error_message, :created_at, :updated_at, :started_at, :stopped_at
+			?, ?, ?, ?, ?, ?,
+			?, ?, ?, ?,
+			?, ?, ?,
+			?, ?, ?, ?, ?, ?
 		)`
 
-	row := map[string]any{
-		"id":                   deployment.ID,
-		"name":                 deployment.Name,
-		"template_id":          deployment.TemplateID,
-		"template_version":     deployment.TemplateVersion,
-		"customer_id":          deployment.CustomerID,
-		"node_id":              deployment.NodeID,
-		"status":               string(deployment.Status),
-		"variables":            string(variablesJSON),
-		"domains":              string(domainsJSON),
-		"containers":           string(containersJSON),
-		"resources_cpu_cores":  deployment.Resources.CPUCores,
-		"resources_memory_mb":  deployment.Resources.MemoryMB,
-		"resources_disk_mb":    deployment.Resources.DiskMB,
-		"proxy_port":           proxyPort,
-		"error_message":        deployment.ErrorMessage,
-		"created_at":           deployment.CreatedAt.Format(time.RFC3339),
-		"updated_at":           deployment.UpdatedAt.Format(time.RFC3339),
-		"started_at":           startedAt,
-		"stopped_at":           stoppedAt,
-	}
-
-	_, err = exec.NamedExecContext(ctx, query, row)
+	result, err := exec.ExecContext(ctx, query,
+		deployment.ReferenceID,
+		deployment.Name,
+		deployment.TemplateID,
+		deployment.TemplateVersion,
+		deployment.CustomerID,
+		deployment.NodeID,
+		string(deployment.Status),
+		string(variablesJSON),
+		string(domainsJSON),
+		string(containersJSON),
+		deployment.Resources.CPUCores,
+		deployment.Resources.MemoryMB,
+		deployment.Resources.DiskMB,
+		proxyPort,
+		deployment.ErrorMessage,
+		deployment.CreatedAt.Format(time.RFC3339),
+		deployment.UpdatedAt.Format(time.RFC3339),
+		startedAt,
+		stoppedAt,
+	)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint failed: deployments.id") {
-			return NewStoreError("CreateDeployment", "deployment", deployment.ID, "deployment with this ID already exists", ErrDuplicateID)
+		if strings.Contains(err.Error(), "UNIQUE constraint failed: deployments.reference_id") {
+			return NewStoreError("CreateDeployment", "deployment", deployment.ReferenceID, "deployment with this ID already exists", ErrDuplicateID)
 		}
 		if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
-			return NewStoreError("CreateDeployment", "deployment", deployment.ID, "template not found", ErrForeignKey)
+			return NewStoreError("CreateDeployment", "deployment", deployment.ReferenceID, "template not found", ErrForeignKey)
 		}
-		return NewStoreError("CreateDeployment", "deployment", deployment.ID, err.Error(), err)
+		return NewStoreError("CreateDeployment", "deployment", deployment.ReferenceID, err.Error(), err)
 	}
+
+	lastID, err := result.LastInsertId()
+	if err != nil {
+		return NewStoreError("CreateDeployment", "deployment", deployment.ReferenceID, "failed to get last insert ID", err)
+	}
+	deployment.ID = int(lastID)
 
 	return nil
 }
 
 func getDeployment(ctx context.Context, exec executor, id string) (*domain.Deployment, error) {
-	query := `SELECT * FROM deployments WHERE id = ?`
+	query := `SELECT ` + deploymentSelectColumns + ` ` + deploymentFromClause + ` WHERE d.reference_id = ?`
 
 	var row deploymentRow
 	err := exec.GetContext(ctx, &row, query, id)
@@ -714,15 +795,15 @@ func updateDeployment(ctx context.Context, exec executor, deployment *domain.Dep
 	// Serialize JSON fields
 	variablesJSON, err := json.Marshal(deployment.Variables)
 	if err != nil {
-		return NewStoreError("UpdateDeployment", "deployment", deployment.ID, "failed to serialize variables", ErrInvalidData)
+		return NewStoreError("UpdateDeployment", "deployment", deployment.ReferenceID, "failed to serialize variables", ErrInvalidData)
 	}
 	domainsJSON, err := json.Marshal(deployment.Domains)
 	if err != nil {
-		return NewStoreError("UpdateDeployment", "deployment", deployment.ID, "failed to serialize domains", ErrInvalidData)
+		return NewStoreError("UpdateDeployment", "deployment", deployment.ReferenceID, "failed to serialize domains", ErrInvalidData)
 	}
 	containersJSON, err := json.Marshal(deployment.Containers)
 	if err != nil {
-		return NewStoreError("UpdateDeployment", "deployment", deployment.ID, "failed to serialize containers", ErrInvalidData)
+		return NewStoreError("UpdateDeployment", "deployment", deployment.ReferenceID, "failed to serialize containers", ErrInvalidData)
 	}
 
 	var startedAt, stoppedAt *string
@@ -759,10 +840,10 @@ func updateDeployment(ctx context.Context, exec executor, deployment *domain.Dep
 			updated_at = :updated_at,
 			started_at = :started_at,
 			stopped_at = :stopped_at
-		WHERE id = :id`
+		WHERE reference_id = :reference_id`
 
 	row := map[string]any{
-		"id":                   deployment.ID,
+		"reference_id":         deployment.ReferenceID,
 		"name":                 deployment.Name,
 		"template_id":          deployment.TemplateID,
 		"template_version":     deployment.TemplateVersion,
@@ -784,19 +865,19 @@ func updateDeployment(ctx context.Context, exec executor, deployment *domain.Dep
 
 	result, err := exec.NamedExecContext(ctx, query, row)
 	if err != nil {
-		return NewStoreError("UpdateDeployment", "deployment", deployment.ID, err.Error(), err)
+		return NewStoreError("UpdateDeployment", "deployment", deployment.ReferenceID, err.Error(), err)
 	}
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		return NewStoreError("UpdateDeployment", "deployment", deployment.ID, "deployment not found", ErrNotFound)
+		return NewStoreError("UpdateDeployment", "deployment", deployment.ReferenceID, "deployment not found", ErrNotFound)
 	}
 
 	return nil
 }
 
 func deleteDeployment(ctx context.Context, exec executor, id string) error {
-	query := `DELETE FROM deployments WHERE id = ?`
+	query := `DELETE FROM deployments WHERE reference_id = ?`
 
 	result, err := exec.ExecContext(ctx, query, id)
 	if err != nil {
@@ -813,7 +894,7 @@ func deleteDeployment(ctx context.Context, exec executor, id string) error {
 
 func listDeployments(ctx context.Context, exec executor, opts ListOptions) ([]domain.Deployment, error) {
 	opts = opts.Normalize()
-	query := `SELECT * FROM deployments ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	query := `SELECT ` + deploymentSelectColumns + ` ` + deploymentFromClause + ` ORDER BY d.created_at DESC LIMIT ? OFFSET ?`
 
 	var rows []deploymentRow
 	err := exec.SelectContext(ctx, &rows, query, opts.Limit, opts.Offset)
@@ -835,7 +916,9 @@ func listDeployments(ctx context.Context, exec executor, opts ListOptions) ([]do
 
 func listDeploymentsByTemplate(ctx context.Context, exec executor, templateID string, opts ListOptions) ([]domain.Deployment, error) {
 	opts = opts.Normalize()
-	query := `SELECT * FROM deployments WHERE template_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	query := `SELECT ` + deploymentSelectColumns + ` ` + deploymentFromClause + `
+		WHERE d.template_id = (SELECT id FROM templates WHERE reference_id = ?)
+		ORDER BY d.created_at DESC LIMIT ? OFFSET ?`
 
 	var rows []deploymentRow
 	err := exec.SelectContext(ctx, &rows, query, templateID, opts.Limit, opts.Offset)
@@ -855,9 +938,10 @@ func listDeploymentsByTemplate(ctx context.Context, exec executor, templateID st
 	return deployments, nil
 }
 
-func listDeploymentsByCustomer(ctx context.Context, exec executor, customerID string, opts ListOptions) ([]domain.Deployment, error) {
+func listDeploymentsByCustomer(ctx context.Context, exec executor, customerID int, opts ListOptions) ([]domain.Deployment, error) {
 	opts = opts.Normalize()
-	query := `SELECT * FROM deployments WHERE customer_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	query := `SELECT ` + deploymentSelectColumns + ` ` + deploymentFromClause + `
+		WHERE d.customer_id = ? ORDER BY d.created_at DESC LIMIT ? OFFSET ?`
 
 	var rows []deploymentRow
 	err := exec.SelectContext(ctx, &rows, query, customerID, opts.Limit, opts.Offset)
@@ -890,7 +974,7 @@ func getDeploymentByDomain(ctx context.Context, exec executor, hostname string) 
 	// Query for deployment where any domain in the JSON array matches the hostname
 	// Uses json_each() to handle any number of domains per deployment
 	query := `
-		SELECT d.* FROM deployments d
+		SELECT ` + deploymentSelectColumns + ` ` + deploymentFromClause + `
 		WHERE EXISTS (
 			SELECT 1 FROM json_each(d.domains) AS je
 			WHERE json_extract(je.value, '$.hostname') = ?
@@ -954,39 +1038,40 @@ func countRoutableDeployments(ctx context.Context, exec executor) (int, error) {
 
 // rowToTemplate converts a database row to a domain.Template.
 func rowToTemplate(row *templateRow) (*domain.Template, error) {
-	createdAt, _ := time.Parse(time.RFC3339, row.CreatedAt)
-	updatedAt, _ := time.Parse(time.RFC3339, row.UpdatedAt)
+	createdAt := parseSQLiteTime(row.CreatedAt)
+	updatedAt := parseSQLiteTime(row.UpdatedAt)
 
 	var variables []domain.Variable
 	if row.Variables != nil && *row.Variables != "" && *row.Variables != "null" {
 		if err := json.Unmarshal([]byte(*row.Variables), &variables); err != nil {
-			return nil, NewStoreError("rowToTemplate", "template", row.ID, "failed to parse variables", ErrInvalidData)
+			return nil, NewStoreError("rowToTemplate", "template", row.ReferenceID, "failed to parse variables", ErrInvalidData)
 		}
 	}
 
 	var configFiles []domain.ConfigFile
 	if row.ConfigFiles != nil && *row.ConfigFiles != "" && *row.ConfigFiles != "null" {
 		if err := json.Unmarshal([]byte(*row.ConfigFiles), &configFiles); err != nil {
-			return nil, NewStoreError("rowToTemplate", "template", row.ID, "failed to parse config_files", ErrInvalidData)
+			return nil, NewStoreError("rowToTemplate", "template", row.ReferenceID, "failed to parse config_files", ErrInvalidData)
 		}
 	}
 
 	var tags []string
 	if row.Tags != nil && *row.Tags != "" && *row.Tags != "null" {
 		if err := json.Unmarshal([]byte(*row.Tags), &tags); err != nil {
-			return nil, NewStoreError("rowToTemplate", "template", row.ID, "failed to parse tags", ErrInvalidData)
+			return nil, NewStoreError("rowToTemplate", "template", row.ReferenceID, "failed to parse tags", ErrInvalidData)
 		}
 	}
 
 	var requiredCapabilities []string
 	if row.RequiredCapabilities != nil && *row.RequiredCapabilities != "" && *row.RequiredCapabilities != "null" {
 		if err := json.Unmarshal([]byte(*row.RequiredCapabilities), &requiredCapabilities); err != nil {
-			return nil, NewStoreError("rowToTemplate", "template", row.ID, "failed to parse required_capabilities", ErrInvalidData)
+			return nil, NewStoreError("rowToTemplate", "template", row.ReferenceID, "failed to parse required_capabilities", ErrInvalidData)
 		}
 	}
 
 	return &domain.Template{
 		ID:          row.ID,
+		ReferenceID: row.ReferenceID,
 		Name:        row.Name,
 		Slug:        row.Slug,
 		Description: row.Description,
@@ -1012,37 +1097,37 @@ func rowToTemplate(row *templateRow) (*domain.Template, error) {
 
 // rowToDeployment converts a database row to a domain.Deployment.
 func rowToDeployment(row *deploymentRow) (*domain.Deployment, error) {
-	createdAt, _ := time.Parse(time.RFC3339, row.CreatedAt)
-	updatedAt, _ := time.Parse(time.RFC3339, row.UpdatedAt)
+	createdAt := parseSQLiteTime(row.CreatedAt)
+	updatedAt := parseSQLiteTime(row.UpdatedAt)
 
 	var startedAt, stoppedAt *time.Time
 	if row.StartedAt != nil && *row.StartedAt != "" {
-		t, _ := time.Parse(time.RFC3339, *row.StartedAt)
+		t := parseSQLiteTime(*row.StartedAt)
 		startedAt = &t
 	}
 	if row.StoppedAt != nil && *row.StoppedAt != "" {
-		t, _ := time.Parse(time.RFC3339, *row.StoppedAt)
+		t := parseSQLiteTime(*row.StoppedAt)
 		stoppedAt = &t
 	}
 
 	var variables map[string]string
 	if row.Variables != nil && *row.Variables != "" && *row.Variables != "null" {
 		if err := json.Unmarshal([]byte(*row.Variables), &variables); err != nil {
-			return nil, NewStoreError("rowToDeployment", "deployment", row.ID, "failed to parse variables", ErrInvalidData)
+			return nil, NewStoreError("rowToDeployment", "deployment", row.ReferenceID, "failed to parse variables", ErrInvalidData)
 		}
 	}
 
 	var domains []domain.Domain
 	if row.Domains != nil && *row.Domains != "" && *row.Domains != "null" {
 		if err := json.Unmarshal([]byte(*row.Domains), &domains); err != nil {
-			return nil, NewStoreError("rowToDeployment", "deployment", row.ID, "failed to parse domains", ErrInvalidData)
+			return nil, NewStoreError("rowToDeployment", "deployment", row.ReferenceID, "failed to parse domains", ErrInvalidData)
 		}
 	}
 
 	var containers []domain.ContainerInfo
 	if row.Containers != nil && *row.Containers != "" && *row.Containers != "null" {
 		if err := json.Unmarshal([]byte(*row.Containers), &containers); err != nil {
-			return nil, NewStoreError("rowToDeployment", "deployment", row.ID, "failed to parse containers", ErrInvalidData)
+			return nil, NewStoreError("rowToDeployment", "deployment", row.ReferenceID, "failed to parse containers", ErrInvalidData)
 		}
 	}
 
@@ -1051,10 +1136,17 @@ func rowToDeployment(row *deploymentRow) (*domain.Deployment, error) {
 		proxyPort = *row.ProxyPort
 	}
 
+	var templateRefID string
+	if row.TemplateRefID != nil {
+		templateRefID = *row.TemplateRefID
+	}
+
 	return &domain.Deployment{
 		ID:              row.ID,
+		ReferenceID:     row.ReferenceID,
 		Name:            row.Name,
 		TemplateID:      row.TemplateID,
+		TemplateRefID:   templateRefID,
 		TemplateVersion: row.TemplateVersion,
 		CustomerID:      row.CustomerID,
 		NodeID:          row.NodeID,
@@ -1082,8 +1174,9 @@ func rowToDeployment(row *deploymentRow) (*domain.Deployment, error) {
 
 // usageEventRow represents a usage event row in the database.
 type usageEventRow struct {
-	ID           string  `db:"id"`
-	UserID       string  `db:"user_id"`
+	ID           int     `db:"id"`
+	ReferenceID  string  `db:"reference_id"`
+	UserID       int     `db:"user_id"`
 	EventType    string  `db:"event_type"`
 	ResourceID   string  `db:"resource_id"`
 	ResourceType string  `db:"resource_type"`
@@ -1104,35 +1197,39 @@ func createUsageEvent(ctx context.Context, exec executor, event *domain.MeterEve
 	if len(event.Metadata) > 0 {
 		data, err := json.Marshal(event.Metadata)
 		if err != nil {
-			return NewStoreError("CreateUsageEvent", "usage_event", event.ID, "failed to marshal metadata", ErrInvalidData)
+			return NewStoreError("CreateUsageEvent", "usage_event", event.ReferenceID, "failed to marshal metadata", ErrInvalidData)
 		}
 		s := string(data)
 		metadataJSON = &s
 	}
 
-	row := usageEventRow{
-		ID:           event.ID,
-		UserID:       event.UserID,
-		EventType:    string(event.EventType),
-		ResourceID:   event.ResourceID,
-		ResourceType: event.ResourceType,
-		Quantity:     event.Quantity,
-		Metadata:     metadataJSON,
-		Timestamp:    event.Timestamp.Format(time.RFC3339),
-		CreatedAt:    event.CreatedAt.Format(time.RFC3339),
-	}
-
 	query := `
-		INSERT INTO usage_events (id, user_id, event_type, resource_id, resource_type, quantity, metadata, timestamp, created_at)
-		VALUES (:id, :user_id, :event_type, :resource_id, :resource_type, :quantity, :metadata, :timestamp, :created_at)`
+		INSERT INTO usage_events (reference_id, user_id, event_type, resource_id, resource_type, quantity, metadata, timestamp, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := exec.NamedExecContext(ctx, query, row)
+	result, err := exec.ExecContext(ctx, query,
+		event.ReferenceID,
+		event.UserID,
+		string(event.EventType),
+		event.ResourceID,
+		event.ResourceType,
+		event.Quantity,
+		metadataJSON,
+		event.Timestamp.Format(time.RFC3339),
+		event.CreatedAt.Format(time.RFC3339),
+	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint") {
-			return NewStoreError("CreateUsageEvent", "usage_event", event.ID, "event already exists", ErrDuplicateID)
+			return NewStoreError("CreateUsageEvent", "usage_event", event.ReferenceID, "event already exists", ErrDuplicateID)
 		}
-		return NewStoreError("CreateUsageEvent", "usage_event", event.ID, err.Error(), err)
+		return NewStoreError("CreateUsageEvent", "usage_event", event.ReferenceID, err.Error(), err)
 	}
+
+	lastID, err := result.LastInsertId()
+	if err != nil {
+		return NewStoreError("CreateUsageEvent", "usage_event", event.ReferenceID, "failed to get last insert ID", err)
+	}
+	event.ID = int(lastID)
 
 	return nil
 }
@@ -1148,7 +1245,7 @@ func getUnreportedEvents(ctx context.Context, exec executor, limit int) ([]domai
 	}
 
 	query := `
-		SELECT id, user_id, event_type, resource_id, resource_type, quantity, metadata, timestamp, reported_at, created_at
+		SELECT id, reference_id, user_id, event_type, resource_id, resource_type, quantity, metadata, timestamp, reported_at, created_at
 		FROM usage_events
 		WHERE reported_at IS NULL
 		ORDER BY timestamp ASC
@@ -1193,7 +1290,7 @@ func markEventsReported(ctx context.Context, exec executor, ids []string, report
 	query := fmt.Sprintf(`
 		UPDATE usage_events
 		SET reported_at = ?
-		WHERE id IN (%s)`, strings.Join(placeholders, ","))
+		WHERE reference_id IN (%s)`, strings.Join(placeholders, ","))
 
 	_, err := exec.ExecContext(ctx, query, args...)
 	if err != nil {
@@ -1205,24 +1302,25 @@ func markEventsReported(ctx context.Context, exec executor, ids []string, report
 
 // rowToUsageEvent converts a database row to a domain.MeterEvent.
 func rowToUsageEvent(row *usageEventRow) (*domain.MeterEvent, error) {
-	timestamp, _ := time.Parse(time.RFC3339, row.Timestamp)
-	createdAt, _ := time.Parse(time.RFC3339, row.CreatedAt)
+	timestamp := parseSQLiteTime(row.Timestamp)
+	createdAt := parseSQLiteTime(row.CreatedAt)
 
 	var reportedAt *time.Time
 	if row.ReportedAt != nil && *row.ReportedAt != "" {
-		t, _ := time.Parse(time.RFC3339, *row.ReportedAt)
+		t := parseSQLiteTime(*row.ReportedAt)
 		reportedAt = &t
 	}
 
 	var metadata map[string]string
 	if row.Metadata != nil && *row.Metadata != "" && *row.Metadata != "null" {
 		if err := json.Unmarshal([]byte(*row.Metadata), &metadata); err != nil {
-			return nil, NewStoreError("rowToUsageEvent", "usage_event", row.ID, "failed to parse metadata", ErrInvalidData)
+			return nil, NewStoreError("rowToUsageEvent", "usage_event", row.ReferenceID, "failed to parse metadata", ErrInvalidData)
 		}
 	}
 
 	return &domain.MeterEvent{
 		ID:           row.ID,
+		ReferenceID:  row.ReferenceID,
 		UserID:       row.UserID,
 		EventType:    domain.EventType(row.EventType),
 		ResourceID:   row.ResourceID,
@@ -1241,8 +1339,9 @@ func rowToUsageEvent(row *usageEventRow) (*domain.MeterEvent, error) {
 
 // containerEventRow represents a database row for container events.
 type containerEventRow struct {
-	ID           string `db:"id"`
-	DeploymentID string `db:"deployment_id"`
+	ID           int    `db:"id"`
+	ReferenceID  string `db:"reference_id"`
+	DeploymentID int    `db:"deployment_id"`
 	Type         string `db:"type"`
 	Container    string `db:"container"`
 	Message      string `db:"message"`
@@ -1261,11 +1360,11 @@ func (s *txSQLiteStore) CreateContainerEvent(ctx context.Context, event *domain.
 
 func createContainerEvent(ctx context.Context, exec executor, event *domain.ContainerEvent) error {
 	query := `
-		INSERT INTO container_events (id, deployment_id, type, container, message, timestamp, created_at)
+		INSERT INTO container_events (reference_id, deployment_id, type, container, message, timestamp, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := exec.ExecContext(ctx, query,
-		event.ID,
+	result, err := exec.ExecContext(ctx, query,
+		event.ReferenceID,
 		event.DeploymentID,
 		string(event.Type),
 		event.Container,
@@ -1275,10 +1374,16 @@ func createContainerEvent(ctx context.Context, exec executor, event *domain.Cont
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint") {
-			return NewStoreError("CreateContainerEvent", "container_event", event.ID, "event already exists", ErrDuplicateID)
+			return NewStoreError("CreateContainerEvent", "container_event", event.ReferenceID, "event already exists", ErrDuplicateID)
 		}
-		return NewStoreError("CreateContainerEvent", "container_event", event.ID, err.Error(), err)
+		return NewStoreError("CreateContainerEvent", "container_event", event.ReferenceID, err.Error(), err)
 	}
+
+	lastID, err := result.LastInsertId()
+	if err != nil {
+		return NewStoreError("CreateContainerEvent", "container_event", event.ReferenceID, "failed to get last insert ID", err)
+	}
+	event.ID = int(lastID)
 
 	return nil
 }
@@ -1305,17 +1410,17 @@ func getContainerEvents(ctx context.Context, exec executor, deploymentID string,
 
 	if eventType != nil && *eventType != "" {
 		query = `
-			SELECT id, deployment_id, type, container, message, timestamp, created_at
+			SELECT id, reference_id, deployment_id, type, container, message, timestamp, created_at
 			FROM container_events
-			WHERE deployment_id = ? AND type = ?
+			WHERE deployment_id = (SELECT id FROM deployments WHERE reference_id = ?) AND type = ?
 			ORDER BY timestamp DESC
 			LIMIT ?`
 		args = []any{deploymentID, *eventType, limit}
 	} else {
 		query = `
-			SELECT id, deployment_id, type, container, message, timestamp, created_at
+			SELECT id, reference_id, deployment_id, type, container, message, timestamp, created_at
 			FROM container_events
-			WHERE deployment_id = ?
+			WHERE deployment_id = (SELECT id FROM deployments WHERE reference_id = ?)
 			ORDER BY timestamp DESC
 			LIMIT ?`
 		args = []any{deploymentID, limit}
@@ -1340,11 +1445,12 @@ func getContainerEvents(ctx context.Context, exec executor, deploymentID string,
 
 // rowToContainerEvent converts a database row to a domain.ContainerEvent.
 func rowToContainerEvent(row *containerEventRow) (*domain.ContainerEvent, error) {
-	timestamp, _ := time.Parse(time.RFC3339, row.Timestamp)
-	createdAt, _ := time.Parse(time.RFC3339, row.CreatedAt)
+	timestamp := parseSQLiteTime(row.Timestamp)
+	createdAt := parseSQLiteTime(row.CreatedAt)
 
 	return &domain.ContainerEvent{
 		ID:           row.ID,
+		ReferenceID:  row.ReferenceID,
 		DeploymentID: row.DeploymentID,
 		Type:         domain.ContainerEventType(row.Type),
 		Container:    row.Container,
@@ -1360,13 +1466,15 @@ func rowToContainerEvent(row *containerEventRow) (*domain.ContainerEvent, error)
 
 // nodeRow represents a node row in the database.
 type nodeRow struct {
-	ID                   string  `db:"id"`
+	ID                   int     `db:"id"`
+	ReferenceID          string  `db:"reference_id"`
 	Name                 string  `db:"name"`
-	CreatorID            string  `db:"creator_id"`
+	CreatorID            int     `db:"creator_id"`
 	SSHHost              string  `db:"ssh_host"`
 	SSHPort              int     `db:"ssh_port"`
 	SSHUser              string  `db:"ssh_user"`
-	SSHKeyID             *string `db:"ssh_key_id"`
+	SSHKeyID             *int    `db:"ssh_key_id"`
+	SSHKeyRefID          *string `db:"ssh_key_reference_id"` // populated via JOIN
 	DockerSocket         string  `db:"docker_socket"`
 	Status               string  `db:"status"`
 	Capabilities         string  `db:"capabilities"`
@@ -1386,6 +1494,20 @@ type nodeRow struct {
 	UpdatedAt            string  `db:"updated_at"`
 }
 
+// nodeSelectColumns is the standard column list for node queries with ssh_key JOIN.
+const nodeSelectColumns = `
+	n.id, n.reference_id, n.name, n.creator_id, n.ssh_host, n.ssh_port, n.ssh_user, n.ssh_key_id,
+	sk.reference_id AS ssh_key_reference_id,
+	n.docker_socket, n.status, n.capabilities,
+	n.capacity_cpu_cores, n.capacity_memory_mb, n.capacity_disk_mb,
+	n.capacity_cpu_used, n.capacity_memory_used_mb, n.capacity_disk_used_mb,
+	n.location, n.last_health_check, n.error_message,
+	n.provider_type, n.provision_id, n.base_domain,
+	n.created_at, n.updated_at`
+
+// nodeFromClause is the standard FROM clause for node queries with ssh_key JOIN.
+const nodeFromClause = `FROM nodes n LEFT JOIN ssh_keys sk ON sk.id = n.ssh_key_id`
+
 // CreateNode creates a new node in the database.
 func (s *SQLiteStore) CreateNode(ctx context.Context, node *domain.Node) error {
 	return createNode(ctx, s.db, node)
@@ -1394,7 +1516,7 @@ func (s *SQLiteStore) CreateNode(ctx context.Context, node *domain.Node) error {
 func createNode(ctx context.Context, exec executor, node *domain.Node) error {
 	capabilities, err := json.Marshal(node.Capabilities)
 	if err != nil {
-		return NewStoreError("CreateNode", "node", node.ID, "failed to marshal capabilities", err)
+		return NewStoreError("CreateNode", "node", node.ReferenceID, "failed to marshal capabilities", err)
 	}
 
 	var lastHealthCheck *string
@@ -1403,9 +1525,14 @@ func createNode(ctx context.Context, exec executor, node *domain.Node) error {
 		lastHealthCheck = &hc
 	}
 
+	var sshKeyID *int
+	if node.SSHKeyID != 0 {
+		sshKeyID = &node.SSHKeyID
+	}
+
 	query := `
 		INSERT INTO nodes (
-			id, name, creator_id, ssh_host, ssh_port, ssh_user, ssh_key_id,
+			reference_id, name, creator_id, ssh_host, ssh_port, ssh_user, ssh_key_id,
 			docker_socket, status, capabilities,
 			capacity_cpu_cores, capacity_memory_mb, capacity_disk_mb,
 			capacity_cpu_used, capacity_memory_used_mb, capacity_disk_used_mb,
@@ -1413,57 +1540,56 @@ func createNode(ctx context.Context, exec executor, node *domain.Node) error {
 			provider_type, provision_id, base_domain,
 			created_at, updated_at
 		) VALUES (
-			:id, :name, :creator_id, :ssh_host, :ssh_port, :ssh_user, :ssh_key_id,
-			:docker_socket, :status, :capabilities,
-			:capacity_cpu_cores, :capacity_memory_mb, :capacity_disk_mb,
-			:capacity_cpu_used, :capacity_memory_used_mb, :capacity_disk_used_mb,
-			:location, :last_health_check, :error_message,
-			:provider_type, :provision_id, :base_domain,
-			:created_at, :updated_at
+			?, ?, ?, ?, ?, ?, ?,
+			?, ?, ?,
+			?, ?, ?,
+			?, ?, ?,
+			?, ?, ?,
+			?, ?, ?,
+			?, ?
 		)`
 
-	var sshKeyID *string
-	if node.SSHKeyID != "" {
-		sshKeyID = &node.SSHKeyID
-	}
-
-	row := nodeRow{
-		ID:                   node.ID,
-		Name:                 node.Name,
-		CreatorID:            node.CreatorID,
-		SSHHost:              node.SSHHost,
-		SSHPort:              node.SSHPort,
-		SSHUser:              node.SSHUser,
-		SSHKeyID:             sshKeyID,
-		DockerSocket:         node.DockerSocket,
-		Status:               string(node.Status),
-		Capabilities:         string(capabilities),
-		CapacityCPUCores:     node.Capacity.CPUCores,
-		CapacityMemoryMB:     node.Capacity.MemoryMB,
-		CapacityDiskMB:       node.Capacity.DiskMB,
-		CapacityCPUUsed:      node.Capacity.CPUUsed,
-		CapacityMemoryUsedMB: node.Capacity.MemoryUsedMB,
-		CapacityDiskUsedMB:   node.Capacity.DiskUsedMB,
-		Location:             node.Location,
-		LastHealthCheck:      lastHealthCheck,
-		ErrorMessage:         node.ErrorMessage,
-		ProviderType:         node.ProviderType,
-		ProvisionID:          node.ProvisionID,
-		BaseDomain:           node.BaseDomain,
-		CreatedAt:            node.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:            node.UpdatedAt.Format(time.RFC3339),
-	}
-
-	_, err = exec.NamedExecContext(ctx, query, row)
+	result, err := exec.ExecContext(ctx, query,
+		node.ReferenceID,
+		node.Name,
+		node.CreatorID,
+		node.SSHHost,
+		node.SSHPort,
+		node.SSHUser,
+		sshKeyID,
+		node.DockerSocket,
+		string(node.Status),
+		string(capabilities),
+		node.Capacity.CPUCores,
+		node.Capacity.MemoryMB,
+		node.Capacity.DiskMB,
+		node.Capacity.CPUUsed,
+		node.Capacity.MemoryUsedMB,
+		node.Capacity.DiskUsedMB,
+		node.Location,
+		lastHealthCheck,
+		node.ErrorMessage,
+		node.ProviderType,
+		node.ProvisionID,
+		node.BaseDomain,
+		node.CreatedAt.Format(time.RFC3339),
+		node.UpdatedAt.Format(time.RFC3339),
+	)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint failed: nodes.id") {
-			return NewStoreError("CreateNode", "node", node.ID, "node with this ID already exists", ErrDuplicateID)
+		if strings.Contains(err.Error(), "UNIQUE constraint failed: nodes.reference_id") {
+			return NewStoreError("CreateNode", "node", node.ReferenceID, "node with this ID already exists", ErrDuplicateID)
 		}
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			return NewStoreError("CreateNode", "node", node.ID, "node with this name already exists for creator", ErrDuplicateKey)
+			return NewStoreError("CreateNode", "node", node.ReferenceID, "node with this name already exists for creator", ErrDuplicateKey)
 		}
-		return NewStoreError("CreateNode", "node", node.ID, err.Error(), err)
+		return NewStoreError("CreateNode", "node", node.ReferenceID, err.Error(), err)
 	}
+
+	lastID, err := result.LastInsertId()
+	if err != nil {
+		return NewStoreError("CreateNode", "node", node.ReferenceID, "failed to get last insert ID", err)
+	}
+	node.ID = int(lastID)
 
 	return nil
 }
@@ -1475,15 +1601,7 @@ func (s *SQLiteStore) GetNode(ctx context.Context, id string) (*domain.Node, err
 
 func getNode(ctx context.Context, exec executor, id string) (*domain.Node, error) {
 	var row nodeRow
-	query := `
-		SELECT id, name, creator_id, ssh_host, ssh_port, ssh_user, ssh_key_id,
-			docker_socket, status, capabilities,
-			capacity_cpu_cores, capacity_memory_mb, capacity_disk_mb,
-			capacity_cpu_used, capacity_memory_used_mb, capacity_disk_used_mb,
-			location, last_health_check, error_message,
-			provider_type, provision_id, base_domain,
-			created_at, updated_at
-		FROM nodes WHERE id = ?`
+	query := `SELECT ` + nodeSelectColumns + ` ` + nodeFromClause + ` WHERE n.reference_id = ?`
 
 	if err := exec.GetContext(ctx, &row, query, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1503,13 +1621,18 @@ func (s *SQLiteStore) UpdateNode(ctx context.Context, node *domain.Node) error {
 func updateNode(ctx context.Context, exec executor, node *domain.Node) error {
 	capabilities, err := json.Marshal(node.Capabilities)
 	if err != nil {
-		return NewStoreError("UpdateNode", "node", node.ID, "failed to marshal capabilities", err)
+		return NewStoreError("UpdateNode", "node", node.ReferenceID, "failed to marshal capabilities", err)
 	}
 
 	var lastHealthCheck *string
 	if node.LastHealthCheck != nil {
 		hc := node.LastHealthCheck.Format(time.RFC3339)
 		lastHealthCheck = &hc
+	}
+
+	var sshKeyID *int
+	if node.SSHKeyID != 0 {
+		sshKeyID = &node.SSHKeyID
 	}
 
 	query := `
@@ -1535,48 +1658,43 @@ func updateNode(ctx context.Context, exec executor, node *domain.Node) error {
 			provision_id = :provision_id,
 			base_domain = :base_domain,
 			updated_at = :updated_at
-		WHERE id = :id`
+		WHERE reference_id = :reference_id`
 
-	var sshKeyID *string
-	if node.SSHKeyID != "" {
-		sshKeyID = &node.SSHKeyID
-	}
-
-	row := nodeRow{
-		ID:                   node.ID,
-		Name:                 node.Name,
-		CreatorID:            node.CreatorID,
-		SSHHost:              node.SSHHost,
-		SSHPort:              node.SSHPort,
-		SSHUser:              node.SSHUser,
-		SSHKeyID:             sshKeyID,
-		DockerSocket:         node.DockerSocket,
-		Status:               string(node.Status),
-		Capabilities:         string(capabilities),
-		CapacityCPUCores:     node.Capacity.CPUCores,
-		CapacityMemoryMB:     node.Capacity.MemoryMB,
-		CapacityDiskMB:       node.Capacity.DiskMB,
-		CapacityCPUUsed:      node.Capacity.CPUUsed,
-		CapacityMemoryUsedMB: node.Capacity.MemoryUsedMB,
-		CapacityDiskUsedMB:   node.Capacity.DiskUsedMB,
-		Location:             node.Location,
-		LastHealthCheck:      lastHealthCheck,
-		ErrorMessage:         node.ErrorMessage,
-		ProviderType:         node.ProviderType,
-		ProvisionID:          node.ProvisionID,
-		BaseDomain:           node.BaseDomain,
-		CreatedAt:            node.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:            node.UpdatedAt.Format(time.RFC3339),
+	row := map[string]any{
+		"reference_id":            node.ReferenceID,
+		"name":                    node.Name,
+		"creator_id":              node.CreatorID,
+		"ssh_host":                node.SSHHost,
+		"ssh_port":                node.SSHPort,
+		"ssh_user":                node.SSHUser,
+		"ssh_key_id":              sshKeyID,
+		"docker_socket":           node.DockerSocket,
+		"status":                  string(node.Status),
+		"capabilities":            string(capabilities),
+		"capacity_cpu_cores":      node.Capacity.CPUCores,
+		"capacity_memory_mb":      node.Capacity.MemoryMB,
+		"capacity_disk_mb":        node.Capacity.DiskMB,
+		"capacity_cpu_used":       node.Capacity.CPUUsed,
+		"capacity_memory_used_mb": node.Capacity.MemoryUsedMB,
+		"capacity_disk_used_mb":   node.Capacity.DiskUsedMB,
+		"location":                node.Location,
+		"last_health_check":       lastHealthCheck,
+		"error_message":           node.ErrorMessage,
+		"provider_type":           node.ProviderType,
+		"provision_id":            node.ProvisionID,
+		"base_domain":             node.BaseDomain,
+		"created_at":              node.CreatedAt.Format(time.RFC3339),
+		"updated_at":              node.UpdatedAt.Format(time.RFC3339),
 	}
 
 	result, err := exec.NamedExecContext(ctx, query, row)
 	if err != nil {
-		return NewStoreError("UpdateNode", "node", node.ID, err.Error(), err)
+		return NewStoreError("UpdateNode", "node", node.ReferenceID, err.Error(), err)
 	}
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		return NewStoreError("UpdateNode", "node", node.ID, "node not found", ErrNotFound)
+		return NewStoreError("UpdateNode", "node", node.ReferenceID, "node not found", ErrNotFound)
 	}
 
 	return nil
@@ -1588,7 +1706,7 @@ func (s *SQLiteStore) DeleteNode(ctx context.Context, id string) error {
 }
 
 func deleteNode(ctx context.Context, exec executor, id string) error {
-	query := `DELETE FROM nodes WHERE id = ?`
+	query := `DELETE FROM nodes WHERE reference_id = ?`
 
 	result, err := exec.ExecContext(ctx, query, id)
 	if err != nil {
@@ -1604,29 +1722,21 @@ func deleteNode(ctx context.Context, exec executor, id string) error {
 }
 
 // ListNodesByCreator lists all nodes for a creator.
-func (s *SQLiteStore) ListNodesByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.Node, error) {
+func (s *SQLiteStore) ListNodesByCreator(ctx context.Context, creatorID int, opts ListOptions) ([]domain.Node, error) {
 	return listNodesByCreator(ctx, s.db, creatorID, opts)
 }
 
-func listNodesByCreator(ctx context.Context, exec executor, creatorID string, opts ListOptions) ([]domain.Node, error) {
+func listNodesByCreator(ctx context.Context, exec executor, creatorID int, opts ListOptions) ([]domain.Node, error) {
 	opts = opts.Normalize()
 
-	query := `
-		SELECT id, name, creator_id, ssh_host, ssh_port, ssh_user, ssh_key_id,
-			docker_socket, status, capabilities,
-			capacity_cpu_cores, capacity_memory_mb, capacity_disk_mb,
-			capacity_cpu_used, capacity_memory_used_mb, capacity_disk_used_mb,
-			location, last_health_check, error_message,
-			provider_type, provision_id, base_domain,
-			created_at, updated_at
-		FROM nodes
-		WHERE creator_id = ?
-		ORDER BY created_at DESC
+	query := `SELECT ` + nodeSelectColumns + ` ` + nodeFromClause + `
+		WHERE n.creator_id = ?
+		ORDER BY n.created_at DESC
 		LIMIT ? OFFSET ?`
 
 	var rows []nodeRow
 	if err := exec.SelectContext(ctx, &rows, query, creatorID, opts.Limit, opts.Offset); err != nil {
-		return nil, NewStoreError("ListNodesByCreator", "node", creatorID, err.Error(), err)
+		return nil, NewStoreError("ListNodesByCreator", "node", "", err.Error(), err)
 	}
 
 	nodes := make([]domain.Node, 0, len(rows))
@@ -1647,17 +1757,9 @@ func (s *SQLiteStore) ListOnlineNodes(ctx context.Context) ([]domain.Node, error
 }
 
 func listOnlineNodes(ctx context.Context, exec executor) ([]domain.Node, error) {
-	query := `
-		SELECT id, name, creator_id, ssh_host, ssh_port, ssh_user, ssh_key_id,
-			docker_socket, status, capabilities,
-			capacity_cpu_cores, capacity_memory_mb, capacity_disk_mb,
-			capacity_cpu_used, capacity_memory_used_mb, capacity_disk_used_mb,
-			location, last_health_check, error_message,
-			provider_type, provision_id, base_domain,
-			created_at, updated_at
-		FROM nodes
-		WHERE status = 'online'
-		ORDER BY created_at ASC`
+	query := `SELECT ` + nodeSelectColumns + ` ` + nodeFromClause + `
+		WHERE n.status = 'online'
+		ORDER BY n.created_at ASC`
 
 	var rows []nodeRow
 	if err := exec.SelectContext(ctx, &rows, query); err != nil {
@@ -1682,17 +1784,9 @@ func (s *SQLiteStore) ListCheckableNodes(ctx context.Context) ([]domain.Node, er
 }
 
 func listCheckableNodes(ctx context.Context, exec executor) ([]domain.Node, error) {
-	query := `
-		SELECT id, name, creator_id, ssh_host, ssh_port, ssh_user, ssh_key_id,
-			docker_socket, status, capabilities,
-			capacity_cpu_cores, capacity_memory_mb, capacity_disk_mb,
-			capacity_cpu_used, capacity_memory_used_mb, capacity_disk_used_mb,
-			location, last_health_check, error_message,
-			provider_type, provision_id, base_domain,
-			created_at, updated_at
-		FROM nodes
-		WHERE status != 'maintenance'
-		ORDER BY created_at ASC`
+	query := `SELECT ` + nodeSelectColumns + ` ` + nodeFromClause + `
+		WHERE n.status != 'maintenance'
+		ORDER BY n.created_at ASC`
 
 	var rows []nodeRow
 	if err := exec.SelectContext(ctx, &rows, query); err != nil {
@@ -1715,31 +1809,38 @@ func listCheckableNodes(ctx context.Context, exec executor) ([]domain.Node, erro
 func rowToNode(row *nodeRow) (*domain.Node, error) {
 	var capabilities []string
 	if err := json.Unmarshal([]byte(row.Capabilities), &capabilities); err != nil {
-		return nil, NewStoreError("rowToNode", "node", row.ID, "failed to unmarshal capabilities", err)
+		return nil, NewStoreError("rowToNode", "node", row.ReferenceID, "failed to unmarshal capabilities", err)
 	}
 
-	createdAt, _ := time.Parse(time.RFC3339, row.CreatedAt)
-	updatedAt, _ := time.Parse(time.RFC3339, row.UpdatedAt)
+	createdAt := parseSQLiteTime(row.CreatedAt)
+	updatedAt := parseSQLiteTime(row.UpdatedAt)
 
 	var lastHealthCheck *time.Time
 	if row.LastHealthCheck != nil && *row.LastHealthCheck != "" {
-		hc, _ := time.Parse(time.RFC3339, *row.LastHealthCheck)
+		hc := parseSQLiteTime(*row.LastHealthCheck)
 		lastHealthCheck = &hc
 	}
 
-	sshKeyID := ""
+	var sshKeyID int
 	if row.SSHKeyID != nil {
 		sshKeyID = *row.SSHKeyID
 	}
 
+	var sshKeyRefID string
+	if row.SSHKeyRefID != nil {
+		sshKeyRefID = *row.SSHKeyRefID
+	}
+
 	return &domain.Node{
 		ID:           row.ID,
+		ReferenceID:  row.ReferenceID,
 		Name:         row.Name,
 		CreatorID:    row.CreatorID,
 		SSHHost:      row.SSHHost,
 		SSHPort:      row.SSHPort,
 		SSHUser:      row.SSHUser,
 		SSHKeyID:     sshKeyID,
+		SSHKeyRefID:  sshKeyRefID,
 		DockerSocket: row.DockerSocket,
 		Status:       domain.NodeStatus(row.Status),
 		Capabilities: capabilities,
@@ -1768,8 +1869,9 @@ func rowToNode(row *nodeRow) (*domain.Node, error) {
 
 // sshKeyRow represents an SSH key row in the database.
 type sshKeyRow struct {
-	ID                  string `db:"id"`
-	CreatorID           string `db:"creator_id"`
+	ID                  int    `db:"id"`
+	ReferenceID         string `db:"reference_id"`
+	CreatorID           int    `db:"creator_id"`
 	Name                string `db:"name"`
 	PrivateKeyEncrypted []byte `db:"private_key_encrypted"`
 	Fingerprint         string `db:"fingerprint"`
@@ -1783,25 +1885,29 @@ func (s *SQLiteStore) CreateSSHKey(ctx context.Context, key *domain.SSHKey) erro
 
 func createSSHKey(ctx context.Context, exec executor, key *domain.SSHKey) error {
 	query := `
-		INSERT INTO ssh_keys (id, creator_id, name, private_key_encrypted, fingerprint, created_at)
-		VALUES (:id, :creator_id, :name, :private_key_encrypted, :fingerprint, :created_at)`
+		INSERT INTO ssh_keys (reference_id, creator_id, name, private_key_encrypted, fingerprint, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)`
 
-	row := sshKeyRow{
-		ID:                  key.ID,
-		CreatorID:           key.CreatorID,
-		Name:                key.Name,
-		PrivateKeyEncrypted: key.PrivateKeyEncrypted,
-		Fingerprint:         key.Fingerprint,
-		CreatedAt:           key.CreatedAt.Format(time.RFC3339),
-	}
-
-	_, err := exec.NamedExecContext(ctx, query, row)
+	result, err := exec.ExecContext(ctx, query,
+		key.ReferenceID,
+		key.CreatorID,
+		key.Name,
+		key.PrivateKeyEncrypted,
+		key.Fingerprint,
+		key.CreatedAt.Format(time.RFC3339),
+	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			return NewStoreError("CreateSSHKey", "ssh_key", key.ID, "SSH key with this name already exists for creator", ErrDuplicateKey)
+			return NewStoreError("CreateSSHKey", "ssh_key", key.ReferenceID, "SSH key with this name already exists for creator", ErrDuplicateKey)
 		}
-		return NewStoreError("CreateSSHKey", "ssh_key", key.ID, err.Error(), err)
+		return NewStoreError("CreateSSHKey", "ssh_key", key.ReferenceID, err.Error(), err)
 	}
+
+	lastID, err := result.LastInsertId()
+	if err != nil {
+		return NewStoreError("CreateSSHKey", "ssh_key", key.ReferenceID, "failed to get last insert ID", err)
+	}
+	key.ID = int(lastID)
 
 	return nil
 }
@@ -1813,7 +1919,7 @@ func (s *SQLiteStore) GetSSHKey(ctx context.Context, id string) (*domain.SSHKey,
 
 func getSSHKey(ctx context.Context, exec executor, id string) (*domain.SSHKey, error) {
 	var row sshKeyRow
-	query := `SELECT id, creator_id, name, private_key_encrypted, fingerprint, created_at FROM ssh_keys WHERE id = ?`
+	query := `SELECT id, reference_id, creator_id, name, private_key_encrypted, fingerprint, created_at FROM ssh_keys WHERE reference_id = ?`
 
 	if err := exec.GetContext(ctx, &row, query, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1822,10 +1928,11 @@ func getSSHKey(ctx context.Context, exec executor, id string) (*domain.SSHKey, e
 		return nil, NewStoreError("GetSSHKey", "ssh_key", id, err.Error(), err)
 	}
 
-	createdAt, _ := time.Parse(time.RFC3339, row.CreatedAt)
+	createdAt := parseSQLiteTime(row.CreatedAt)
 
 	return &domain.SSHKey{
 		ID:                  row.ID,
+		ReferenceID:         row.ReferenceID,
 		CreatorID:           row.CreatorID,
 		Name:                row.Name,
 		PrivateKeyEncrypted: row.PrivateKeyEncrypted,
@@ -1840,7 +1947,7 @@ func (s *SQLiteStore) DeleteSSHKey(ctx context.Context, id string) error {
 }
 
 func deleteSSHKey(ctx context.Context, exec executor, id string) error {
-	query := `DELETE FROM ssh_keys WHERE id = ?`
+	query := `DELETE FROM ssh_keys WHERE reference_id = ?`
 
 	result, err := exec.ExecContext(ctx, query, id)
 	if err != nil {
@@ -1856,15 +1963,15 @@ func deleteSSHKey(ctx context.Context, exec executor, id string) error {
 }
 
 // ListSSHKeysByCreator lists all SSH keys for a creator.
-func (s *SQLiteStore) ListSSHKeysByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.SSHKey, error) {
+func (s *SQLiteStore) ListSSHKeysByCreator(ctx context.Context, creatorID int, opts ListOptions) ([]domain.SSHKey, error) {
 	return listSSHKeysByCreator(ctx, s.db, creatorID, opts)
 }
 
-func listSSHKeysByCreator(ctx context.Context, exec executor, creatorID string, opts ListOptions) ([]domain.SSHKey, error) {
+func listSSHKeysByCreator(ctx context.Context, exec executor, creatorID int, opts ListOptions) ([]domain.SSHKey, error) {
 	opts = opts.Normalize()
 
 	query := `
-		SELECT id, creator_id, name, private_key_encrypted, fingerprint, created_at
+		SELECT id, reference_id, creator_id, name, private_key_encrypted, fingerprint, created_at
 		FROM ssh_keys
 		WHERE creator_id = ?
 		ORDER BY created_at DESC
@@ -1872,14 +1979,15 @@ func listSSHKeysByCreator(ctx context.Context, exec executor, creatorID string, 
 
 	var rows []sshKeyRow
 	if err := exec.SelectContext(ctx, &rows, query, creatorID, opts.Limit, opts.Offset); err != nil {
-		return nil, NewStoreError("ListSSHKeysByCreator", "ssh_key", creatorID, err.Error(), err)
+		return nil, NewStoreError("ListSSHKeysByCreator", "ssh_key", "", err.Error(), err)
 	}
 
 	keys := make([]domain.SSHKey, 0, len(rows))
 	for _, row := range rows {
-		createdAt, _ := time.Parse(time.RFC3339, row.CreatedAt)
+		createdAt := parseSQLiteTime(row.CreatedAt)
 		keys = append(keys, domain.SSHKey{
 			ID:                  row.ID,
+			ReferenceID:         row.ReferenceID,
 			CreatorID:           row.CreatorID,
 			Name:                row.Name,
 			PrivateKeyEncrypted: row.PrivateKeyEncrypted,
@@ -1897,8 +2005,9 @@ func listSSHKeysByCreator(ctx context.Context, exec executor, creatorID string, 
 
 // cloudCredentialRow represents a cloud credential row in the database.
 type cloudCredentialRow struct {
-	ID                   string `db:"id"`
-	CreatorID            string `db:"creator_id"`
+	ID                   int    `db:"id"`
+	ReferenceID          string `db:"reference_id"`
+	CreatorID            int    `db:"creator_id"`
 	Name                 string `db:"name"`
 	Provider             string `db:"provider"`
 	CredentialsEncrypted []byte `db:"credentials_encrypted"`
@@ -1914,30 +2023,34 @@ func (s *SQLiteStore) CreateCloudCredential(ctx context.Context, cred *domain.Cl
 
 func createCloudCredential(ctx context.Context, exec executor, cred *domain.CloudCredential) error {
 	query := `
-		INSERT INTO cloud_credentials (id, creator_id, name, provider, credentials_encrypted, default_region, created_at, updated_at)
-		VALUES (:id, :creator_id, :name, :provider, :credentials_encrypted, :default_region, :created_at, :updated_at)`
+		INSERT INTO cloud_credentials (reference_id, creator_id, name, provider, credentials_encrypted, default_region, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 
-	row := cloudCredentialRow{
-		ID:                   cred.ID,
-		CreatorID:            cred.CreatorID,
-		Name:                 cred.Name,
-		Provider:             string(cred.Provider),
-		CredentialsEncrypted: cred.CredentialsEncrypted,
-		DefaultRegion:        cred.DefaultRegion,
-		CreatedAt:            cred.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:            cred.UpdatedAt.Format(time.RFC3339),
-	}
-
-	_, err := exec.NamedExecContext(ctx, query, row)
+	result, err := exec.ExecContext(ctx, query,
+		cred.ReferenceID,
+		cred.CreatorID,
+		cred.Name,
+		string(cred.Provider),
+		cred.CredentialsEncrypted,
+		cred.DefaultRegion,
+		cred.CreatedAt.Format(time.RFC3339),
+		cred.UpdatedAt.Format(time.RFC3339),
+	)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint failed: cloud_credentials.id") {
-			return NewStoreError("CreateCloudCredential", "cloud_credential", cred.ID, "cloud credential with this ID already exists", ErrDuplicateID)
+		if strings.Contains(err.Error(), "UNIQUE constraint failed: cloud_credentials.reference_id") {
+			return NewStoreError("CreateCloudCredential", "cloud_credential", cred.ReferenceID, "cloud credential with this ID already exists", ErrDuplicateID)
 		}
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			return NewStoreError("CreateCloudCredential", "cloud_credential", cred.ID, "cloud credential with this name already exists for creator", ErrDuplicateKey)
+			return NewStoreError("CreateCloudCredential", "cloud_credential", cred.ReferenceID, "cloud credential with this name already exists for creator", ErrDuplicateKey)
 		}
-		return NewStoreError("CreateCloudCredential", "cloud_credential", cred.ID, err.Error(), err)
+		return NewStoreError("CreateCloudCredential", "cloud_credential", cred.ReferenceID, err.Error(), err)
 	}
+
+	lastID, err := result.LastInsertId()
+	if err != nil {
+		return NewStoreError("CreateCloudCredential", "cloud_credential", cred.ReferenceID, "failed to get last insert ID", err)
+	}
+	cred.ID = int(lastID)
 
 	return nil
 }
@@ -1950,8 +2063,8 @@ func (s *SQLiteStore) GetCloudCredential(ctx context.Context, id string) (*domai
 func getCloudCredential(ctx context.Context, exec executor, id string) (*domain.CloudCredential, error) {
 	var row cloudCredentialRow
 	query := `
-		SELECT id, creator_id, name, provider, credentials_encrypted, default_region, created_at, updated_at
-		FROM cloud_credentials WHERE id = ?`
+		SELECT id, reference_id, creator_id, name, provider, credentials_encrypted, default_region, created_at, updated_at
+		FROM cloud_credentials WHERE reference_id = ?`
 
 	if err := exec.GetContext(ctx, &row, query, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1969,7 +2082,7 @@ func (s *SQLiteStore) DeleteCloudCredential(ctx context.Context, id string) erro
 }
 
 func deleteCloudCredential(ctx context.Context, exec executor, id string) error {
-	query := `DELETE FROM cloud_credentials WHERE id = ?`
+	query := `DELETE FROM cloud_credentials WHERE reference_id = ?`
 
 	result, err := exec.ExecContext(ctx, query, id)
 	if err != nil {
@@ -1985,15 +2098,15 @@ func deleteCloudCredential(ctx context.Context, exec executor, id string) error 
 }
 
 // ListCloudCredentialsByCreator lists all cloud credentials for a creator.
-func (s *SQLiteStore) ListCloudCredentialsByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.CloudCredential, error) {
+func (s *SQLiteStore) ListCloudCredentialsByCreator(ctx context.Context, creatorID int, opts ListOptions) ([]domain.CloudCredential, error) {
 	return listCloudCredentialsByCreator(ctx, s.db, creatorID, opts)
 }
 
-func listCloudCredentialsByCreator(ctx context.Context, exec executor, creatorID string, opts ListOptions) ([]domain.CloudCredential, error) {
+func listCloudCredentialsByCreator(ctx context.Context, exec executor, creatorID int, opts ListOptions) ([]domain.CloudCredential, error) {
 	opts = opts.Normalize()
 
 	query := `
-		SELECT id, creator_id, name, provider, credentials_encrypted, default_region, created_at, updated_at
+		SELECT id, reference_id, creator_id, name, provider, credentials_encrypted, default_region, created_at, updated_at
 		FROM cloud_credentials
 		WHERE creator_id = ?
 		ORDER BY created_at DESC
@@ -2001,7 +2114,7 @@ func listCloudCredentialsByCreator(ctx context.Context, exec executor, creatorID
 
 	var rows []cloudCredentialRow
 	if err := exec.SelectContext(ctx, &rows, query, creatorID, opts.Limit, opts.Offset); err != nil {
-		return nil, NewStoreError("ListCloudCredentialsByCreator", "cloud_credential", creatorID, err.Error(), err)
+		return nil, NewStoreError("ListCloudCredentialsByCreator", "cloud_credential", "", err.Error(), err)
 	}
 
 	creds := make([]domain.CloudCredential, 0, len(rows))
@@ -2018,11 +2131,12 @@ func listCloudCredentialsByCreator(ctx context.Context, exec executor, creatorID
 
 // rowToCloudCredential converts a database row to a domain.CloudCredential.
 func rowToCloudCredential(row *cloudCredentialRow) (*domain.CloudCredential, error) {
-	createdAt, _ := time.Parse(time.RFC3339, row.CreatedAt)
-	updatedAt, _ := time.Parse(time.RFC3339, row.UpdatedAt)
+	createdAt := parseSQLiteTime(row.CreatedAt)
+	updatedAt := parseSQLiteTime(row.UpdatedAt)
 
 	return &domain.CloudCredential{
 		ID:                   row.ID,
+		ReferenceID:          row.ReferenceID,
 		CreatorID:            row.CreatorID,
 		Name:                 row.Name,
 		Provider:             domain.ProviderType(row.Provider),
@@ -2039,9 +2153,11 @@ func rowToCloudCredential(row *cloudCredentialRow) (*domain.CloudCredential, err
 
 // cloudProvisionRow represents a cloud provision row in the database.
 type cloudProvisionRow struct {
-	ID                 string  `db:"id"`
-	CreatorID          string  `db:"creator_id"`
-	CredentialID       string  `db:"credential_id"`
+	ID                 int     `db:"id"`
+	ReferenceID        string  `db:"reference_id"`
+	CreatorID          int     `db:"creator_id"`
+	CredentialID       int     `db:"credential_id"`
+	CredentialRefID    *string `db:"credential_reference_id"` // populated via JOIN
 	Provider           string  `db:"provider"`
 	Status             string  `db:"status"`
 	InstanceName       string  `db:"instance_name"`
@@ -2058,6 +2174,19 @@ type cloudProvisionRow struct {
 	CompletedAt        *string `db:"completed_at"`
 }
 
+// provisionSelectColumns is the standard column list for provision queries with credential JOIN.
+const provisionSelectColumns = `
+	p.id, p.reference_id, p.creator_id, p.credential_id,
+	cc.reference_id AS credential_reference_id,
+	p.provider, p.status,
+	p.instance_name, p.region, p.size,
+	p.provider_instance_id, p.public_ip, p.node_id, p.ssh_key_id,
+	p.current_step, p.error_message,
+	p.created_at, p.updated_at, p.completed_at`
+
+// provisionFromClause is the standard FROM clause for provision queries with credential JOIN.
+const provisionFromClause = `FROM cloud_provisions p LEFT JOIN cloud_credentials cc ON cc.id = p.credential_id`
+
 // CreateCloudProvision creates a new cloud provision in the database.
 func (s *SQLiteStore) CreateCloudProvision(ctx context.Context, prov *domain.CloudProvision) error {
 	return createCloudProvision(ctx, s.db, prov)
@@ -2072,49 +2201,53 @@ func createCloudProvision(ctx context.Context, exec executor, prov *domain.Cloud
 
 	query := `
 		INSERT INTO cloud_provisions (
-			id, creator_id, credential_id, provider, status,
+			reference_id, creator_id, credential_id, provider, status,
 			instance_name, region, size,
 			provider_instance_id, public_ip, node_id, ssh_key_id,
 			current_step, error_message,
 			created_at, updated_at, completed_at
 		) VALUES (
-			:id, :creator_id, :credential_id, :provider, :status,
-			:instance_name, :region, :size,
-			:provider_instance_id, :public_ip, :node_id, :ssh_key_id,
-			:current_step, :error_message,
-			:created_at, :updated_at, :completed_at
+			?, ?, ?, ?, ?,
+			?, ?, ?,
+			?, ?, ?, ?,
+			?, ?,
+			?, ?, ?
 		)`
 
-	row := cloudProvisionRow{
-		ID:                 prov.ID,
-		CreatorID:          prov.CreatorID,
-		CredentialID:       prov.CredentialID,
-		Provider:           string(prov.Provider),
-		Status:             string(prov.Status),
-		InstanceName:       prov.InstanceName,
-		Region:             prov.Region,
-		Size:               prov.Size,
-		ProviderInstanceID: prov.ProviderInstanceID,
-		PublicIP:           prov.PublicIP,
-		NodeID:             prov.NodeID,
-		SSHKeyID:           prov.SSHKeyID,
-		CurrentStep:        prov.CurrentStep,
-		ErrorMessage:       prov.ErrorMessage,
-		CreatedAt:          prov.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:          prov.UpdatedAt.Format(time.RFC3339),
-		CompletedAt:        completedAt,
-	}
-
-	_, err := exec.NamedExecContext(ctx, query, row)
+	result, err := exec.ExecContext(ctx, query,
+		prov.ReferenceID,
+		prov.CreatorID,
+		prov.CredentialID,
+		string(prov.Provider),
+		string(prov.Status),
+		prov.InstanceName,
+		prov.Region,
+		prov.Size,
+		prov.ProviderInstanceID,
+		prov.PublicIP,
+		prov.NodeID,
+		prov.SSHKeyID,
+		prov.CurrentStep,
+		prov.ErrorMessage,
+		prov.CreatedAt.Format(time.RFC3339),
+		prov.UpdatedAt.Format(time.RFC3339),
+		completedAt,
+	)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint failed: cloud_provisions.id") {
-			return NewStoreError("CreateCloudProvision", "cloud_provision", prov.ID, "cloud provision with this ID already exists", ErrDuplicateID)
+		if strings.Contains(err.Error(), "UNIQUE constraint failed: cloud_provisions.reference_id") {
+			return NewStoreError("CreateCloudProvision", "cloud_provision", prov.ReferenceID, "cloud provision with this ID already exists", ErrDuplicateID)
 		}
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			return NewStoreError("CreateCloudProvision", "cloud_provision", prov.ID, "cloud provision with this name already exists", ErrDuplicateKey)
+			return NewStoreError("CreateCloudProvision", "cloud_provision", prov.ReferenceID, "cloud provision with this name already exists", ErrDuplicateKey)
 		}
-		return NewStoreError("CreateCloudProvision", "cloud_provision", prov.ID, err.Error(), err)
+		return NewStoreError("CreateCloudProvision", "cloud_provision", prov.ReferenceID, err.Error(), err)
 	}
+
+	lastID, err := result.LastInsertId()
+	if err != nil {
+		return NewStoreError("CreateCloudProvision", "cloud_provision", prov.ReferenceID, "failed to get last insert ID", err)
+	}
+	prov.ID = int(lastID)
 
 	return nil
 }
@@ -2126,13 +2259,7 @@ func (s *SQLiteStore) GetCloudProvision(ctx context.Context, id string) (*domain
 
 func getCloudProvision(ctx context.Context, exec executor, id string) (*domain.CloudProvision, error) {
 	var row cloudProvisionRow
-	query := `
-		SELECT id, creator_id, credential_id, provider, status,
-			instance_name, region, size,
-			provider_instance_id, public_ip, node_id, ssh_key_id,
-			current_step, error_message,
-			created_at, updated_at, completed_at
-		FROM cloud_provisions WHERE id = ?`
+	query := `SELECT ` + provisionSelectColumns + ` ` + provisionFromClause + ` WHERE p.reference_id = ?`
 
 	if err := exec.GetContext(ctx, &row, query, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -2173,63 +2300,56 @@ func updateCloudProvision(ctx context.Context, exec executor, prov *domain.Cloud
 			error_message = :error_message,
 			updated_at = :updated_at,
 			completed_at = :completed_at
-		WHERE id = :id`
+		WHERE reference_id = :reference_id`
 
-	row := cloudProvisionRow{
-		ID:                 prov.ID,
-		CreatorID:          prov.CreatorID,
-		CredentialID:       prov.CredentialID,
-		Provider:           string(prov.Provider),
-		Status:             string(prov.Status),
-		InstanceName:       prov.InstanceName,
-		Region:             prov.Region,
-		Size:               prov.Size,
-		ProviderInstanceID: prov.ProviderInstanceID,
-		PublicIP:           prov.PublicIP,
-		NodeID:             prov.NodeID,
-		SSHKeyID:           prov.SSHKeyID,
-		CurrentStep:        prov.CurrentStep,
-		ErrorMessage:       prov.ErrorMessage,
-		CreatedAt:          prov.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:          prov.UpdatedAt.Format(time.RFC3339),
-		CompletedAt:        completedAt,
+	row := map[string]any{
+		"reference_id":         prov.ReferenceID,
+		"creator_id":           prov.CreatorID,
+		"credential_id":        prov.CredentialID,
+		"provider":             string(prov.Provider),
+		"status":               string(prov.Status),
+		"instance_name":        prov.InstanceName,
+		"region":               prov.Region,
+		"size":                 prov.Size,
+		"provider_instance_id": prov.ProviderInstanceID,
+		"public_ip":            prov.PublicIP,
+		"node_id":              prov.NodeID,
+		"ssh_key_id":           prov.SSHKeyID,
+		"current_step":         prov.CurrentStep,
+		"error_message":        prov.ErrorMessage,
+		"updated_at":           prov.UpdatedAt.Format(time.RFC3339),
+		"completed_at":         completedAt,
 	}
 
 	result, err := exec.NamedExecContext(ctx, query, row)
 	if err != nil {
-		return NewStoreError("UpdateCloudProvision", "cloud_provision", prov.ID, err.Error(), err)
+		return NewStoreError("UpdateCloudProvision", "cloud_provision", prov.ReferenceID, err.Error(), err)
 	}
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		return NewStoreError("UpdateCloudProvision", "cloud_provision", prov.ID, "cloud provision not found", ErrNotFound)
+		return NewStoreError("UpdateCloudProvision", "cloud_provision", prov.ReferenceID, "cloud provision not found", ErrNotFound)
 	}
 
 	return nil
 }
 
 // ListCloudProvisionsByCreator lists all cloud provisions for a creator.
-func (s *SQLiteStore) ListCloudProvisionsByCreator(ctx context.Context, creatorID string, opts ListOptions) ([]domain.CloudProvision, error) {
+func (s *SQLiteStore) ListCloudProvisionsByCreator(ctx context.Context, creatorID int, opts ListOptions) ([]domain.CloudProvision, error) {
 	return listCloudProvisionsByCreator(ctx, s.db, creatorID, opts)
 }
 
-func listCloudProvisionsByCreator(ctx context.Context, exec executor, creatorID string, opts ListOptions) ([]domain.CloudProvision, error) {
+func listCloudProvisionsByCreator(ctx context.Context, exec executor, creatorID int, opts ListOptions) ([]domain.CloudProvision, error) {
 	opts = opts.Normalize()
 
-	query := `
-		SELECT id, creator_id, credential_id, provider, status,
-			instance_name, region, size,
-			provider_instance_id, public_ip, node_id, ssh_key_id,
-			current_step, error_message,
-			created_at, updated_at, completed_at
-		FROM cloud_provisions
-		WHERE creator_id = ?
-		ORDER BY created_at DESC
+	query := `SELECT ` + provisionSelectColumns + ` ` + provisionFromClause + `
+		WHERE p.creator_id = ?
+		ORDER BY p.created_at DESC
 		LIMIT ? OFFSET ?`
 
 	var rows []cloudProvisionRow
 	if err := exec.SelectContext(ctx, &rows, query, creatorID, opts.Limit, opts.Offset); err != nil {
-		return nil, NewStoreError("ListCloudProvisionsByCreator", "cloud_provision", creatorID, err.Error(), err)
+		return nil, NewStoreError("ListCloudProvisionsByCreator", "cloud_provision", "", err.Error(), err)
 	}
 
 	provisions := make([]domain.CloudProvision, 0, len(rows))
@@ -2250,15 +2370,9 @@ func (s *SQLiteStore) ListActiveProvisions(ctx context.Context) ([]domain.CloudP
 }
 
 func listActiveProvisions(ctx context.Context, exec executor) ([]domain.CloudProvision, error) {
-	query := `
-		SELECT id, creator_id, credential_id, provider, status,
-			instance_name, region, size,
-			provider_instance_id, public_ip, node_id, ssh_key_id,
-			current_step, error_message,
-			created_at, updated_at, completed_at
-		FROM cloud_provisions
-		WHERE status IN ('pending', 'creating', 'configuring')
-		ORDER BY created_at ASC`
+	query := `SELECT ` + provisionSelectColumns + ` ` + provisionFromClause + `
+		WHERE p.status IN ('pending', 'creating', 'configuring')
+		ORDER BY p.created_at ASC`
 
 	var rows []cloudProvisionRow
 	if err := exec.SelectContext(ctx, &rows, query); err != nil {
@@ -2279,19 +2393,26 @@ func listActiveProvisions(ctx context.Context, exec executor) ([]domain.CloudPro
 
 // rowToCloudProvision converts a database row to a domain.CloudProvision.
 func rowToCloudProvision(row *cloudProvisionRow) (*domain.CloudProvision, error) {
-	createdAt, _ := time.Parse(time.RFC3339, row.CreatedAt)
-	updatedAt, _ := time.Parse(time.RFC3339, row.UpdatedAt)
+	createdAt := parseSQLiteTime(row.CreatedAt)
+	updatedAt := parseSQLiteTime(row.UpdatedAt)
 
 	var completedAt *time.Time
 	if row.CompletedAt != nil && *row.CompletedAt != "" {
-		t, _ := time.Parse(time.RFC3339, *row.CompletedAt)
+		t := parseSQLiteTime(*row.CompletedAt)
 		completedAt = &t
+	}
+
+	var credentialRefID string
+	if row.CredentialRefID != nil {
+		credentialRefID = *row.CredentialRefID
 	}
 
 	return &domain.CloudProvision{
 		ID:                 row.ID,
+		ReferenceID:        row.ReferenceID,
 		CreatorID:          row.CreatorID,
 		CredentialID:       row.CredentialID,
+		CredentialRefID:    credentialRefID,
 		Provider:           domain.ProviderType(row.Provider),
 		Status:             domain.ProvisionStatus(row.Status),
 		InstanceName:       row.InstanceName,
