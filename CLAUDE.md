@@ -453,8 +453,9 @@ These are intentional limitations documented in specs:
 - [x] Web-UI app templates (migration 008) - WordPress, Uptime Kuma, Gitea, n8n, IT Tools, Metabase
 - [x] Uptime Kuma E2E verified - deployed from marketplace, full web UI accessible
 - [x] Dev auth removed — all auth via APIGate headers (February 2026)
-- [x] Frontend auth pages deleted — login/signup via APIGate portal
 - [x] Nodes.Enabled config gate removed — encryption key presence drives feature activation
+- [x] Hoster-branded login/signup pages restored — call APIGate /auth/* endpoints
+- [x] APIGate upgraded to v0.2.7 — setup wizard fix, cookie name fix
 
 ### IN PROGRESS
 - [ ] Fix CI npm/rollup issues - see specs/SESSION-HANDOFF.md for details
@@ -878,30 +879,38 @@ When encountering APIGate-related issues during development or testing, report t
 
 ### Auth Flow (February 2026)
 
-**There is NO auth system in Hoster.** Auth is entirely APIGate's responsibility.
+**Hoster serves branded login/signup pages.** APIGate handles the auth backend.
 
-1. User clicks "Sign In" → browser navigates to `/portal` (APIGate's built-in auth UI)
-2. User registers/logs in via APIGate portal → APIGate sets session cookie
-3. APIGate injects `X-User-ID`, `X-Plan-ID`, `X-Plan-Limits` headers on forwarded requests
-4. Hoster middleware reads these headers → `auth.Context{Authenticated: true, UserID: "..."}`
-5. If headers are absent → `auth.Context{Authenticated: false}` (public access, no error)
-6. Protected endpoints check `ctx.Authenticated` and return 401 if false
+1. User clicks "Sign In" → navigates to `/login` (Hoster-branded page)
+2. User submits form → `POST /auth/login` or `POST /auth/register` (APIGate endpoints)
+3. APIGate sets session cookie on successful auth
+4. Signup auto-logs in after registration
+5. APIGate injects `X-User-ID`, `X-Plan-ID`, `X-Plan-Limits` headers on forwarded requests
+6. Hoster middleware reads these headers → `auth.Context{Authenticated: true, UserID: "..."}`
+7. If headers are absent → `auth.Context{Authenticated: false}` (public access, no error)
 
 **Frontend auth flow:**
-- `checkAuth()` → `GET /auth/me` (APIGate, cookie-based)
+- `checkAuth()` → `GET /auth/me` (APIGate, cookie-based, JSON:API response)
+- `login(email, password)` → `POST /auth/login` then `checkAuth()`
+- `signup(email, password)` → `POST /auth/register` then auto-login
 - `logout()` → `POST /auth/logout` (APIGate)
-- No login/signup functions — browser redirects to `/portal`
-- No `X-Auth-Token` header — APIGate uses cookies
-- `ProtectedRoute` redirects to `/portal` via `window.location.href`
-- Vite dev server proxies `/auth` and `/portal` to APIGate on :8082
+- `ProtectedRoute` uses `<Navigate to="/login">` (React Router)
+- Vite dev server proxies `/api` and `/auth` to APIGate on :8082
 
-**Deleted files (February 2026):**
-- `internal/shell/api/dev_auth.go` — in-memory session store
-- `web/src/pages/auth/*` — LoginPage, SignupPage, ForgotPasswordPage, ResetPasswordPage
+**Auth pages (restored February 2026):**
+- `web/src/pages/auth/LoginPage.tsx` — Hoster-branded login
+- `web/src/pages/auth/SignupPage.tsx` — Hoster-branded signup
+- `web/src/pages/auth/index.ts` — barrel exports
 
 **Removed config:**
 - `HOSTER_AUTH_MODE` — no longer exists (always header mode)
 - `HOSTER_NODES_ENABLED` — no longer exists (encryption key presence drives activation)
+
+### APIGate Version: v0.2.7+ Required
+
+- v0.2.7 fixes fresh install setup wizard (issue #57) and cookie name mismatch
+- Fresh install: `GET /` → redirects to `/setup` (4-step browser wizard)
+- Download: `gh release download v0.2.7 --repo artpar/apigate`
 
 ---
 
@@ -963,7 +972,7 @@ sqlite3 /tmp/hoster-e2e-test/apigate.db "SELECT name, path_pattern, host_pattern
 
 1. **Access Frontend:** http://localhost:8082/
 2. **Browse Marketplace:** http://localhost:8082/marketplace
-3. **Sign in via APIGate portal:** Click Sign In → redirects to /portal
+3. **Sign in:** Click Sign In → `/login` (Hoster-branded page) → enter credentials
 4. **Deploy template:** Select a template and deploy
 5. **Monitor deployment:** View Events, Stats, Logs tabs
 6. **Access deployed app:** http://{deployment-name}.apps.localhost:8082/
