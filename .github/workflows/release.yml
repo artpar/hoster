@@ -156,3 +156,69 @@ jobs:
           prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy:
+    name: Deploy to Production
+    needs: [release]
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.ref, '-rc') && !contains(github.ref, '-beta') && !contains(github.ref, '-alpha') }}
+    environment: production
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H emptychair.dev >> ~/.ssh/known_hosts 2>/dev/null
+        env:
+          SSH_AUTH_SOCK: /dev/null
+
+      - name: Download Hoster release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: hoster-linux-amd64
+          path: dist
+
+      - name: Deploy Hoster
+        run: |
+          chmod +x dist/hoster-linux-amd64
+          scp -i ~/.ssh/deploy_key dist/hoster-linux-amd64 ${{ secrets.DEPLOY_HOST }}:/tmp/hoster-binary
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_HOST }} "\
+            sudo systemctl stop hoster && \
+            sudo mv /tmp/hoster-binary /opt/hoster/bin/hoster && \
+            sudo chmod +x /opt/hoster/bin/hoster && \
+            sudo systemctl start hoster"
+
+      - name: Download latest APIGate release
+        run: |
+          LATEST_URL=$(curl -sL \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/artpar/apigate/releases/latest \
+            | jq -r '.assets[] | select(.name == "apigate-linux-amd64.tar.gz") | .browser_download_url')
+          curl -sL "$LATEST_URL" -o /tmp/apigate-linux-amd64.tar.gz
+          tar -xzf /tmp/apigate-linux-amd64.tar.gz -C /tmp/
+
+      - name: Deploy APIGate
+        run: |
+          scp -i ~/.ssh/deploy_key /tmp/apigate-linux-amd64 ${{ secrets.DEPLOY_HOST }}:/tmp/apigate-binary
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_HOST }} "\
+            sudo systemctl stop apigate && \
+            sudo mv /tmp/apigate-binary /opt/apigate/apigate && \
+            sudo chmod +x /opt/apigate/apigate && \
+            sudo systemctl start apigate"
+
+      - name: Verify deployment
+        run: |
+          sleep 5
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_HOST }} "\
+            echo '=== Service Status ===' && \
+            sudo systemctl is-active hoster && \
+            sudo systemctl is-active apigate && \
+            echo '=== Hoster Health ===' && \
+            curl -sf http://localhost:8080/health || echo 'health check pending' && \
+            echo '=== Recent Logs ===' && \
+            sudo journalctl -u hoster -u apigate -n 10 --no-pager"
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

@@ -1,0 +1,68 @@
+name: Deploy APIGate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'APIGate version to deploy (e.g. v0.2.7, or "latest")'
+        required: true
+        default: 'latest'
+
+jobs:
+  deploy:
+    name: Deploy APIGate to Production
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H emptychair.dev >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Download APIGate release
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [ "$VERSION" = "latest" ]; then
+            URL=$(curl -sL \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/artpar/apigate/releases/latest \
+              | jq -r '.assets[] | select(.name == "apigate-linux-amd64.tar.gz") | .browser_download_url')
+            ACTUAL_VERSION=$(curl -sL \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/artpar/apigate/releases/latest \
+              | jq -r '.tag_name')
+            echo "Deploying APIGate $ACTUAL_VERSION"
+          else
+            URL=$(curl -sL \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/artpar/apigate/releases/tags/$VERSION" \
+              | jq -r '.assets[] | select(.name == "apigate-linux-amd64.tar.gz") | .browser_download_url')
+            echo "Deploying APIGate $VERSION"
+          fi
+          curl -sL "$URL" -o /tmp/apigate-linux-amd64.tar.gz
+          tar -xzf /tmp/apigate-linux-amd64.tar.gz -C /tmp/
+          chmod +x /tmp/apigate-linux-amd64
+
+      - name: Deploy APIGate
+        run: |
+          scp -i ~/.ssh/deploy_key /tmp/apigate-linux-amd64 ${{ secrets.DEPLOY_HOST }}:/tmp/apigate-binary
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_HOST }} "\
+            sudo systemctl stop apigate && \
+            sudo mv /tmp/apigate-binary /opt/apigate/apigate && \
+            sudo chmod +x /opt/apigate/apigate && \
+            sudo systemctl start apigate"
+
+      - name: Verify deployment
+        run: |
+          sleep 5
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_HOST }} "\
+            echo '=== APIGate Status ===' && \
+            sudo systemctl is-active apigate && \
+            echo '=== Recent Logs ===' && \
+            sudo journalctl -u apigate -n 10 --no-pager"
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
