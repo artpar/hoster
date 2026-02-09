@@ -26,7 +26,7 @@ func TestLoadConfig_DefaultValues(t *testing.T) {
 	assert.Equal(t, 30*time.Second, cfg.Server.ReadTimeout)
 	assert.Equal(t, 30*time.Second, cfg.Server.WriteTimeout)
 	assert.Equal(t, 30*time.Second, cfg.Server.ShutdownTimeout)
-	assert.Equal(t, "./data/hoster.db", cfg.Database.DSN)
+	assert.Equal(t, "data/hoster.db", cfg.Database.DSN)
 	assert.Equal(t, "", cfg.Docker.Host)
 	assert.Equal(t, "info", cfg.Log.Level)
 	assert.Equal(t, "json", cfg.Log.Format)
@@ -91,6 +91,30 @@ func TestLoadConfig_EnvironmentOverride(t *testing.T) {
 	assert.Equal(t, "tcp://localhost:2375", cfg.Docker.Host)
 	assert.Equal(t, "warn", cfg.Log.Level)
 	assert.Equal(t, "text", cfg.Log.Format)
+}
+
+func TestLoadConfig_DataDirDerivesDSN(t *testing.T) {
+	clearEnv(t)
+
+	t.Setenv("HOSTER_DATA_DIR", "/var/lib/hoster")
+
+	cfg, err := LoadConfig("")
+	require.NoError(t, err)
+
+	assert.Equal(t, "/var/lib/hoster/hoster.db", cfg.Database.DSN)
+	assert.Equal(t, "/var/lib/hoster/configs", cfg.Domain.ConfigDir)
+}
+
+func TestLoadConfig_ExplicitDSNOverridesDataDir(t *testing.T) {
+	clearEnv(t)
+
+	t.Setenv("HOSTER_DATA_DIR", "/var/lib/hoster")
+	t.Setenv("HOSTER_DATABASE_DSN", "/custom/path.db")
+
+	cfg, err := LoadConfig("")
+	require.NoError(t, err)
+
+	assert.Equal(t, "/custom/path.db", cfg.Database.DSN)
 }
 
 func TestLoadConfig_FileNotFound_UsesDefaults(t *testing.T) {
@@ -217,6 +241,7 @@ func clearEnv(t *testing.T) {
 		"HOSTER_SERVER_HOST",
 		"HOSTER_SERVER_PORT",
 		"HOSTER_DATABASE_DSN",
+		"HOSTER_DATA_DIR",
 		"HOSTER_DOCKER_HOST",
 		"HOSTER_LOG_LEVEL",
 		"HOSTER_LOG_FORMAT",

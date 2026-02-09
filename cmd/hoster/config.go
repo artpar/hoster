@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
+	DataDir  string         `mapstructure:"data_dir"`
 	Server   ServerConfig   `mapstructure:"server"`
 	Database DatabaseConfig `mapstructure:"database"`
 	Docker   DockerConfig   `mapstructure:"docker"`
@@ -166,17 +168,18 @@ func LoadConfig(configPath string) (*Config, error) {
 	v := viper.New()
 
 	// Set defaults
+	v.SetDefault("data_dir", "./data")
 	v.SetDefault("server.host", "0.0.0.0")
 	v.SetDefault("server.port", 8080)
 	v.SetDefault("server.read_timeout", "30s")
 	v.SetDefault("server.write_timeout", "30s")
 	v.SetDefault("server.shutdown_timeout", "30s")
-	v.SetDefault("database.dsn", "./data/hoster.db")
+	v.SetDefault("database.dsn", "")
 	v.SetDefault("docker.host", "")
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "json")
 	v.SetDefault("domain.base_domain", "apps.localhost")
-	v.SetDefault("domain.config_dir", "./data/configs")
+	v.SetDefault("domain.config_dir", "")
 	v.SetDefault("auth.shared_secret", "")     // No secret validation by default
 
 	// Billing defaults (F009: Billing Integration)
@@ -227,6 +230,14 @@ func LoadConfig(configPath string) (*Config, error) {
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	// Derive paths from data_dir when not explicitly set
+	if cfg.Database.DSN == "" {
+		cfg.Database.DSN = filepath.Join(cfg.DataDir, "hoster.db")
+	}
+	if cfg.Domain.ConfigDir == "" {
+		cfg.Domain.ConfigDir = filepath.Join(cfg.DataDir, "configs")
 	}
 
 	return &cfg, nil
