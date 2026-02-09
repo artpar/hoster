@@ -80,7 +80,7 @@ func NewSQLiteStore(dsn string) (*SQLiteStore, error) {
 
 // runMigrations runs database migrations using embedded SQL files.
 func runMigrations(db *sql.DB) error {
-	driver, err := sqlite3.WithInstance(db, &sqlite3.Config{})
+	driver, err := sqlite3.WithInstance(db, &sqlite3.Config{NoTxWrap: true})
 	if err != nil {
 		return fmt.Errorf("failed to create migration driver: %w", err)
 	}
