@@ -193,19 +193,45 @@ func waitForReady(url string, timeout time.Duration) error {
 }
 
 // =============================================================================
+// JSON:API Envelope Types
+// =============================================================================
+
+// jsonAPIRequest is the JSON:API request envelope.
+type jsonAPIRequest struct {
+	Data jsonAPIResourceObj `json:"data"`
+}
+
+// jsonAPIResourceObj is a single JSON:API resource object in a response.
+type jsonAPIResourceObj struct {
+	Type       string         `json:"type"`
+	ID         string         `json:"id,omitempty"`
+	Attributes map[string]any `json:"attributes,omitempty"`
+}
+
+// jsonAPISingleResponse is a JSON:API response with a single resource.
+type jsonAPISingleResponse struct {
+	Data json.RawMessage `json:"data"`
+}
+
+// jsonAPIListResponse is a JSON:API response with a list of resources.
+type jsonAPIListResponse struct {
+	Data json.RawMessage `json:"data"`
+}
+
+// =============================================================================
 // API Client Helpers
 // =============================================================================
 
 // TemplateResponse represents a template from the API.
 type TemplateResponse struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Slug        string            `json:"slug"`
-	Version     string            `json:"version"`
-	ComposeSpec string            `json:"compose_spec"`
-	Published   bool              `json:"published"`
-	Variables   []VariableResp    `json:"variables"`
-	CreatorID   string            `json:"creator_id"`
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Slug        string         `json:"slug"`
+	Version     string         `json:"version"`
+	ComposeSpec string         `json:"compose_spec"`
+	Published   bool           `json:"published"`
+	Variables   []VariableResp `json:"variables"`
+	CreatorID   string         `json:"creator_id"`
 }
 
 type VariableResp struct {
@@ -227,28 +253,63 @@ type DeploymentResponse struct {
 	ErrorMessage    string            `json:"error_message,omitempty"`
 }
 
-// ListTemplatesResponse represents a list of templates.
-type ListTemplatesResponse struct {
-	Templates []TemplateResponse `json:"templates"`
-	Total     int                `json:"total"`
+// parseJSONAPIResource extracts a typed struct from a JSON:API resource object.
+// api2go marshals as: {"id":"...", "type":"...", "field1":"...", "field2":"..."} (flat, not nested under attributes)
+func parseJSONAPIResource[T any](raw json.RawMessage) *T {
+	var result T
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil
+	}
+	return &result
 }
 
-// CreateTemplate creates a template via the API.
+// jsonAPIBody builds a JSON:API create request body.
+func jsonAPIBody(resourceType string, attrs map[string]any) []byte {
+	body := map[string]any{
+		"data": map[string]any{
+			"type":       resourceType,
+			"attributes": attrs,
+		},
+	}
+	b, _ := json.Marshal(body)
+	return b
+}
+
+// doJSONAPIRequest performs an HTTP request with JSON:API content type.
+func doJSONAPIRequest(t *testing.T, method, url string, body []byte, headers map[string]string) *http.Response {
+	t.Helper()
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequest(method, url, reader)
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/vnd.api+json")
+	req.Header.Set("Accept", "application/vnd.api+json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := testClient.Do(req)
+	if err != nil {
+		t.Fatalf("HTTP %s %s failed: %v", method, url, err)
+	}
+	return resp
+}
+
+// CreateTemplate creates a template via the API (JSON:API format).
 func CreateTemplate(t *testing.T, name, version, composeSpec string) *TemplateResponse {
 	t.Helper()
 
-	body := map[string]any{
+	body := jsonAPIBody("templates", map[string]any{
 		"name":         name,
 		"version":      version,
 		"compose_spec": composeSpec,
 		"creator_id":   "test-creator",
-	}
-	jsonBody, _ := json.Marshal(body)
+	})
 
-	resp, err := testClient.Post(baseURL+"/api/v1/templates", "application/json", bytes.NewReader(jsonBody))
-	if err != nil {
-		t.Fatalf("Failed to create template: %v", err)
-	}
+	resp := doJSONAPIRequest(t, "POST", baseURL+"/api/v1/templates", body, nil)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
@@ -256,24 +317,25 @@ func CreateTemplate(t *testing.T, name, version, composeSpec string) *TemplateRe
 		t.Fatalf("Failed to create template: status=%d body=%s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var result TemplateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	var envelope jsonAPISingleResponse
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
 		t.Fatalf("Failed to decode template response: %v", err)
 	}
 
+	result := parseJSONAPIResource[TemplateResponse](envelope.Data)
+	if result == nil {
+		t.Fatal("Failed to parse template from JSON:API response")
+	}
+
 	t.Logf("Created template: %s (%s)", result.Name, result.ID)
-	return &result
+	return result
 }
 
 // PublishTemplate publishes a template via the API.
 func PublishTemplate(t *testing.T, templateID string) {
 	t.Helper()
 
-	req, _ := http.NewRequest("POST", baseURL+"/api/v1/templates/"+templateID+"/publish", nil)
-	resp, err := testClient.Do(req)
-	if err != nil {
-		t.Fatalf("Failed to publish template: %v", err)
-	}
+	resp := doJSONAPIRequest(t, "POST", baseURL+"/api/v1/templates/"+templateID+"/publish", nil, nil)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -288,10 +350,7 @@ func PublishTemplate(t *testing.T, templateID string) {
 func GetTemplate(t *testing.T, templateID string) *TemplateResponse {
 	t.Helper()
 
-	resp, err := testClient.Get(baseURL + "/api/v1/templates/" + templateID)
-	if err != nil {
-		t.Fatalf("Failed to get template: %v", err)
-	}
+	resp := doJSONAPIRequest(t, "GET", baseURL+"/api/v1/templates/"+templateID, nil, nil)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -299,22 +358,23 @@ func GetTemplate(t *testing.T, templateID string) *TemplateResponse {
 		t.Fatalf("Failed to get template: status=%d body=%s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var result TemplateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	var envelope jsonAPISingleResponse
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
 		t.Fatalf("Failed to decode template response: %v", err)
 	}
 
-	return &result
+	result := parseJSONAPIResource[TemplateResponse](envelope.Data)
+	if result == nil {
+		t.Fatal("Failed to parse template from JSON:API response")
+	}
+	return result
 }
 
 // ListTemplates lists all templates.
 func ListTemplates(t *testing.T) []TemplateResponse {
 	t.Helper()
 
-	resp, err := testClient.Get(baseURL + "/api/v1/templates")
-	if err != nil {
-		t.Fatalf("Failed to list templates: %v", err)
-	}
+	resp := doJSONAPIRequest(t, "GET", baseURL+"/api/v1/templates", nil, nil)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -322,39 +382,34 @@ func ListTemplates(t *testing.T) []TemplateResponse {
 		t.Fatalf("Failed to list templates: status=%d body=%s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var result ListTemplatesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	var envelope jsonAPIListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
 		t.Fatalf("Failed to decode templates response: %v", err)
 	}
 
-	return result.Templates
+	var items []TemplateResponse
+	if err := json.Unmarshal(envelope.Data, &items); err != nil {
+		// May be null for empty list
+		return []TemplateResponse{}
+	}
+	return items
 }
 
-// CreateDeployment creates a deployment via the API.
+// CreateDeployment creates a deployment via the API (JSON:API format).
 // Uses "test-user" as the authenticated user ID (sent via X-User-ID header).
 func CreateDeployment(t *testing.T, templateID string, variables map[string]string) *DeploymentResponse {
 	t.Helper()
 
-	// Build request body (current format - JSON:API migration is ADR-003)
-	payload := map[string]any{
+	attrs := map[string]any{
 		"template_id": templateID,
 	}
 	if variables != nil {
-		payload["variables"] = variables
+		attrs["variables"] = variables
 	}
-	jsonBody, _ := json.Marshal(payload)
+	body := jsonAPIBody("deployments", attrs)
 
-	req, err := http.NewRequest("POST", baseURL+"/api/v1/deployments", bytes.NewReader(jsonBody))
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", "test-user") // Auth via header
-
-	resp, err := testClient.Do(req)
-	if err != nil {
-		t.Fatalf("Failed to create deployment: %v", err)
-	}
+	headers := map[string]string{"X-User-ID": "test-user"}
+	resp := doJSONAPIRequest(t, "POST", baseURL+"/api/v1/deployments", body, headers)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
@@ -362,23 +417,25 @@ func CreateDeployment(t *testing.T, templateID string, variables map[string]stri
 		t.Fatalf("Failed to create deployment: status=%d body=%s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var result DeploymentResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	var envelope jsonAPISingleResponse
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
 		t.Fatalf("Failed to decode deployment response: %v", err)
 	}
 
+	result := parseJSONAPIResource[DeploymentResponse](envelope.Data)
+	if result == nil {
+		t.Fatal("Failed to parse deployment from JSON:API response")
+	}
+
 	t.Logf("Created deployment: %s (status=%s)", result.ID, result.Status)
-	return &result
+	return result
 }
 
 // GetDeployment gets a deployment by ID.
 func GetDeployment(t *testing.T, deploymentID string) *DeploymentResponse {
 	t.Helper()
 
-	resp, err := testClient.Get(baseURL + "/api/v1/deployments/" + deploymentID)
-	if err != nil {
-		t.Fatalf("Failed to get deployment: %v", err)
-	}
+	resp := doJSONAPIRequest(t, "GET", baseURL+"/api/v1/deployments/"+deploymentID, nil, nil)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -386,23 +443,23 @@ func GetDeployment(t *testing.T, deploymentID string) *DeploymentResponse {
 		t.Fatalf("Failed to get deployment: status=%d body=%s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var result DeploymentResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	var envelope jsonAPISingleResponse
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
 		t.Fatalf("Failed to decode deployment response: %v", err)
 	}
 
-	return &result
+	result := parseJSONAPIResource[DeploymentResponse](envelope.Data)
+	if result == nil {
+		t.Fatal("Failed to parse deployment from JSON:API response")
+	}
+	return result
 }
 
 // StartDeployment starts a deployment via the API.
 func StartDeployment(t *testing.T, deploymentID string) *DeploymentResponse {
 	t.Helper()
 
-	req, _ := http.NewRequest("POST", baseURL+"/api/v1/deployments/"+deploymentID+"/start", nil)
-	resp, err := testClient.Do(req)
-	if err != nil {
-		t.Fatalf("Failed to start deployment: %v", err)
-	}
+	resp := doJSONAPIRequest(t, "POST", baseURL+"/api/v1/deployments/"+deploymentID+"/start", nil, nil)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -410,9 +467,18 @@ func StartDeployment(t *testing.T, deploymentID string) *DeploymentResponse {
 		t.Fatalf("Failed to start deployment: status=%d body=%s", resp.StatusCode, string(bodyBytes))
 	}
 
+	// Custom action returns wrapped response, not pure JSON:API
 	var result DeploymentResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		t.Fatalf("Failed to decode deployment response: %v", err)
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	// Try parsing as {"data": {...}} first
+	var envelope jsonAPISingleResponse
+	if err := json.Unmarshal(bodyBytes, &envelope); err == nil && len(envelope.Data) > 0 {
+		r := parseJSONAPIResource[DeploymentResponse](envelope.Data)
+		if r != nil {
+			result = *r
+		}
+	} else {
+		json.Unmarshal(bodyBytes, &result)
 	}
 
 	t.Logf("Started deployment: %s (status=%s)", result.ID, result.Status)
@@ -423,11 +489,7 @@ func StartDeployment(t *testing.T, deploymentID string) *DeploymentResponse {
 func StopDeployment(t *testing.T, deploymentID string) *DeploymentResponse {
 	t.Helper()
 
-	req, _ := http.NewRequest("POST", baseURL+"/api/v1/deployments/"+deploymentID+"/stop", nil)
-	resp, err := testClient.Do(req)
-	if err != nil {
-		t.Fatalf("Failed to stop deployment: %v", err)
-	}
+	resp := doJSONAPIRequest(t, "POST", baseURL+"/api/v1/deployments/"+deploymentID+"/stop", nil, nil)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -436,8 +498,15 @@ func StopDeployment(t *testing.T, deploymentID string) *DeploymentResponse {
 	}
 
 	var result DeploymentResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		t.Fatalf("Failed to decode deployment response: %v", err)
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	var envelope jsonAPISingleResponse
+	if err := json.Unmarshal(bodyBytes, &envelope); err == nil && len(envelope.Data) > 0 {
+		r := parseJSONAPIResource[DeploymentResponse](envelope.Data)
+		if r != nil {
+			result = *r
+		}
+	} else {
+		json.Unmarshal(bodyBytes, &result)
 	}
 
 	t.Logf("Stopped deployment: %s (status=%s)", result.ID, result.Status)
@@ -448,11 +517,7 @@ func StopDeployment(t *testing.T, deploymentID string) *DeploymentResponse {
 func DeleteDeployment(t *testing.T, deploymentID string) {
 	t.Helper()
 
-	req, _ := http.NewRequest("DELETE", baseURL+"/api/v1/deployments/"+deploymentID, nil)
-	resp, err := testClient.Do(req)
-	if err != nil {
-		t.Fatalf("Failed to delete deployment: %v", err)
-	}
+	resp := doJSONAPIRequest(t, "DELETE", baseURL+"/api/v1/deployments/"+deploymentID, nil, nil)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusNoContent {
