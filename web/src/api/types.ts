@@ -228,6 +228,8 @@ export interface NodeAttributes {
   location?: string;
   last_health_check?: string;
   error_message?: string;
+  provider_type?: string;
+  provision_id?: string;
   creator_id: string;
   created_at: string;
   updated_at: string;

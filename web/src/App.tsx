@@ -10,7 +10,6 @@ import { DeploymentDetailPage } from '@/pages/deployments/DeploymentDetailPage';
 import { CreatorDashboardPage } from '@/pages/creator/CreatorDashboardPage';
 import { MyNodesPage } from '@/pages/nodes/MyNodesPage';
 import { SSHKeysPage } from '@/pages/ssh-keys/SSHKeysPage';
-import { CloudProvidersPage } from '@/pages/cloud/CloudProvidersPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
 export default function App() {
@@ -65,15 +64,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="cloud-providers"
-          element={
-            <ProtectedRoute>
-              <CloudProvidersPage />
-            </ProtectedRoute>
-          }
-        />
-
         {/* Creator Dashboard - Requires Auth */}
         <Route
           path="creator"

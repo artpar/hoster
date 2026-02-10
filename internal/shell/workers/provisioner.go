@@ -343,6 +343,15 @@ func (p *Provisioner) stepDestroyInstance(ctx context.Context, prov *domain.Clou
 		return
 	}
 
+	// Delete associated node if one was created
+	if prov.NodeID != "" {
+		if err := p.store.DeleteNode(ctx, prov.NodeID); err != nil {
+			logger.Warn("failed to delete associated node", "node_id", prov.NodeID, "error", err)
+		} else {
+			logger.Info("deleted associated node", "node_id", prov.NodeID)
+		}
+	}
+
 	prov.Transition(domain.ProvisionStatusDestroyed)
 	prov.SetStep("Instance destroyed")
 	p.store.UpdateCloudProvision(ctx, prov)

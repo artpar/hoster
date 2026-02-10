@@ -34,6 +34,8 @@ type Node struct {
 	Location        string              `json:"location,omitempty"`
 	LastHealthCheck *time.Time          `json:"last_health_check,omitempty"`
 	ErrorMessage    string              `json:"error_message,omitempty"`
+	ProviderType    string              `json:"provider_type,omitempty"`
+	ProvisionID     string              `json:"provision_id,omitempty"`
 	CreatorID       string              `json:"creator_id"`
 	CreatedAt       time.Time           `json:"created_at"`
 	UpdatedAt       time.Time           `json:"updated_at"`
@@ -107,6 +109,8 @@ func NodeFromDomain(n *domain.Node) Node {
 		Location:        n.Location,
 		LastHealthCheck: n.LastHealthCheck,
 		ErrorMessage:    n.ErrorMessage,
+		ProviderType:    n.ProviderType,
+		ProvisionID:     n.ProvisionID,
 		CreatorID:       "",
 		CreatedAt:       n.CreatedAt,
 		UpdatedAt:       n.UpdatedAt,
@@ -129,6 +133,8 @@ func (n Node) ToDomain() *domain.Node {
 		Location:        n.Location,
 		LastHealthCheck: n.LastHealthCheck,
 		ErrorMessage:    n.ErrorMessage,
+		ProviderType:    n.ProviderType,
+		ProvisionID:     n.ProvisionID,
 		CreatedAt:       n.CreatedAt,
 		UpdatedAt:       n.UpdatedAt,
 	}

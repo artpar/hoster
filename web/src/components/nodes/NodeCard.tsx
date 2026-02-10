@@ -20,9 +20,17 @@ interface NodeCardProps {
   onEnterMaintenance?: (id: string) => void;
   onExitMaintenance?: (id: string) => void;
   onDelete?: (id: string) => void;
+  onDestroy?: (id: string) => void;
   isDeleting?: boolean;
   isUpdating?: boolean;
 }
+
+const providerLabels: Record<string, string> = {
+  aws: 'AWS',
+  digitalocean: 'DigitalOcean',
+  hetzner: 'Hetzner',
+  manual: 'Manual',
+};
 
 const statusStyles: Record<string, string> = {
   online: 'bg-green-100 text-green-800',
@@ -74,12 +82,16 @@ export function NodeCard({
   onEnterMaintenance,
   onExitMaintenance,
   onDelete,
+  onDestroy,
   isDeleting,
   isUpdating,
 }: NodeCardProps) {
   const [showActions, setShowActions] = useState(false);
   const attrs = node.attributes;
   const capacity = attrs.capacity;
+
+  const isCloudNode = attrs.provider_type && attrs.provider_type !== '' && attrs.provider_type !== 'manual';
+  const originLabel = providerLabels[attrs.provider_type || ''] || 'Manual';
 
   const lastHealthCheck = attrs.last_health_check
     ? new Date(attrs.last_health_check).toLocaleString()
@@ -92,6 +104,7 @@ export function NodeCard({
           <div className="flex items-center gap-2">
             <Server className="h-5 w-5 text-muted-foreground" />
             <CardTitle className="text-lg">{attrs.name}</CardTitle>
+            <Badge variant="outline" className="text-xs">{originLabel}</Badge>
           </div>
           <div className="flex items-center gap-2">
             <span
@@ -138,17 +151,31 @@ export function NodeCard({
                       Enter Maintenance
                     </button>
                   )}
-                  <button
-                    onClick={() => {
-                      onDelete?.(node.id);
-                      setShowActions(false);
-                    }}
-                    disabled={isDeleting}
-                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive hover:bg-destructive/10"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Delete Node
-                  </button>
+                  {isCloudNode ? (
+                    <button
+                      onClick={() => {
+                        onDestroy?.(node.id);
+                        setShowActions(false);
+                      }}
+                      disabled={isDeleting}
+                      className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Destroy Node
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        onDelete?.(node.id);
+                        setShowActions(false);
+                      }}
+                      disabled={isDeleting}
+                      className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete Node
+                    </button>
+                  )}
                 </div>
               )}
             </div>
