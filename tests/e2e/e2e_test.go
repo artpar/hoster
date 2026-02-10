@@ -306,10 +306,10 @@ func CreateTemplate(t *testing.T, name, version, composeSpec string) *TemplateRe
 		"name":         name,
 		"version":      version,
 		"compose_spec": composeSpec,
-		"creator_id":   "test-creator",
 	})
 
-	resp := doJSONAPIRequest(t, "POST", baseURL+"/api/v1/templates", body, nil)
+	headers := map[string]string{"X-User-ID": "test-creator"}
+	resp := doJSONAPIRequest(t, "POST", baseURL+"/api/v1/templates", body, headers)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
@@ -335,7 +335,8 @@ func CreateTemplate(t *testing.T, name, version, composeSpec string) *TemplateRe
 func PublishTemplate(t *testing.T, templateID string) {
 	t.Helper()
 
-	resp := doJSONAPIRequest(t, "POST", baseURL+"/api/v1/templates/"+templateID+"/publish", nil, nil)
+	headers := map[string]string{"X-User-ID": "test-creator"}
+	resp := doJSONAPIRequest(t, "POST", baseURL+"/api/v1/templates/"+templateID+"/publish", nil, headers)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {

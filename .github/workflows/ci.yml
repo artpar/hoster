@@ -46,7 +46,7 @@ jobs:
         run: go mod download
 
       - name: Run tests (skip Docker integration tests)
-        run: CGO_ENABLED=1 go test -race -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v /shell/docker)
+        run: CGO_ENABLED=1 go test -race -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v -E '/shell/docker|tests/e2e')
 
   build:
     name: Build
