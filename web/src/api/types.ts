@@ -201,6 +201,7 @@ export interface CreateDeploymentRequest {
   environment_variables?: Record<string, string>;
   custom_domain?: string;
   config_overrides?: Record<string, string>;
+  node_id?: string;
 }
 
 // Node Types

@@ -110,7 +110,7 @@ func DeploymentFromDomain(d *domain.Deployment) Deployment {
 		Name:            d.Name,
 		TemplateID:      d.TemplateRefID,
 		TemplateVersion: d.TemplateVersion,
-		CustomerID:      "",
+		CustomerID:      strconv.Itoa(d.CustomerID),
 		NodeID:          d.NodeID,
 		Status:          string(d.Status),
 		Variables:       d.Variables,
@@ -366,6 +366,7 @@ func (r DeploymentResource) Create(obj interface{}, req api2go.Request) (api2go.
 		TemplateRefID:   template.ReferenceID,
 		TemplateVersion: template.Version,
 		CustomerID:      customerID, // From auth context
+		NodeID:          deployment.NodeID,
 		Status:          domain.StatusPending,
 		Variables:       deployment.Variables,
 		CreatedAt:       now,

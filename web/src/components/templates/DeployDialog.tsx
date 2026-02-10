@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Rocket } from 'lucide-react';
 import type { Template } from '@/api/types';
 import { useCreateDeployment, useStartDeployment } from '@/hooks/useDeployments';
+import { useNodes } from '@/hooks/useNodes';
 import {
   Dialog,
   DialogContent,
@@ -13,6 +14,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/Label';
+import { Select } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/Textarea';
 
 interface DeployDialogProps {
@@ -30,14 +32,26 @@ export function DeployDialog({
 }: DeployDialogProps) {
   const createDeployment = useCreateDeployment();
   const startDeployment = useStartDeployment();
+  const { data: nodes } = useNodes();
 
   // Generate default name from template slug
   const defaultName = `${template.attributes.slug}-${Date.now().toString(36)}`;
 
   const [name, setName] = useState(defaultName);
+  const [selectedNodeId, setSelectedNodeId] = useState('');
   const [customDomain, setCustomDomain] = useState('');
   const [envVars, setEnvVars] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  const nodeOptions = [
+    { value: '', label: 'Auto (scheduler picks best node)' },
+    ...(nodes ?? [])
+      .filter((n) => n.attributes.status === 'online')
+      .map((n) => ({
+        value: n.id,
+        label: `${n.attributes.name} (${n.attributes.ssh_host})`,
+      })),
+  ];
 
   const handleDeploy = async () => {
     setError(null);
@@ -81,6 +95,7 @@ export function DeployDialog({
         template_id: template.id,
         custom_domain: customDomain || undefined,
         config_overrides: configOverrides,
+        node_id: selectedNodeId || undefined,
       });
       // Auto-start the deployment after creation
       try {
@@ -102,6 +117,7 @@ export function DeployDialog({
       onOpenChange(false);
       // Reset form
       setName(defaultName);
+      setSelectedNodeId('');
       setCustomDomain('');
       setEnvVars('');
       setError(null);
@@ -134,6 +150,23 @@ export function DeployDialog({
               Used for the auto-generated domain: {name.toLowerCase()}.yourdomain.com
             </p>
           </div>
+
+          {/* Node Selection */}
+          {nodeOptions.length > 1 && (
+            <div className="grid gap-2">
+              <Label htmlFor="node">Deploy To</Label>
+              <Select
+                id="node"
+                value={selectedNodeId}
+                onChange={(e) => setSelectedNodeId(e.target.value)}
+                options={nodeOptions}
+                disabled={isPending}
+              />
+              <p className="text-xs text-muted-foreground">
+                Choose a specific node or let the scheduler decide
+              </p>
+            </div>
+          )}
 
           {/* Custom Domain (Optional) */}
           <div className="grid gap-2">

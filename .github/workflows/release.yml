@@ -197,12 +197,10 @@ jobs:
             sudo systemctl start hoster"
 
       - name: Download latest APIGate release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          LATEST_URL=$(curl -sL \
-            -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/artpar/apigate/releases/latest \
-            | jq -r '.assets[] | select(.name == "apigate-linux-amd64.tar.gz") | .browser_download_url')
-          curl -sL "$LATEST_URL" -o /tmp/apigate-linux-amd64.tar.gz
+          gh release download --repo artpar/apigate --pattern 'apigate-linux-amd64.tar.gz' --output /tmp/apigate-linux-amd64.tar.gz --clobber
           tar -xzf /tmp/apigate-linux-amd64.tar.gz -C /tmp/
 
       - name: Deploy APIGate

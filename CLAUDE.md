@@ -185,7 +185,7 @@ hoster/
 
 - **Decision**: Use APIGate as reverse proxy for auth and billing
 - **Rationale**: Leverage existing auth/billing infrastructure
-- **Implication**: Trust X-User-ID headers injected by APIGate. Hoster has NO custom auth — no login/signup endpoints, no session management. Frontend uses APIGate's `/portal` for login/signup and `/auth/*` for cookie-based session management.
+- **Implication**: Trust X-User-ID headers injected by APIGate. Hoster has NO custom auth — no login/signup endpoints, no session management. Frontend sends JWT Bearer tokens; APIGate validates them, injects X-User-ID/X-Plan-ID headers, and forwards to Hoster. Auth endpoints are at `/mod/auth/*`.
 - **DO NOT**: Build auth from scratch, add login/signup endpoints to Hoster, or use external auth providers
 - **Spec**: `specs/decisions/ADR-005-apigate-integration.md`
 
@@ -227,6 +227,45 @@ hoster/
 | UUID | `github.com/google/uuid` | Other UUID libs |
 | Config | `github.com/spf13/viper` | Other config libs |
 | Logging | `log/slog` (stdlib) | logrus, zap |
+
+---
+
+## Entity ID Pattern (STANDARD — ALL ENTITIES)
+
+Every entity in the system has **two IDs**:
+
+| Column | Type | Purpose | Used By |
+|--------|------|---------|---------|
+| `id` | `INTEGER PRIMARY KEY` | Internal DB auto-increment PK | Foreign keys, DB joins, internal references |
+| `reference_id` | `TEXT UNIQUE` | External UUID-like ID (e.g., `tmpl_abc123`, `depl_xyz789`, `user_bc6849d9`) | API responses, frontend, URLs, logs |
+
+### Standard Columns (all entities)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `INTEGER PRIMARY KEY` | Auto-increment, used in FK columns |
+| `reference_id` | `TEXT UNIQUE NOT NULL` | External identifier, prefixed by type |
+| `created_at` | `DATETIME` | Creation timestamp |
+| `updated_at` | `DATETIME` | Last modification timestamp |
+
+### Rules — NEVER VIOLATE
+
+1. **FK columns use `id` (integer PK)** — e.g., `deployments.customer_id` references `users.id`, `deployments.template_id` references `templates.id`
+2. **API/frontend use `reference_id`** — all JSON:API responses expose `reference_id` as the resource `id`, never the integer PK
+3. **Store lookups by `reference_id`** — `GetTemplate(ctx, "tmpl_abc123")` looks up by `reference_id`, returns struct with both `ID` (int) and `ReferenceID` (string)
+4. **Domain structs carry both** — e.g., `domain.Deployment{ ID: 42, ReferenceID: "depl_xyz789", TemplateID: 3, TemplateRefID: "tmpl_abc123" }`
+5. **JSON:API resource conversion** — `DeploymentFromDomain()` maps `ReferenceID` → JSON:API `id`, integer FK fields → string for JSON attributes
+
+### Reference ID Prefixes
+
+| Entity | Prefix | Example |
+|--------|--------|---------|
+| Template | `tmpl_` | `tmpl_wordpress` |
+| Deployment | `depl_` | `depl_32f7e16a` |
+| Node | `node_` | `node_abc123` |
+| SSH Key | `sshkey_` | `sshkey_def456` |
+| User | (from APIGate) | `c22469ce-d68b-4e5b-...` or `user_bc6849d9` |
+| Event | `evt_` | `evt_abc123` |
 
 ---
 
@@ -877,27 +916,28 @@ Internet → APIGate (:8082, front-facing) → Hoster (:8080, backend)
 
 When encountering APIGate-related issues during development or testing, report them at the issues link above. The `gh` CLI is available and logged in for creating issues.
 
-### Auth Flow (February 2026)
+### Auth Flow (February 2026) — JWT-Only
 
-**Hoster serves branded login/signup pages.** APIGate handles the auth backend.
+**APIGate v2.0.0+ uses JWT-only auth.** Cookie/session auth has been removed.
 
 1. User clicks "Sign In" → navigates to `/login` (Hoster-branded page)
-2. User submits form → `POST /auth/login` or `POST /auth/register` (APIGate endpoints)
-3. APIGate sets session cookie on successful auth
-4. Signup auto-logs in after registration
-5. APIGate injects `X-User-ID`, `X-Plan-ID`, `X-Plan-Limits` headers on forwarded requests
-6. Hoster middleware reads these headers → `auth.Context{Authenticated: true, UserID: "..."}`
-7. If headers are absent → `auth.Context{Authenticated: false}` (public access, no error)
+2. User submits form → `POST /mod/auth/login` or `POST /mod/auth/register` (APIGate endpoints)
+3. APIGate returns a JWT token in response (`{ token, user, success }`)
+4. Frontend stores token in localStorage (Zustand persist) and sends `Authorization: Bearer {token}` on all requests
+5. APIGate validates the JWT, then injects `X-User-ID`, `X-Plan-ID`, `X-Plan-Limits`, `X-Key-ID`, `X-Request-ID` headers
+6. APIGate strips sensitive headers (e.g., `X-API-Key`) before forwarding
+7. Hoster auth middleware reads injected headers → resolves to local user via `ResolveUser()` → `auth.Context{Authenticated: true, UserID: <int>}`
+8. If headers are absent → `auth.Context{Authenticated: false}` (public access, no error)
 
-**Frontend auth flow:**
-- `checkAuth()` → `GET /auth/me` (APIGate, cookie-based, JSON:API response)
-- `login(email, password)` → `POST /auth/login` then `checkAuth()`
-- `signup(email, password)` → `POST /auth/register` then auto-login
-- `logout()` → `POST /auth/logout` (APIGate)
+**Frontend auth flow (`web/src/stores/authStore.ts`):**
+- `checkAuth()` → `GET /mod/auth/me` with Bearer token → `{ user: { id, email, name, plan_id } }`
+- `login(email, password)` → `POST /mod/auth/login` → receives `{ token }` → `checkAuth()`
+- `signup(email, password)` → `POST /mod/auth/register` → receives `{ token }` → auto `checkAuth()`
+- `logout()` → `POST /mod/auth/logout` with Bearer token
 - `ProtectedRoute` uses `<Navigate to="/login">` (React Router)
-- Vite dev server proxies `/api` and `/auth` to APIGate on :8082
+- API client (`web/src/api/client.ts`) attaches `Authorization: Bearer {token}` to every request
 
-**Auth pages (restored February 2026):**
+**Auth pages:**
 - `web/src/pages/auth/LoginPage.tsx` — Hoster-branded login
 - `web/src/pages/auth/SignupPage.tsx` — Hoster-branded signup
 - `web/src/pages/auth/index.ts` — barrel exports
@@ -905,12 +945,13 @@ When encountering APIGate-related issues during development or testing, report t
 **Removed config:**
 - `HOSTER_AUTH_MODE` — no longer exists (always header mode)
 - `HOSTER_NODES_ENABLED` — no longer exists (encryption key presence drives activation)
+- Cookie/session auth — removed in APIGate v2.0.0
 
-### APIGate Version: v0.2.7+ Required
+### APIGate Version: v2.0.0+ Required
 
-- v0.2.7 fixes fresh install setup wizard (issue #57) and cookie name mismatch
+- v2.0.0: JWT-only auth, removed cookie/session auth, auto-generated JWT secret
 - Fresh install: `GET /` → redirects to `/setup` (4-step browser wizard)
-- Download: `gh release download v0.2.7 --repo artpar/apigate`
+- Download: `gh release download v2.0.0 --repo artpar/apigate`
 
 ---
 

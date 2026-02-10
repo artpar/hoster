@@ -20,6 +20,7 @@ export const deploymentsApi = {
           name: data.name,
           template_id: data.template_id,
           variables: data.environment_variables || {},
+          node_id: data.node_id || '',
         },
       },
     });
