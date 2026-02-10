@@ -291,6 +291,10 @@ func (m *mockStore) GetSSHKey(ctx context.Context, id string) (*domain.SSHKey, e
 	return nil, store.ErrNotFound
 }
 
+func (m *mockStore) GetSSHKeyByCreatorAndName(ctx context.Context, creatorID int, name string) (*domain.SSHKey, error) {
+	return nil, store.ErrNotFound
+}
+
 // =============================================================================
 // Test Helpers
 // =============================================================================

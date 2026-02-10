@@ -86,6 +86,9 @@ func (m *mockStore) CreateSSHKey(ctx context.Context, k *domain.SSHKey) error   
 func (m *mockStore) GetSSHKey(ctx context.Context, id string) (*domain.SSHKey, error) {
 	return nil, nil
 }
+func (m *mockStore) GetSSHKeyByCreatorAndName(ctx context.Context, creatorID int, name string) (*domain.SSHKey, error) {
+	return nil, store.NewStoreError("GetSSHKeyByCreatorAndName", "ssh_key", name, "not found", store.ErrNotFound)
+}
 func (m *mockStore) DeleteSSHKey(ctx context.Context, id string) error { return nil }
 func (m *mockStore) ListSSHKeysByCreator(ctx context.Context, creatorID int, opts store.ListOptions) ([]domain.SSHKey, error) {
 	return nil, nil

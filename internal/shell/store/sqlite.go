@@ -437,6 +437,10 @@ func (s *txSQLiteStore) GetSSHKey(ctx context.Context, id string) (*domain.SSHKe
 	return getSSHKey(ctx, s.tx, id)
 }
 
+func (s *txSQLiteStore) GetSSHKeyByCreatorAndName(ctx context.Context, creatorID int, name string) (*domain.SSHKey, error) {
+	return getSSHKeyByCreatorAndName(ctx, s.tx, creatorID, name)
+}
+
 func (s *txSQLiteStore) DeleteSSHKey(ctx context.Context, id string) error {
 	return deleteSSHKey(ctx, s.tx, id)
 }
@@ -2007,6 +2011,35 @@ func getSSHKey(ctx context.Context, exec executor, id string) (*domain.SSHKey, e
 			return nil, NewStoreError("GetSSHKey", "ssh_key", id, "SSH key not found", ErrNotFound)
 		}
 		return nil, NewStoreError("GetSSHKey", "ssh_key", id, err.Error(), err)
+	}
+
+	createdAt := parseSQLiteTime(row.CreatedAt)
+
+	return &domain.SSHKey{
+		ID:                  row.ID,
+		ReferenceID:         row.ReferenceID,
+		CreatorID:           row.CreatorID,
+		Name:                row.Name,
+		PrivateKeyEncrypted: row.PrivateKeyEncrypted,
+		Fingerprint:         row.Fingerprint,
+		CreatedAt:           createdAt,
+	}, nil
+}
+
+// GetSSHKeyByCreatorAndName retrieves an SSH key by creator ID and name.
+func (s *SQLiteStore) GetSSHKeyByCreatorAndName(ctx context.Context, creatorID int, name string) (*domain.SSHKey, error) {
+	return getSSHKeyByCreatorAndName(ctx, s.db, creatorID, name)
+}
+
+func getSSHKeyByCreatorAndName(ctx context.Context, exec executor, creatorID int, name string) (*domain.SSHKey, error) {
+	var row sshKeyRow
+	query := `SELECT id, reference_id, creator_id, name, private_key_encrypted, fingerprint, created_at FROM ssh_keys WHERE creator_id = ? AND name = ?`
+
+	if err := exec.GetContext(ctx, &row, query, creatorID, name); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, NewStoreError("GetSSHKeyByCreatorAndName", "ssh_key", name, "SSH key not found", ErrNotFound)
+		}
+		return nil, NewStoreError("GetSSHKeyByCreatorAndName", "ssh_key", name, err.Error(), err)
 	}
 
 	createdAt := parseSQLiteTime(row.CreatedAt)

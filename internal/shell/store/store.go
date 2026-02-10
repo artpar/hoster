@@ -60,6 +60,7 @@ type Store interface {
 	// SSH Key operations
 	CreateSSHKey(ctx context.Context, key *domain.SSHKey) error
 	GetSSHKey(ctx context.Context, id string) (*domain.SSHKey, error)
+	GetSSHKeyByCreatorAndName(ctx context.Context, creatorID int, name string) (*domain.SSHKey, error)
 	DeleteSSHKey(ctx context.Context, id string) error
 	ListSSHKeysByCreator(ctx context.Context, creatorID int, opts ListOptions) ([]domain.SSHKey, error)
 

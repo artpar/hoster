@@ -179,71 +179,84 @@ func (p *Provisioner) stepCreateInstance(ctx context.Context, prov *domain.Cloud
 
 	var pubKey []byte
 
-	// If a previous attempt already created the SSH key, reuse it
-	if prov.SSHKeyID != "" {
-		logger.Info("reusing existing SSH key from previous attempt", "ssh_key_id", prov.SSHKeyID)
-		prov.SetStep("Creating cloud instance")
-		p.store.UpdateCloudProvision(ctx, prov)
+	// Resolve SSH key: reuse existing (by ref ID or by creator+name) or generate new
+	keyName := fmt.Sprintf("cloud-%s", prov.InstanceName)
+	var sshKey *domain.SSHKey
 
-		// Retrieve the existing key to get the public key for the provider
-		sshKey, err := p.store.GetSSHKey(ctx, prov.SSHKeyID)
+	if prov.SSHKeyID != "" {
+		// Previous attempt already linked an SSH key — load it by reference ID
+		logger.Info("reusing existing SSH key from previous attempt", "ssh_key_id", prov.SSHKeyID)
+		var err error
+		sshKey, err = p.store.GetSSHKey(ctx, prov.SSHKeyID)
 		if err != nil {
 			p.failProvision(ctx, prov, "failed to retrieve existing SSH key: "+err.Error(), logger)
 			return
 		}
+	} else {
+		// No SSH key linked — check if an orphaned key from a prior failed attempt exists in DB
+		existingKey, err := p.store.GetSSHKeyByCreatorAndName(ctx, prov.CreatorID, keyName)
+		if err == nil && existingKey != nil {
+			logger.Info("reusing orphaned SSH key from previous failed attempt", "ssh_key_id", existingKey.ReferenceID)
+			sshKey = existingKey
+			prov.SSHKeyID = existingKey.ReferenceID
+			prov.SetStep("Creating cloud instance")
+			p.store.UpdateCloudProvision(ctx, prov)
+		} else {
+			// No existing key at all — generate and store a new one
+			prov.SetStep("Generating SSH key pair")
+			p.store.UpdateCloudProvision(ctx, prov)
+
+			var privKeyPEM []byte
+			pubKey, privKeyPEM, err = generateSSHKeyPair()
+			if err != nil {
+				p.failProvision(ctx, prov, "failed to generate SSH key: "+err.Error(), logger)
+				return
+			}
+
+			encryptedKey, err := crypto.EncryptSSHKey(privKeyPEM, p.encryptionKey)
+			if err != nil {
+				p.failProvision(ctx, prov, "failed to encrypt SSH key: "+err.Error(), logger)
+				return
+			}
+
+			fingerprint, err := crypto.GetSSHPublicKeyFingerprint(privKeyPEM)
+			if err != nil {
+				fingerprint = "unknown"
+			}
+
+			newKey := &domain.SSHKey{
+				ReferenceID:         domain.GenerateSSHKeyID(),
+				CreatorID:           prov.CreatorID,
+				Name:                keyName,
+				PrivateKeyEncrypted: encryptedKey,
+				Fingerprint:         fingerprint,
+				CreatedAt:           time.Now(),
+			}
+
+			if err := p.store.CreateSSHKey(ctx, newKey); err != nil {
+				p.failProvision(ctx, prov, "failed to store SSH key: "+err.Error(), logger)
+				return
+			}
+
+			prov.SSHKeyID = newKey.ReferenceID
+			prov.SetStep("Creating cloud instance")
+			p.store.UpdateCloudProvision(ctx, prov)
+		}
+	}
+
+	// Derive public key from stored SSH key (for reuse paths where pubKey wasn't just generated)
+	if pubKey == nil {
 		privKeyPEM, err := crypto.DecryptSSHKey(sshKey.PrivateKeyEncrypted, p.encryptionKey)
 		if err != nil {
-			p.failProvision(ctx, prov, "failed to decrypt existing SSH key: "+err.Error(), logger)
+			p.failProvision(ctx, prov, "failed to decrypt SSH key: "+err.Error(), logger)
 			return
 		}
 		signer, err := ssh.ParsePrivateKey(privKeyPEM)
 		if err != nil {
-			p.failProvision(ctx, prov, "failed to parse existing SSH key: "+err.Error(), logger)
+			p.failProvision(ctx, prov, "failed to parse SSH key: "+err.Error(), logger)
 			return
 		}
 		pubKey = ssh.MarshalAuthorizedKey(signer.PublicKey())
-	} else {
-		prov.SetStep("Generating SSH key pair")
-		p.store.UpdateCloudProvision(ctx, prov)
-
-		// Generate SSH key pair
-		var privKeyPEM []byte
-		var err error
-		pubKey, privKeyPEM, err = generateSSHKeyPair()
-		if err != nil {
-			p.failProvision(ctx, prov, "failed to generate SSH key: "+err.Error(), logger)
-			return
-		}
-
-		// Encrypt and store the SSH key
-		encryptedKey, err := crypto.EncryptSSHKey(privKeyPEM, p.encryptionKey)
-		if err != nil {
-			p.failProvision(ctx, prov, "failed to encrypt SSH key: "+err.Error(), logger)
-			return
-		}
-
-		fingerprint, err := crypto.GetSSHPublicKeyFingerprint(privKeyPEM)
-		if err != nil {
-			fingerprint = "unknown"
-		}
-
-		sshKey := &domain.SSHKey{
-			ReferenceID:         domain.GenerateSSHKeyID(),
-			CreatorID:           prov.CreatorID,
-			Name:                fmt.Sprintf("cloud-%s", prov.InstanceName),
-			PrivateKeyEncrypted: encryptedKey,
-			Fingerprint:         fingerprint,
-			CreatedAt:           time.Now(),
-		}
-
-		if err := p.store.CreateSSHKey(ctx, sshKey); err != nil {
-			p.failProvision(ctx, prov, "failed to store SSH key: "+err.Error(), logger)
-			return
-		}
-
-		prov.SSHKeyID = sshKey.ReferenceID
-		prov.SetStep("Creating cloud instance")
-		p.store.UpdateCloudProvision(ctx, prov)
 	}
 
 	// Get credentials and create provider client
