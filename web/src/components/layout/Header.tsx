@@ -1,9 +1,13 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { Box, User, LogOut } from 'lucide-react';
+import { Box, Menu, User, LogOut } from 'lucide-react';
 import { useIsAuthenticated, useUser, useAuthStore } from '@/stores/authStore';
 import { Button } from '@/components/ui/Button';
 
-export function Header() {
+interface HeaderProps {
+  onMenuToggle: () => void;
+}
+
+export function Header({ onMenuToggle }: HeaderProps) {
   const isAuthenticated = useIsAuthenticated();
   const user = useUser();
   const logout = useAuthStore((state) => state.logout);
@@ -17,35 +21,18 @@ export function Header() {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-14 items-center px-4">
+        <button
+          onClick={onMenuToggle}
+          className="mr-3 rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground md:hidden"
+          aria-label="Toggle navigation menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+
         <Link to="/" className="flex items-center gap-2 font-semibold">
           <Box className="h-6 w-6 text-primary" />
           <span>Hoster</span>
         </Link>
-
-        <nav className="ml-8 flex items-center gap-4 text-sm">
-          <Link
-            to="/marketplace"
-            className="text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Marketplace
-          </Link>
-          {isAuthenticated && (
-            <>
-              <Link
-                to="/deployments"
-                className="text-muted-foreground transition-colors hover:text-foreground"
-              >
-                My Deployments
-              </Link>
-              <Link
-                to="/creator"
-                className="text-muted-foreground transition-colors hover:text-foreground"
-              >
-                Creator Dashboard
-              </Link>
-            </>
-          )}
-        </nav>
 
         <div className="ml-auto flex items-center gap-2">
           {isAuthenticated ? (

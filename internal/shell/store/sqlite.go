@@ -46,6 +46,20 @@ type executor interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
+// resolveRefID resolves a string reference_id to its integer primary key.
+// The store layer handles ref_id → int_id conversion for all FK relationships.
+func resolveRefID(ctx context.Context, exec executor, table, refID string) (int, error) {
+	var id int
+	query := fmt.Sprintf("SELECT id FROM %s WHERE reference_id = ?", table)
+	if err := exec.GetContext(ctx, &id, query, refID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, NewStoreError("resolveRefID", table, refID, table+" not found", ErrNotFound)
+		}
+		return 0, NewStoreError("resolveRefID", table, refID, err.Error(), err)
+	}
+	return id, nil
+}
+
 // =============================================================================
 // SQLiteStore
 // =============================================================================
@@ -718,6 +732,14 @@ func createDeployment(ctx context.Context, exec executor, deployment *domain.Dep
 		stoppedAt = &s
 	}
 
+	if deployment.TemplateID == 0 && deployment.TemplateRefID != "" {
+		resolved, err := resolveRefID(ctx, exec, "templates", deployment.TemplateRefID)
+		if err != nil {
+			return NewStoreError("CreateDeployment", "deployment", deployment.ReferenceID, "failed to resolve template reference", err)
+		}
+		deployment.TemplateID = resolved
+	}
+
 	var proxyPort *int
 	if deployment.ProxyPort > 0 {
 		proxyPort = &deployment.ProxyPort
@@ -814,6 +836,14 @@ func updateDeployment(ctx context.Context, exec executor, deployment *domain.Dep
 	if deployment.StoppedAt != nil {
 		s := deployment.StoppedAt.Format(time.RFC3339)
 		stoppedAt = &s
+	}
+
+	if deployment.TemplateID == 0 && deployment.TemplateRefID != "" {
+		resolved, err := resolveRefID(ctx, exec, "templates", deployment.TemplateRefID)
+		if err != nil {
+			return NewStoreError("UpdateDeployment", "deployment", deployment.ReferenceID, "failed to resolve template reference", err)
+		}
+		deployment.TemplateID = resolved
 	}
 
 	var proxyPort *int
@@ -1525,6 +1555,14 @@ func createNode(ctx context.Context, exec executor, node *domain.Node) error {
 		lastHealthCheck = &hc
 	}
 
+	if node.SSHKeyID == 0 && node.SSHKeyRefID != "" {
+		resolved, err := resolveRefID(ctx, exec, "ssh_keys", node.SSHKeyRefID)
+		if err != nil {
+			return NewStoreError("CreateNode", "node", node.ReferenceID, "failed to resolve SSH key reference", err)
+		}
+		node.SSHKeyID = resolved
+	}
+
 	var sshKeyID *int
 	if node.SSHKeyID != 0 {
 		sshKeyID = &node.SSHKeyID
@@ -1628,6 +1666,14 @@ func updateNode(ctx context.Context, exec executor, node *domain.Node) error {
 	if node.LastHealthCheck != nil {
 		hc := node.LastHealthCheck.Format(time.RFC3339)
 		lastHealthCheck = &hc
+	}
+
+	if node.SSHKeyID == 0 && node.SSHKeyRefID != "" {
+		resolved, err := resolveRefID(ctx, exec, "ssh_keys", node.SSHKeyRefID)
+		if err != nil {
+			return NewStoreError("UpdateNode", "node", node.ReferenceID, "failed to resolve SSH key reference", err)
+		}
+		node.SSHKeyID = resolved
 	}
 
 	var sshKeyID *int
@@ -2193,6 +2239,14 @@ func (s *SQLiteStore) CreateCloudProvision(ctx context.Context, prov *domain.Clo
 }
 
 func createCloudProvision(ctx context.Context, exec executor, prov *domain.CloudProvision) error {
+	if prov.CredentialID == 0 && prov.CredentialRefID != "" {
+		resolved, err := resolveRefID(ctx, exec, "cloud_credentials", prov.CredentialRefID)
+		if err != nil {
+			return NewStoreError("CreateCloudProvision", "cloud_provision", prov.ReferenceID, "failed to resolve credential reference", err)
+		}
+		prov.CredentialID = resolved
+	}
+
 	var completedAt *string
 	if prov.CompletedAt != nil {
 		s := prov.CompletedAt.Format(time.RFC3339)
@@ -2277,6 +2331,14 @@ func (s *SQLiteStore) UpdateCloudProvision(ctx context.Context, prov *domain.Clo
 }
 
 func updateCloudProvision(ctx context.Context, exec executor, prov *domain.CloudProvision) error {
+	if prov.CredentialID == 0 && prov.CredentialRefID != "" {
+		resolved, err := resolveRefID(ctx, exec, "cloud_credentials", prov.CredentialRefID)
+		if err != nil {
+			return NewStoreError("UpdateCloudProvision", "cloud_provision", prov.ReferenceID, "failed to resolve credential reference", err)
+		}
+		prov.CredentialID = resolved
+	}
+
 	var completedAt *string
 	if prov.CompletedAt != nil {
 		s := prov.CompletedAt.Format(time.RFC3339)
