@@ -1,22 +1,20 @@
 import { NavLink } from 'react-router-dom';
 import { Store, Layers, Server, KeyRound, LayoutDashboard, Package } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { useIsAuthenticated } from '@/stores/authStore';
 
 interface NavItem {
   to: string;
   icon: React.ComponentType<{ className?: string }>;
   label: string;
-  requiresAuth?: boolean;
 }
 
 const navItems: NavItem[] = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', requiresAuth: true },
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/marketplace', icon: Store, label: 'Marketplace' },
-  { to: '/deployments', icon: Layers, label: 'My Deployments', requiresAuth: true },
-  { to: '/templates', icon: Package, label: 'App Templates', requiresAuth: true },
-  { to: '/nodes', icon: Server, label: 'My Nodes', requiresAuth: true },
-  { to: '/ssh-keys', icon: KeyRound, label: 'SSH Keys', requiresAuth: true },
+  { to: '/deployments', icon: Layers, label: 'My Deployments' },
+  { to: '/templates', icon: Package, label: 'App Templates' },
+  { to: '/nodes', icon: Server, label: 'My Nodes' },
+  { to: '/ssh-keys', icon: KeyRound, label: 'SSH Keys' },
 ];
 
 interface SidebarProps {
@@ -25,15 +23,9 @@ interface SidebarProps {
 }
 
 export function Sidebar({ open, onClose }: SidebarProps) {
-  const isAuthenticated = useIsAuthenticated();
-
-  const visibleItems = navItems.filter(
-    (item) => !item.requiresAuth || isAuthenticated
-  );
-
   const navContent = (
     <nav className="flex flex-col gap-1 p-4">
-      {visibleItems.map((item) => (
+      {navItems.map((item) => (
         <NavLink
           key={item.to}
           to={item.to}

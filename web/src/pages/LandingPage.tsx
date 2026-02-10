@@ -1,95 +1,53 @@
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { useAuthStore } from '@/stores/authStore';
 import {
   Rocket,
-  Shield,
-  Zap,
-  Globe,
-  Package,
-  BarChart3,
   ArrowRight,
-  CheckCircle2
+  Server,
+  Package,
+  Play,
+  Monitor,
+  KeyRound,
+  Shield,
 } from 'lucide-react';
 
-const features = [
+const capabilities = [
   {
-    icon: Rocket,
-    title: 'One-Click Deployments',
-    description: 'Deploy applications from our marketplace with a single click. No complex configurations required.',
+    icon: Play,
+    title: 'Deploy from the Marketplace',
+    description:
+      'Pick an app — WordPress, Gitea, n8n, Metabase, and more. Click deploy. It launches on your infrastructure with a URL, monitoring, and lifecycle controls.',
   },
   {
-    icon: Shield,
-    title: 'Secure by Default',
-    description: 'Automatic HTTPS, network isolation, and secure authentication for all your deployments.',
-  },
-  {
-    icon: Zap,
-    title: 'Instant Scaling',
-    description: 'Scale your deployments up or down based on demand. Pay only for what you use.',
-  },
-  {
-    icon: Globe,
-    title: 'Global Edge Network',
-    description: 'Deploy close to your users with our distributed infrastructure for low latency.',
+    icon: Server,
+    title: 'Bring Your Own Servers',
+    description:
+      'Register any Linux server with SSH access. Hoster connects via SSH, installs Docker, and deploys your apps remotely. AWS, DigitalOcean, bare metal — anything works.',
   },
   {
     icon: Package,
-    title: 'Template Marketplace',
-    description: 'Choose from hundreds of pre-built templates or create your own for the community.',
-  },
-  {
-    icon: BarChart3,
-    title: 'Usage Analytics',
-    description: 'Monitor your deployments with real-time metrics and comprehensive analytics.',
+    title: 'Create Your Own Templates',
+    description:
+      'Define a docker-compose spec, set a price, and publish it to the marketplace. Other users can deploy your template with one click.',
   },
 ];
 
-const pricingPlans = [
+const highlights = [
   {
-    name: 'Starter',
-    price: 'Free',
-    description: 'Perfect for trying out Hoster',
-    features: [
-      '1 deployment',
-      '1 vCPU',
-      '1 GB RAM',
-      '5 GB storage',
-      'Community support',
-    ],
-    cta: 'Get Started',
-    highlighted: false,
+    icon: Monitor,
+    title: 'Real-time Monitoring',
+    description: 'CPU, memory, network stats. Container logs. Lifecycle events. All built in.',
   },
   {
-    name: 'Pro',
-    price: '$29/mo',
-    description: 'For growing teams and projects',
-    features: [
-      '10 deployments',
-      '4 vCPUs',
-      '8 GB RAM',
-      '50 GB storage',
-      'Priority support',
-      'Custom domains',
-    ],
-    cta: 'Start Free Trial',
-    highlighted: true,
+    icon: KeyRound,
+    title: 'SSH Key Management',
+    description: 'Encrypted key storage. Per-node key assignment. No passwords on your servers.',
   },
   {
-    name: 'Enterprise',
-    price: 'Custom',
-    description: 'For large organizations',
-    features: [
-      'Unlimited deployments',
-      'Dedicated resources',
-      'SLA guarantee',
-      '24/7 support',
-      'SSO integration',
-      'On-premise option',
-    ],
-    cta: 'Contact Sales',
-    highlighted: false,
+    icon: Shield,
+    title: 'Self-Hosted & Private',
+    description: 'Your data stays on your servers. No vendor lock-in. Full control over everything.',
   },
 ];
 
@@ -127,117 +85,86 @@ export function LandingPage() {
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section className="container mx-auto px-4 py-20 text-center">
+      {/* Hero */}
+      <section className="container mx-auto px-4 py-16 text-center sm:py-24">
         <div className="mx-auto max-w-3xl">
-          <h1 className="text-5xl font-bold tracking-tight sm:text-6xl">
-            Deploy Applications
-            <span className="text-primary"> in Seconds</span>
+          <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
+            Deploy apps to
+            <span className="text-primary"> your own servers</span>
           </h1>
-          <p className="mt-6 text-xl text-muted-foreground">
-            Hoster is a self-hosted deployment platform with a template marketplace.
-            One-click deploy any application onto your own infrastructure.
+          <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">
+            Hoster is a self-hosted deployment platform. Pick an app from the marketplace,
+            connect your servers, and deploy with one click. You own the infrastructure.
           </p>
           <div className="mt-10 flex items-center justify-center gap-4">
             <Link to="/marketplace">
               <Button size="lg" className="gap-2">
-                Explore Marketplace <ArrowRight className="h-4 w-4" />
+                Browse Apps <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
             <Link to="/signup">
               <Button size="lg" variant="outline">
-                Start Free
+                Create Account
               </Button>
             </Link>
           </div>
         </div>
       </section>
 
-      {/* Features Section */}
-      <section className="container mx-auto px-4 py-20">
-        <div className="text-center">
-          <h2 className="text-3xl font-bold">Everything You Need</h2>
-          <p className="mt-4 text-lg text-muted-foreground">
-            Powerful features to deploy and manage your applications
-          </p>
-        </div>
-        <div className="mt-16 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
-          {features.map((feature) => (
-            <Card key={feature.title} className="border-0 bg-card/50 backdrop-blur">
-              <CardHeader>
-                <feature.icon className="h-12 w-12 text-primary" />
-                <CardTitle className="mt-4">{feature.title}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CardDescription className="text-base">
-                  {feature.description}
-                </CardDescription>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </section>
-
-      {/* Pricing Section */}
-      <section className="container mx-auto px-4 py-20">
-        <div className="text-center">
-          <h2 className="text-3xl font-bold">Simple, Transparent Pricing</h2>
-          <p className="mt-4 text-lg text-muted-foreground">
-            Choose the plan that works for you
-          </p>
-        </div>
-        <div className="mt-16 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
-          {pricingPlans.map((plan) => (
-            <Card
-              key={plan.name}
-              className={plan.highlighted ? 'border-primary shadow-lg' : ''}
-            >
-              <CardHeader>
-                <CardTitle>{plan.name}</CardTitle>
-                <div className="mt-4">
-                  <span className="text-4xl font-bold">{plan.price}</span>
-                </div>
-                <CardDescription>{plan.description}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-3">
-                  {plan.features.map((feature) => (
-                    <li key={feature} className="flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-primary" />
-                      <span className="text-sm">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  className="mt-6 w-full"
-                  variant={plan.highlighted ? 'default' : 'outline'}
-                >
-                  {plan.cta}
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="container mx-auto px-4 py-20">
-        <Card className="bg-primary text-primary-foreground">
-          <CardContent className="py-16 text-center">
-            <h2 className="text-3xl font-bold">Ready to Get Started?</h2>
-            <p className="mx-auto mt-4 max-w-xl text-lg opacity-90">
-              Join thousands of developers deploying applications with Hoster.
-              Start free and scale as you grow.
-            </p>
-            <div className="mt-8 flex items-center justify-center gap-4">
-              <Link to="/signup">
-                <Button size="lg" variant="secondary" className="gap-2">
-                  Create Free Account <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
+      {/* How it works — 3 capabilities */}
+      <section className="container mx-auto px-4 py-16">
+        <h2 className="text-center text-2xl font-bold sm:text-3xl">How it works</h2>
+        <p className="mx-auto mt-3 max-w-xl text-center text-muted-foreground">
+          Three things you can do with Hoster, each in under a minute.
+        </p>
+        <div className="mt-12 grid gap-8 sm:grid-cols-3">
+          {capabilities.map((cap, i) => (
+            <div key={cap.title} className="rounded-lg border bg-background p-6">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                <cap.icon className="h-5 w-5 text-primary" />
+              </div>
+              <div className="mt-1 text-xs font-medium text-muted-foreground">Step {i + 1}</div>
+              <h3 className="mt-2 text-lg font-semibold">{cap.title}</h3>
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+                {cap.description}
+              </p>
             </div>
-          </CardContent>
-        </Card>
+          ))}
+        </div>
+      </section>
+
+      {/* Highlights */}
+      <section className="container mx-auto px-4 py-16">
+        <div className="rounded-lg border bg-muted/30 px-6 py-10 sm:px-10">
+          <div className="grid gap-8 sm:grid-cols-3">
+            {highlights.map((h) => (
+              <div key={h.title} className="flex gap-4">
+                <h.icon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                <div>
+                  <h3 className="font-medium">{h.title}</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">{h.description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section className="container mx-auto px-4 py-16">
+        <div className="rounded-lg bg-primary px-6 py-14 text-center text-primary-foreground">
+          <h2 className="text-2xl font-bold sm:text-3xl">Ready to deploy?</h2>
+          <p className="mx-auto mt-3 max-w-lg text-base opacity-90">
+            Sign up, connect a server, and deploy your first app. Free to start.
+          </p>
+          <div className="mt-8 flex items-center justify-center gap-4">
+            <Link to="/signup">
+              <Button size="lg" variant="secondary" className="gap-2">
+                Create Free Account <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+          </div>
+        </div>
       </section>
 
       {/* Footer */}
