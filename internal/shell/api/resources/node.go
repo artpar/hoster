@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/artpar/hoster/internal/core/auth"
@@ -471,8 +472,19 @@ func (r NodeResource) Delete(id string, req api2go.Request) (api2go.Responder, e
 		)
 	}
 
-	// TODO: Check for active deployments on this node before deleting
-	// For now, just delete
+	// Check for active deployments on this node before deleting
+	deployments, err := r.Store.ListDeploymentsByNode(ctx, node.ReferenceID)
+	if err == nil && len(deployments) > 0 {
+		names := make([]string, 0, len(deployments))
+		for _, d := range deployments {
+			names = append(names, d.Name)
+		}
+		return &Response{Code: http.StatusConflict}, api2go.NewHTTPError(
+			fmt.Errorf("node has active deployments: %s", strings.Join(names, ", ")),
+			fmt.Sprintf("Cannot delete node: has active deployments (%s)", strings.Join(names, ", ")),
+			http.StatusConflict,
+		)
+	}
 
 	if err := r.Store.DeleteNode(ctx, id); err != nil {
 		return &Response{Code: http.StatusInternalServerError}, err

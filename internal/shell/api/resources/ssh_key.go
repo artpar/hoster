@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/artpar/hoster/internal/core/auth"
@@ -327,8 +328,19 @@ func (r SSHKeyResource) Delete(id string, req api2go.Request) (api2go.Responder,
 		)
 	}
 
-	// TODO: Check if any nodes are using this key before deleting
-	// For now, just delete
+	// Check if any nodes are using this key before deleting
+	nodes, err := r.Store.ListNodesBySSHKey(ctx, key.ID)
+	if err == nil && len(nodes) > 0 {
+		names := make([]string, 0, len(nodes))
+		for _, n := range nodes {
+			names = append(names, n.Name)
+		}
+		return &Response{Code: http.StatusConflict}, api2go.NewHTTPError(
+			fmt.Errorf("SSH key in use by nodes: %s", strings.Join(names, ", ")),
+			fmt.Sprintf("Cannot delete SSH key: used by nodes (%s)", strings.Join(names, ", ")),
+			http.StatusConflict,
+		)
+	}
 
 	if err := r.Store.DeleteSSHKey(ctx, id); err != nil {
 		return &Response{Code: http.StatusInternalServerError}, err

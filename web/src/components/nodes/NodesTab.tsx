@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Server, KeyRound } from 'lucide-react';
+import { toast } from 'sonner';
 import { useNodes, useDeleteNode, useEnterMaintenanceMode, useExitMaintenanceMode } from '@/hooks/useNodes';
 import { useCloudProvisions, useDeleteCloudProvision, useRetryProvision } from '@/hooks/useCloudProvisions';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -131,7 +132,17 @@ export function NodesTab() {
         description={`Delete node "${deleteNodeDialog.name}"? This cannot be undone.`}
         confirmLabel="Delete"
         variant="destructive"
-        onConfirm={() => deleteNode.mutate(deleteNodeDialog.id)}
+        loading={deleteNode.isPending}
+        onConfirm={() => deleteNode.mutate(deleteNodeDialog.id, {
+          onSuccess: () => {
+            setDeleteNodeDialog((prev) => ({ ...prev, open: false }));
+            toast.success(`Node "${deleteNodeDialog.name}" deleted`);
+          },
+          onError: (err) => {
+            setDeleteNodeDialog((prev) => ({ ...prev, open: false }));
+            toast.error(`Failed to delete node: ${err.message}`);
+          },
+        })}
       />
 
       {/* Destroy Provision Confirmation */}
@@ -142,7 +153,17 @@ export function NodesTab() {
         description={`This will destroy the cloud instance "${destroyProvisionDialog.name}" and remove the associated node. The cloud server will be permanently deleted. This action cannot be undone.`}
         confirmLabel="Destroy"
         variant="destructive"
-        onConfirm={() => deleteProvision.mutate(destroyProvisionDialog.id)}
+        loading={deleteProvision.isPending}
+        onConfirm={() => deleteProvision.mutate(destroyProvisionDialog.id, {
+          onSuccess: () => {
+            setDestroyProvisionDialog((prev) => ({ ...prev, open: false }));
+            toast.success(`Cloud server "${destroyProvisionDialog.name}" scheduled for destruction`);
+          },
+          onError: (err) => {
+            setDestroyProvisionDialog((prev) => ({ ...prev, open: false }));
+            toast.error(`Failed to destroy cloud server: ${err.message}`);
+          },
+        })}
       />
     </>
   );

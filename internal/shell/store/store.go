@@ -74,6 +74,11 @@ type Store interface {
 	UpdateCloudProvision(ctx context.Context, prov *domain.CloudProvision) error
 	ListCloudProvisionsByCreator(ctx context.Context, creatorID int, opts ListOptions) ([]domain.CloudProvision, error)
 	ListActiveProvisions(ctx context.Context) ([]domain.CloudProvision, error)
+	ListCloudProvisionsByCredential(ctx context.Context, credentialID int) ([]domain.CloudProvision, error)
+
+	// Dependency lookups (for safe deletion checks)
+	ListDeploymentsByNode(ctx context.Context, nodeRefID string) ([]domain.Deployment, error)
+	ListNodesBySSHKey(ctx context.Context, sshKeyID int) ([]domain.Node, error)
 
 	// Transaction support
 	WithTx(ctx context.Context, fn func(Store) error) error

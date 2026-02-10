@@ -477,6 +477,18 @@ func (s *txSQLiteStore) ListActiveProvisions(ctx context.Context) ([]domain.Clou
 	return listActiveProvisions(ctx, s.tx)
 }
 
+func (s *txSQLiteStore) ListCloudProvisionsByCredential(ctx context.Context, credentialID int) ([]domain.CloudProvision, error) {
+	return listCloudProvisionsByCredential(ctx, s.tx, credentialID)
+}
+
+func (s *txSQLiteStore) ListDeploymentsByNode(ctx context.Context, nodeRefID string) ([]domain.Deployment, error) {
+	return listDeploymentsByNode(ctx, s.tx, nodeRefID)
+}
+
+func (s *txSQLiteStore) ListNodesBySSHKey(ctx context.Context, sshKeyID int) ([]domain.Node, error) {
+	return listNodesBySSHKey(ctx, s.tx, sshKeyID)
+}
+
 // =============================================================================
 // Shared Implementation Functions
 // =============================================================================
@@ -2431,6 +2443,18 @@ func (s *SQLiteStore) ListActiveProvisions(ctx context.Context) ([]domain.CloudP
 	return listActiveProvisions(ctx, s.db)
 }
 
+func (s *SQLiteStore) ListCloudProvisionsByCredential(ctx context.Context, credentialID int) ([]domain.CloudProvision, error) {
+	return listCloudProvisionsByCredential(ctx, s.db, credentialID)
+}
+
+func (s *SQLiteStore) ListDeploymentsByNode(ctx context.Context, nodeRefID string) ([]domain.Deployment, error) {
+	return listDeploymentsByNode(ctx, s.db, nodeRefID)
+}
+
+func (s *SQLiteStore) ListNodesBySSHKey(ctx context.Context, sshKeyID int) ([]domain.Node, error) {
+	return listNodesBySSHKey(ctx, s.db, sshKeyID)
+}
+
 func listActiveProvisions(ctx context.Context, exec executor) ([]domain.CloudProvision, error) {
 	query := `SELECT ` + provisionSelectColumns + ` ` + provisionFromClause + `
 		WHERE p.status IN ('pending', 'creating', 'configuring', 'destroying')
@@ -2490,4 +2514,71 @@ func rowToCloudProvision(row *cloudProvisionRow) (*domain.CloudProvision, error)
 		UpdatedAt:          updatedAt,
 		CompletedAt:        completedAt,
 	}, nil
+}
+
+// =============================================================================
+// Dependency Lookup Functions (for safe deletion checks)
+// =============================================================================
+
+func listCloudProvisionsByCredential(ctx context.Context, exec executor, credentialID int) ([]domain.CloudProvision, error) {
+	query := `SELECT ` + provisionSelectColumns + ` ` + provisionFromClause + `
+		WHERE p.credential_id = ? AND p.status NOT IN ('destroyed')
+		ORDER BY p.created_at DESC`
+
+	var rows []cloudProvisionRow
+	if err := exec.SelectContext(ctx, &rows, query, credentialID); err != nil {
+		return nil, NewStoreError("ListCloudProvisionsByCredential", "cloud_provision", "", err.Error(), err)
+	}
+
+	provisions := make([]domain.CloudProvision, 0, len(rows))
+	for _, row := range rows {
+		prov, err := rowToCloudProvision(&row)
+		if err != nil {
+			return nil, err
+		}
+		provisions = append(provisions, *prov)
+	}
+	return provisions, nil
+}
+
+func listDeploymentsByNode(ctx context.Context, exec executor, nodeRefID string) ([]domain.Deployment, error) {
+	query := `SELECT ` + deploymentSelectColumns + ` ` + deploymentFromClause + `
+		WHERE d.node_id = ? AND d.status NOT IN ('deleted', 'stopped')
+		ORDER BY d.created_at DESC`
+
+	var rows []deploymentRow
+	if err := exec.SelectContext(ctx, &rows, query, nodeRefID); err != nil {
+		return nil, NewStoreError("ListDeploymentsByNode", "deployment", "", err.Error(), err)
+	}
+
+	deployments := make([]domain.Deployment, 0, len(rows))
+	for _, row := range rows {
+		dep, err := rowToDeployment(&row)
+		if err != nil {
+			return nil, err
+		}
+		deployments = append(deployments, *dep)
+	}
+	return deployments, nil
+}
+
+func listNodesBySSHKey(ctx context.Context, exec executor, sshKeyID int) ([]domain.Node, error) {
+	query := `SELECT ` + nodeSelectColumns + ` ` + nodeFromClause + `
+		WHERE n.ssh_key_id = ?
+		ORDER BY n.created_at DESC`
+
+	var rows []nodeRow
+	if err := exec.SelectContext(ctx, &rows, query, sshKeyID); err != nil {
+		return nil, NewStoreError("ListNodesBySSHKey", "node", "", err.Error(), err)
+	}
+
+	nodes := make([]domain.Node, 0, len(rows))
+	for _, row := range rows {
+		node, err := rowToNode(&row)
+		if err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, *node)
+	}
+	return nodes, nil
 }

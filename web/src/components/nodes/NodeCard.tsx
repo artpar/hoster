@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Server,
   MapPin,
@@ -87,7 +87,20 @@ export function NodeCard({
   isUpdating,
 }: NodeCardProps) {
   const [showActions, setShowActions] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const attrs = node.attributes;
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    if (!showActions) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as globalThis.Node)) {
+        setShowActions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showActions]);
   const capacity = attrs.capacity;
 
   const isCloudNode = attrs.provider_type && attrs.provider_type !== '' && attrs.provider_type !== 'manual';
@@ -115,7 +128,7 @@ export function NodeCard({
             >
               {statusLabels[attrs.status] || attrs.status}
             </span>
-            <div className="relative">
+            <div className="relative" ref={menuRef}>
               <Button
                 variant="ghost"
                 size="sm"
@@ -125,7 +138,7 @@ export function NodeCard({
                 <MoreVertical className="h-4 w-4" />
               </Button>
               {showActions && (
-                <div className="absolute right-0 top-full z-10 mt-1 w-48 rounded-md border bg-popover p-1 shadow-md">
+                <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border bg-background p-1 shadow-md">
                   {attrs.status === 'maintenance' ? (
                     <button
                       onClick={() => {

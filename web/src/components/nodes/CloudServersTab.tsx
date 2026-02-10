@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Cloud } from 'lucide-react';
+import { toast } from 'sonner';
 import { useCloudProvisions, useDeleteCloudProvision, useRetryProvision } from '@/hooks/useCloudProvisions';
 import { EmptyState } from '@/components/common/EmptyState';
 import { ProvisionCard } from './ProvisionCard';
@@ -75,7 +76,17 @@ export function CloudServersTab() {
         description={`This will destroy the cloud instance "${destroyDialog.name}" and remove the associated node. The cloud server will be permanently deleted. This action cannot be undone.`}
         confirmLabel="Destroy"
         variant="destructive"
-        onConfirm={() => deleteProvision.mutate(destroyDialog.id)}
+        loading={deleteProvision.isPending}
+        onConfirm={() => deleteProvision.mutate(destroyDialog.id, {
+          onSuccess: () => {
+            setDestroyDialog((prev) => ({ ...prev, open: false }));
+            toast.success(`Cloud server "${destroyDialog.name}" scheduled for destruction`);
+          },
+          onError: (err) => {
+            setDestroyDialog((prev) => ({ ...prev, open: false }));
+            toast.error(`Failed to destroy cloud server: ${err.message}`);
+          },
+        })}
       />
     </>
   );

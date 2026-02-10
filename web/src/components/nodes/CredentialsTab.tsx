@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Cloud } from 'lucide-react';
+import { toast } from 'sonner';
 import { useCloudCredentials, useDeleteCloudCredential } from '@/hooks/useCloudCredentials';
 import { useCloudProvisions } from '@/hooks/useCloudProvisions';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -108,7 +109,17 @@ export function CredentialsTab() {
         }
         confirmLabel="Delete"
         variant="destructive"
-        onConfirm={() => deleteCredential.mutate(deleteDialog.id)}
+        loading={deleteCredential.isPending}
+        onConfirm={() => deleteCredential.mutate(deleteDialog.id, {
+          onSuccess: () => {
+            setDeleteDialog((prev) => ({ ...prev, open: false }));
+            toast.success(`Credential "${deleteDialog.name}" deleted`);
+          },
+          onError: (err) => {
+            setDeleteDialog((prev) => ({ ...prev, open: false }));
+            toast.error(`Failed to delete credential: ${err.message}`);
+          },
+        })}
       />
     </>
   );

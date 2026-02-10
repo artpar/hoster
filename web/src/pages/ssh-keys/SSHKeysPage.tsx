@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { KeyRound, Plus } from 'lucide-react';
+import { toast } from 'sonner';
 import { useSSHKeys, useDeleteSSHKey } from '@/hooks/useSSHKeys';
 import { useNodes } from '@/hooks/useNodes';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -140,7 +141,17 @@ export function SSHKeysPage() {
         }
         confirmLabel="Delete"
         variant="destructive"
-        onConfirm={() => deleteSSHKey.mutate(deleteDialog.id)}
+        loading={deleteSSHKey.isPending}
+        onConfirm={() => deleteSSHKey.mutate(deleteDialog.id, {
+          onSuccess: () => {
+            setDeleteDialog((prev) => ({ ...prev, open: false }));
+            toast.success(`SSH key "${deleteDialog.name}" deleted`);
+          },
+          onError: (err) => {
+            setDeleteDialog((prev) => ({ ...prev, open: false }));
+            toast.error(`Failed to delete SSH key: ${err.message}`);
+          },
+        })}
       />
     </div>
   );

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/artpar/hoster/internal/core/auth"
@@ -205,6 +206,19 @@ func (r CloudCredentialResource) Delete(id string, req api2go.Request) (api2go.R
 	if !auth.CanManageCloudCredential(authCtx, *cred) {
 		return &Response{Code: http.StatusForbidden}, api2go.NewHTTPError(
 			fmt.Errorf("not authorized"), "Not authorized to delete this credential", http.StatusForbidden)
+	}
+
+	// Check if any active provisions are using this credential
+	provisions, err := r.Store.ListCloudProvisionsByCredential(ctx, cred.ID)
+	if err == nil && len(provisions) > 0 {
+		names := make([]string, 0, len(provisions))
+		for _, p := range provisions {
+			names = append(names, p.InstanceName)
+		}
+		return &Response{Code: http.StatusConflict}, api2go.NewHTTPError(
+			fmt.Errorf("credential in use by active cloud servers: %s", strings.Join(names, ", ")),
+			fmt.Sprintf("Cannot delete credential: used by active cloud servers (%s)", strings.Join(names, ", ")),
+			http.StatusConflict)
 	}
 
 	if err := r.Store.DeleteCloudCredential(ctx, id); err != nil {

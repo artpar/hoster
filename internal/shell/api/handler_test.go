@@ -329,6 +329,15 @@ func (s *stubStore) ListCloudProvisionsByCreator(ctx context.Context, creatorID 
 func (s *stubStore) ListActiveProvisions(ctx context.Context) ([]domain.CloudProvision, error) {
 	return nil, nil
 }
+func (s *stubStore) ListCloudProvisionsByCredential(ctx context.Context, credentialID int) ([]domain.CloudProvision, error) {
+	return nil, nil
+}
+func (s *stubStore) ListDeploymentsByNode(ctx context.Context, nodeRefID string) ([]domain.Deployment, error) {
+	return nil, nil
+}
+func (s *stubStore) ListNodesBySSHKey(ctx context.Context, sshKeyID int) ([]domain.Node, error) {
+	return nil, nil
+}
 
 // stubDocker implements docker.Client for testing.
 type stubDocker struct {

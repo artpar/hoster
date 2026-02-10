@@ -17,6 +17,7 @@ interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   variant?: 'default' | 'destructive';
+  loading?: boolean;
   onConfirm: () => void;
   onCancel?: () => void;
   children?: ReactNode;
@@ -30,13 +31,13 @@ export function ConfirmDialog({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   variant = 'default',
+  loading = false,
   onConfirm,
   onCancel,
   children,
 }: ConfirmDialogProps) {
   const handleConfirm = () => {
     onConfirm();
-    onOpenChange(false);
   };
 
   const handleCancel = () => {
@@ -45,7 +46,9 @@ export function ConfirmDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(isOpen) => {
+      if (!loading) onOpenChange(isOpen);
+    }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -53,14 +56,15 @@ export function ConfirmDialog({
         </DialogHeader>
         {children}
         <DialogFooter>
-          <Button variant="outline" onClick={handleCancel}>
+          <Button variant="outline" onClick={handleCancel} disabled={loading}>
             {cancelLabel}
           </Button>
           <Button
             variant={variant === 'destructive' ? 'destructive' : 'default'}
             onClick={handleConfirm}
+            disabled={loading}
           >
-            {confirmLabel}
+            {loading ? 'Deleting...' : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>
