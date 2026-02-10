@@ -1,17 +1,12 @@
 import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { useCreateCloudCredential } from '@/hooks/useCloudCredentials';
 import { Button } from '@/components/ui/Button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/Dialog';
 import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/Label';
 import { Select } from '@/components/ui/Select';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 
 const providerOptions = [
   { value: 'aws', label: 'AWS' },
@@ -19,12 +14,8 @@ const providerOptions = [
   { value: 'hetzner', label: 'Hetzner' },
 ];
 
-interface AddCredentialDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}
-
-export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogProps) {
+export function AddCredentialForm() {
+  const navigate = useNavigate();
   const createCredential = useCreateCloudCredential();
 
   const [name, setName] = useState('');
@@ -37,16 +28,6 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
   const [secretAccessKey, setSecretAccessKey] = useState('');
   // DO / Hetzner fields
   const [apiToken, setApiToken] = useState('');
-
-  const resetForm = () => {
-    setName('');
-    setProvider('aws');
-    setDefaultRegion('');
-    setAccessKeyId('');
-    setSecretAccessKey('');
-    setApiToken('');
-    setError(null);
-  };
 
   const handleCreate = async () => {
     setError(null);
@@ -83,30 +64,30 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
         credentials,
         default_region: defaultRegion.trim() || undefined,
       });
-      onOpenChange(false);
-      resetForm();
+      navigate('/nodes/credentials');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create credential');
     }
   };
 
-  const handleClose = () => {
-    if (!createCredential.isPending) {
-      onOpenChange(false);
-    }
-  };
-
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Add Cloud Credential</DialogTitle>
-          <DialogDescription>
-            Store API credentials for a cloud provider. Credentials are encrypted before storage.
-          </DialogDescription>
-        </DialogHeader>
+    <Card>
+      <CardHeader>
+        <Link
+          to="/nodes/credentials"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to credentials
+        </Link>
+        <CardTitle>Add Cloud Credential</CardTitle>
+        <CardDescription>
+          Store API credentials for a cloud provider. Credentials are encrypted before storage.
+        </CardDescription>
+      </CardHeader>
 
-        <div className="grid gap-4 py-4">
+      <CardContent>
+        <div className="grid gap-4 max-w-lg">
           {/* Name */}
           <div className="grid gap-2">
             <Label htmlFor="cred-name">Name</Label>
@@ -193,17 +174,18 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
               {error}
             </div>
           )}
-        </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={createCredential.isPending}>
-            Cancel
-          </Button>
-          <Button onClick={handleCreate} disabled={createCredential.isPending}>
-            {createCredential.isPending ? 'Adding...' : 'Add Credential'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          {/* Actions */}
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" onClick={() => navigate('/nodes/credentials')} disabled={createCredential.isPending}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreate} disabled={createCredential.isPending}>
+              {createCredential.isPending ? 'Adding...' : 'Add Credential'}
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

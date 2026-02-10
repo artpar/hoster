@@ -9,6 +9,10 @@ import { MyDeploymentsPage } from '@/pages/deployments/MyDeploymentsPage';
 import { DeploymentDetailPage } from '@/pages/deployments/DeploymentDetailPage';
 import { CreatorDashboardPage } from '@/pages/creator/CreatorDashboardPage';
 import { MyNodesPage } from '@/pages/nodes/MyNodesPage';
+import { NodesTab, AddNodeForm, AddSSHKeyForm } from '@/components/nodes';
+import { CloudServersTab, CredentialsTab } from '@/components/nodes';
+import { ProvisionNodeForm } from '@/components/cloud';
+import { AddCredentialForm } from '@/components/cloud';
 import { SSHKeysPage } from '@/pages/ssh-keys/SSHKeysPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
@@ -55,7 +59,15 @@ export default function App() {
               <MyNodesPage />
             </ProtectedRoute>
           }
-        />
+        >
+          <Route index element={<NodesTab />} />
+          <Route path="new" element={<AddNodeForm />} />
+          <Route path="new-key" element={<AddSSHKeyForm />} />
+          <Route path="cloud" element={<CloudServersTab />} />
+          <Route path="cloud/new" element={<ProvisionNodeForm />} />
+          <Route path="credentials" element={<CredentialsTab />} />
+          <Route path="credentials/new" element={<AddCredentialForm />} />
+        </Route>
         <Route
           path="ssh-keys"
           element={

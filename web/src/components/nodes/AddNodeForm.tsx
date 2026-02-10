@@ -1,26 +1,13 @@
 import { useState } from 'react';
-import { Plus, Key } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Plus, Key } from 'lucide-react';
 import { useCreateNode } from '@/hooks/useNodes';
 import { useSSHKeys } from '@/hooks/useSSHKeys';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/Label';
 import { Select } from '@/components/ui/Select';
-
-interface AddNodeDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSuccess?: (nodeId: string) => void;
-  onAddSSHKey?: () => void;
-}
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 
 const STANDARD_CAPABILITIES = [
   'standard',
@@ -31,12 +18,8 @@ const STANDARD_CAPABILITIES = [
   'nvme',
 ];
 
-export function AddNodeDialog({
-  open,
-  onOpenChange,
-  onSuccess,
-  onAddSSHKey,
-}: AddNodeDialogProps) {
+export function AddNodeForm() {
+  const navigate = useNavigate();
   const createNode = useCreateNode();
   const { data: sshKeys } = useSSHKeys();
 
@@ -60,7 +43,6 @@ export function AddNodeDialog({
   const handleCreate = async () => {
     setError(null);
 
-    // Validate
     if (!name.trim()) {
       setError('Node name is required');
       return;
@@ -93,7 +75,7 @@ export function AddNodeDialog({
     }
 
     try {
-      const node = await createNode.mutateAsync({
+      await createNode.mutateAsync({
         name: name.trim(),
         ssh_host: sshHost.trim(),
         ssh_port: port,
@@ -104,26 +86,9 @@ export function AddNodeDialog({
         location: location.trim() || undefined,
         base_domain: baseDomain.trim() || undefined,
       });
-      onOpenChange(false);
-      onSuccess?.(node.id);
-      // Reset form
-      setName('');
-      setSshHost('');
-      setSshPort('22');
-      setSshUser('');
-      setSshKeyId('');
-      setDockerSocket('/var/run/docker.sock');
-      setLocation('');
-      setBaseDomain('');
-      setCapabilities(['standard']);
+      navigate('/nodes');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create node');
-    }
-  };
-
-  const handleClose = () => {
-    if (!createNode.isPending) {
-      onOpenChange(false);
     }
   };
 
@@ -136,17 +101,24 @@ export function AddNodeDialog({
   ];
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[600px]">
-        <DialogHeader>
-          <DialogTitle>Add Worker Node</DialogTitle>
-          <DialogDescription>
-            Register a VPS server to run deployments. The server must have Docker installed and be
-            accessible via SSH.
-          </DialogDescription>
-        </DialogHeader>
+    <Card>
+      <CardHeader>
+        <Link
+          to="/nodes"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to nodes
+        </Link>
+        <CardTitle>Add Worker Node</CardTitle>
+        <CardDescription>
+          Register a VPS server to run deployments. The server must have Docker installed and be
+          accessible via SSH.
+        </CardDescription>
+      </CardHeader>
 
-        <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto">
+      <CardContent>
+        <div className="grid gap-4 max-w-lg">
           {/* Node Name */}
           <div className="grid gap-2">
             <Label htmlFor="name">Node Name</Label>
@@ -211,15 +183,13 @@ export function AddNodeDialog({
                 disabled={createNode.isPending}
                 className="flex-1"
               />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onAddSSHKey}
-                disabled={createNode.isPending}
+              <Link
+                to="/nodes/new-key"
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
               >
-                <Key className="mr-2 h-4 w-4" />
+                <Key className="h-4 w-4" />
                 Add Key
-              </Button>
+              </Link>
             </div>
           </div>
 
@@ -293,22 +263,23 @@ export function AddNodeDialog({
               {error}
             </div>
           )}
-        </div>
 
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={handleClose}
-            disabled={createNode.isPending}
-          >
-            Cancel
-          </Button>
-          <Button onClick={handleCreate} disabled={createNode.isPending}>
-            <Plus className="mr-2 h-4 w-4" />
-            {createNode.isPending ? 'Adding...' : 'Add Node'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          {/* Actions */}
+          <div className="flex gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => navigate('/nodes')}
+              disabled={createNode.isPending}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleCreate} disabled={createNode.isPending}>
+              <Plus className="mr-2 h-4 w-4" />
+              {createNode.isPending ? 'Adding...' : 'Add Node'}
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

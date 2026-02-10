@@ -1,25 +1,16 @@
 import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { useCloudCredentials, useProviderRegions, useProviderSizes } from '@/hooks/useCloudCredentials';
 import { useCreateCloudProvision } from '@/hooks/useCloudProvisions';
 import { Button } from '@/components/ui/Button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/Dialog';
 import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/Label';
 import { Select } from '@/components/ui/Select';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 
-interface ProvisionNodeDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}
-
-export function ProvisionNodeDialog({ open, onOpenChange }: ProvisionNodeDialogProps) {
+export function ProvisionNodeForm() {
+  const navigate = useNavigate();
   const { data: credentials } = useCloudCredentials();
   const createProvision = useCreateCloudProvision();
 
@@ -50,14 +41,6 @@ export function ProvisionNodeDialog({ open, onOpenChange }: ProvisionNodeDialogP
     })) || []),
   ];
 
-  const resetForm = () => {
-    setCredentialId('');
-    setInstanceName('');
-    setRegion('');
-    setSize('');
-    setError(null);
-  };
-
   const handleCreate = async () => {
     setError(null);
 
@@ -85,30 +68,30 @@ export function ProvisionNodeDialog({ open, onOpenChange }: ProvisionNodeDialogP
         region,
         size,
       });
-      onOpenChange(false);
-      resetForm();
+      navigate('/nodes/cloud');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create provision');
     }
   };
 
-  const handleClose = () => {
-    if (!createProvision.isPending) {
-      onOpenChange(false);
-    }
-  };
-
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Create Cloud Server</DialogTitle>
-          <DialogDescription>
-            Create a new server instance on a cloud provider. It will be automatically configured and registered as a node.
-          </DialogDescription>
-        </DialogHeader>
+    <Card>
+      <CardHeader>
+        <Link
+          to="/nodes/cloud"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to cloud servers
+        </Link>
+        <CardTitle>Create Cloud Server</CardTitle>
+        <CardDescription>
+          Create a new server instance on a cloud provider. It will be automatically configured and registered as a node.
+        </CardDescription>
+      </CardHeader>
 
-        <div className="grid gap-4 py-4">
+      <CardContent>
+        <div className="grid gap-4 max-w-lg">
           {/* Credential */}
           <div className="grid gap-2">
             <Label htmlFor="prov-credential">Cloud Credential</Label>
@@ -123,6 +106,14 @@ export function ProvisionNodeDialog({ open, onOpenChange }: ProvisionNodeDialogP
               }}
               disabled={createProvision.isPending}
             />
+            {credentials?.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No credentials yet.{' '}
+                <Link to="/nodes/credentials/new" className="text-primary hover:underline">
+                  Add one first
+                </Link>
+              </p>
+            )}
           </div>
 
           {/* Instance Name */}
@@ -167,17 +158,18 @@ export function ProvisionNodeDialog({ open, onOpenChange }: ProvisionNodeDialogP
               {error}
             </div>
           )}
-        </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={createProvision.isPending}>
-            Cancel
-          </Button>
-          <Button onClick={handleCreate} disabled={createProvision.isPending}>
-            {createProvision.isPending ? 'Provisioning...' : 'Create Server'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          {/* Actions */}
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" onClick={() => navigate('/nodes/cloud')} disabled={createProvision.isPending}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreate} disabled={createProvision.isPending}>
+              {createProvision.isPending ? 'Provisioning...' : 'Create Server'}
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

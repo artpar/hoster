@@ -1,4 +1,3 @@
-export { AddCredentialDialog } from './AddCredentialDialog';
-export { ProvisionNodeDialog } from './ProvisionNodeDialog';
-export { ManageCredentialsDialog } from './ManageCredentialsDialog';
+export { ProvisionNodeForm } from './ProvisionNodeForm';
+export { AddCredentialForm } from './AddCredentialForm';
 export { provisionStatusBadge } from './provisionStatusBadge';
