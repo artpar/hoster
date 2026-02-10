@@ -102,7 +102,12 @@ func setup() int {
 	}
 
 	// 6. Create HTTP handler
-	handler := api.NewHandler(testStore, testDocker, nil, "apps.localhost", tmpDir+"/configs")
+	handler := api.SetupAPI(api.APIConfig{
+		Store:      testStore,
+		Docker:     testDocker,
+		BaseDomain: "apps.localhost",
+		ConfigDir:  tmpDir + "/configs",
+	})
 	log.Println("E2E Setup: HTTP handler created")
 
 	// 7. Find an available port
@@ -117,7 +122,7 @@ func setup() int {
 
 	// 8. Create HTTP server
 	testServer = &http.Server{
-		Handler: handler.Routes(),
+		Handler: handler,
 	}
 
 	// 9. Start server in goroutine
