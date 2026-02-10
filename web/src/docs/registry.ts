@@ -115,7 +115,7 @@ export const pages: Record<
   },
   marketplace: {
     title: 'Marketplace',
-    subtitle: 'Browse and deploy pre-configured application templates. Each includes all services, databases, and configuration needed to run.',
+    subtitle: 'Browse and deploy ready-to-run application stacks. Each template is a complete app you can launch with one click.',
     sections: {
       howItWorks: {
         label: 'How It Works',

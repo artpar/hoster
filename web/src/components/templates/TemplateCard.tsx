@@ -1,10 +1,31 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Box, Edit, Trash2, Send } from 'lucide-react';
+import {
+  Globe,
+  Activity,
+  Code2,
+  Workflow,
+  BarChart3,
+  Box,
+  Edit,
+  Trash2,
+  Send,
+} from 'lucide-react';
 import type { Template } from '@/api/types';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { usePublishTemplate, useDeleteTemplate } from '@/hooks/useTemplates';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { cn } from '@/lib/cn';
+
+const categoryStyle: Record<string, { icon: typeof Box; bg: string; fg: string }> = {
+  web:         { icon: Globe,      bg: 'bg-emerald-50', fg: 'text-emerald-600' },
+  monitoring:  { icon: Activity,   bg: 'bg-rose-50',    fg: 'text-rose-600' },
+  development: { icon: Code2,      bg: 'bg-sky-50',     fg: 'text-sky-600' },
+  automation:  { icon: Workflow,    bg: 'bg-orange-50',  fg: 'text-orange-600' },
+  analytics:   { icon: BarChart3,  bg: 'bg-indigo-50',  fg: 'text-indigo-600' },
+};
+
+const defaultStyle = { icon: Box, bg: 'bg-gray-50', fg: 'text-gray-600' };
 
 interface TemplateCardProps {
   template: Template;
@@ -32,28 +53,38 @@ export function TemplateCard({ template, showActions = false }: TemplateCardProp
     await deleteTemplate.mutateAsync(template.id);
   };
 
-  const price = template.attributes.price_monthly_cents === 0
+  const cat = template.attributes.category || '';
+  const style = categoryStyle[cat] || defaultStyle;
+  const Icon = style.icon;
+
+  const priceCents = template.attributes.price_monthly_cents;
+  const priceLabel = priceCents === 0
     ? 'Free'
-    : `$${(template.attributes.price_monthly_cents / 100).toFixed(2)}`;
+    : `$${(priceCents / 100).toFixed(2)}`;
 
   const resources = template.attributes.resource_requirements;
+  const isDraft = !template.attributes.published;
 
   return (
     <Link
       to={`/marketplace/${template.id}`}
-      className="flex items-center gap-4 rounded-lg border border-border bg-background px-5 py-4 transition-colors hover:bg-accent/40"
+      className="group flex items-center gap-4 rounded-lg border border-border bg-background px-5 py-3.5 transition-all hover:border-primary/20 hover:shadow-sm"
     >
-      {/* Icon */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10">
-        <Box className="h-5 w-5 text-primary" />
+      {/* Category icon */}
+      <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg', style.bg)}>
+        <Icon className={cn('h-5 w-5', style.fg)} />
       </div>
 
       {/* Name + description */}
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <h3 className="font-medium">{template.attributes.name}</h3>
-          <StatusBadge status={template.attributes.published ? 'published' : 'draft'} />
-          <span className="text-xs text-muted-foreground">v{template.attributes.version}</span>
+        <div className="flex items-baseline gap-2">
+          <h3 className="font-medium group-hover:text-primary transition-colors">
+            {template.attributes.name}
+          </h3>
+          {isDraft && <StatusBadge status="draft" />}
+          <span className="text-xs text-muted-foreground/60">
+            v{template.attributes.version}
+          </span>
         </div>
         <p className="mt-0.5 text-sm text-muted-foreground line-clamp-1">
           {template.attributes.description || 'No description available'}
@@ -62,16 +93,21 @@ export function TemplateCard({ template, showActions = false }: TemplateCardProp
 
       {/* Resources */}
       {resources && (
-        <div className="hidden shrink-0 items-center gap-3 text-xs text-muted-foreground lg:flex">
-          {resources.memory_mb > 0 && <span>{resources.memory_mb} MB</span>}
-          {resources.cpu_cores > 0 && <span>{resources.cpu_cores} CPU</span>}
+        <div className="hidden shrink-0 lg:flex">
+          <div className="flex items-center gap-1 rounded-md bg-muted/60 px-2.5 py-1 text-xs text-muted-foreground">
+            {resources.memory_mb > 0 && <span>{resources.memory_mb} MB</span>}
+            {resources.memory_mb > 0 && resources.cpu_cores > 0 && (
+              <span className="text-border">&middot;</span>
+            )}
+            {resources.cpu_cores > 0 && <span>{resources.cpu_cores} CPU</span>}
+          </div>
         </div>
       )}
 
       {/* Actions (app templates page) */}
       {showActions && (
         <div className="flex shrink-0 items-center gap-1.5">
-          {!template.attributes.published && (
+          {isDraft && (
             <button
               onClick={handlePublish}
               disabled={publishTemplate.isPending}
@@ -97,10 +133,10 @@ export function TemplateCard({ template, showActions = false }: TemplateCardProp
       )}
 
       {/* Price */}
-      <div className="shrink-0 text-right">
-        <p className="font-semibold">{price}</p>
-        {template.attributes.price_monthly_cents > 0 && (
-          <p className="text-xs text-muted-foreground">/month</p>
+      <div className="w-20 shrink-0 text-right">
+        <span className="text-sm font-semibold">{priceLabel}</span>
+        {priceCents > 0 && (
+          <span className="text-xs text-muted-foreground">/mo</span>
         )}
       </div>
 

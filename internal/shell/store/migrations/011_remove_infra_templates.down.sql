@@ -1,0 +1,1 @@
+-- Down migration is a no-op. Re-run migration 007 manually if these templates are needed again.

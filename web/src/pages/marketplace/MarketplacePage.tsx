@@ -12,14 +12,11 @@ import { pages } from '@/docs/registry';
 const pageDocs = pages.marketplace;
 
 const categoryMeta: Record<string, { label: string; order: number }> = {
-  database:    { label: 'Databases',   order: 1 },
-  cache:       { label: 'Caching',     order: 2 },
-  web:         { label: 'Web Apps',    order: 3 },
-  runtime:     { label: 'Runtimes',    order: 4 },
-  monitoring:  { label: 'Monitoring',  order: 5 },
-  development: { label: 'Dev Tools',   order: 6 },
-  automation:  { label: 'Automation',  order: 7 },
-  analytics:   { label: 'Analytics',   order: 8 },
+  web:         { label: 'Web Apps',    order: 1 },
+  monitoring:  { label: 'Monitoring',  order: 2 },
+  development: { label: 'Dev Tools',   order: 3 },
+  automation:  { label: 'Automation',  order: 4 },
+  analytics:   { label: 'Analytics',   order: 5 },
 };
 
 function categoryLabel(key: string): string {
@@ -113,7 +110,7 @@ export function MarketplacePage() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="text"
-            placeholder="Search databases, web apps, dev tools..."
+            placeholder="Search apps, tools, platforms..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
