@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Store, Layers, Server, KeyRound, LayoutDashboard } from 'lucide-react';
+import { Store, Layers, Server, KeyRound, LayoutDashboard, Package } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useIsAuthenticated } from '@/stores/authStore';
 
@@ -11,11 +11,12 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', requiresAuth: true },
   { to: '/marketplace', icon: Store, label: 'Marketplace' },
   { to: '/deployments', icon: Layers, label: 'My Deployments', requiresAuth: true },
+  { to: '/templates', icon: Package, label: 'App Templates', requiresAuth: true },
   { to: '/nodes', icon: Server, label: 'My Nodes', requiresAuth: true },
   { to: '/ssh-keys', icon: KeyRound, label: 'SSH Keys', requiresAuth: true },
-  { to: '/creator', icon: LayoutDashboard, label: 'Creator', requiresAuth: true },
 ];
 
 interface SidebarProps {

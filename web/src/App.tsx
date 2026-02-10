@@ -7,7 +7,8 @@ import { MarketplacePage } from '@/pages/marketplace/MarketplacePage';
 import { TemplateDetailPage } from '@/pages/marketplace/TemplateDetailPage';
 import { MyDeploymentsPage } from '@/pages/deployments/MyDeploymentsPage';
 import { DeploymentDetailPage } from '@/pages/deployments/DeploymentDetailPage';
-import { CreatorDashboardPage } from '@/pages/creator/CreatorDashboardPage';
+import { AppTemplatesPage } from '@/pages/templates/AppTemplatesPage';
+import { DashboardPage } from '@/pages/dashboard/DashboardPage';
 import { MyNodesPage } from '@/pages/nodes/MyNodesPage';
 import { NodesTab, AddNodeForm, AddSSHKeyForm } from '@/components/nodes';
 import { CloudServersTab, CredentialsTab } from '@/components/nodes';
@@ -28,6 +29,16 @@ export default function App() {
 
       {/* Main app routes with layout */}
       <Route element={<Layout />}>
+
+        {/* Dashboard - Requires Auth */}
+        <Route
+          path="dashboard"
+          element={
+            <ProtectedRoute>
+              <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Marketplace - Public */}
         <Route path="marketplace" element={<MarketplacePage />} />
@@ -76,12 +87,12 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        {/* Creator Dashboard - Requires Auth */}
+        {/* App Templates - Requires Auth */}
         <Route
-          path="creator"
+          path="templates"
           element={
             <ProtectedRoute>
-              <CreatorDashboardPage />
+              <AppTemplatesPage />
             </ProtectedRoute>
           }
         />

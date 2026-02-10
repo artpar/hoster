@@ -32,40 +32,45 @@ export function TemplateCard({ template, showActions = false }: TemplateCardProp
     await deleteTemplate.mutateAsync(template.id);
   };
 
+  const price = template.attributes.price_monthly_cents === 0
+    ? 'Free'
+    : `$${(template.attributes.price_monthly_cents / 100).toFixed(2)}`;
+
+  const resources = template.attributes.resource_requirements;
+
   return (
     <Link
       to={`/marketplace/${template.id}`}
-      className="block rounded-lg border border-border bg-background p-4 transition-shadow hover:shadow-md"
+      className="flex items-center gap-4 rounded-lg border border-border bg-background px-5 py-4 transition-colors hover:bg-accent/40"
     >
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10">
-          <Box className="h-5 w-5 text-primary" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="truncate font-medium">{template.attributes.name}</h3>
-            <StatusBadge status={template.attributes.published ? 'published' : 'draft'} />
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            v{template.attributes.version}
-          </p>
-        </div>
-        <div className="text-right">
-          <p className="font-semibold">
-            {template.attributes.price_monthly_cents === 0
-              ? 'Free'
-              : `$${(template.attributes.price_monthly_cents / 100).toFixed(2)}`}
-          </p>
-          <p className="text-xs text-muted-foreground">/month</p>
-        </div>
+      {/* Icon */}
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10">
+        <Box className="h-5 w-5 text-primary" />
       </div>
 
-      <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">
-        {template.attributes.description || 'No description available'}
-      </p>
+      {/* Name + description */}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <h3 className="font-medium">{template.attributes.name}</h3>
+          <StatusBadge status={template.attributes.published ? 'published' : 'draft'} />
+          <span className="text-xs text-muted-foreground">v{template.attributes.version}</span>
+        </div>
+        <p className="mt-0.5 text-sm text-muted-foreground line-clamp-1">
+          {template.attributes.description || 'No description available'}
+        </p>
+      </div>
 
+      {/* Resources */}
+      {resources && (
+        <div className="hidden shrink-0 items-center gap-3 text-xs text-muted-foreground lg:flex">
+          {resources.memory_mb > 0 && <span>{resources.memory_mb} MB</span>}
+          {resources.cpu_cores > 0 && <span>{resources.cpu_cores} CPU</span>}
+        </div>
+      )}
+
+      {/* Actions (app templates page) */}
       {showActions && (
-        <div className="mt-4 flex gap-2 border-t border-border pt-4">
+        <div className="flex shrink-0 items-center gap-1.5">
           {!template.attributes.published && (
             <button
               onClick={handlePublish}
@@ -90,6 +95,14 @@ export function TemplateCard({ template, showActions = false }: TemplateCardProp
           </button>
         </div>
       )}
+
+      {/* Price */}
+      <div className="shrink-0 text-right">
+        <p className="font-semibold">{price}</p>
+        {template.attributes.price_monthly_cents > 0 && (
+          <p className="text-xs text-muted-foreground">/month</p>
+        )}
+      </div>
 
       <ConfirmDialog
         open={deleteDialogOpen}

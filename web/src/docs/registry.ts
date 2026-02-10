@@ -84,9 +84,35 @@ export const logStreams: Record<'stdout' | 'stderr', DocEntry> = {
 
 // --- PAGE DOCUMENTATION ---
 export const pages: Record<
-  'marketplace' | 'templateDetail' | 'deployments' | 'deploymentDetail' | 'nodes' | 'sshKeys' | 'creator',
+  'dashboard' | 'marketplace' | 'templateDetail' | 'deployments' | 'deploymentDetail' | 'nodes' | 'sshKeys' | 'appTemplates',
   PageDoc
 > = {
+  dashboard: {
+    title: 'Dashboard',
+    subtitle: 'Overview of your deployments, templates, and infrastructure at a glance.',
+    sections: {
+      totalDeployments: {
+        label: 'Total Deployments',
+        description: 'All deployment instances you have created, across all templates.',
+      },
+      appTemplates: {
+        label: 'App Templates',
+        description: 'Templates you have created for the marketplace.',
+      },
+      nodes: {
+        label: 'Nodes',
+        description: 'Server nodes registered for running deployments.',
+      },
+      monthlyRevenue: {
+        label: 'Monthly Revenue',
+        description: 'Sum of monthly prices across all currently running deployments of your templates.',
+      },
+    },
+    emptyState: {
+      label: 'Nothing here yet',
+      description: 'Deploy an app from the marketplace or create a template to get started.',
+    },
+  },
   marketplace: {
     title: 'Marketplace',
     subtitle: 'Browse and deploy pre-configured application templates. Each includes all services, databases, and configuration needed to run.',
@@ -102,7 +128,7 @@ export const pages: Record<
     },
     emptyState: {
       label: 'No templates available',
-      description: 'Check back later for new templates, or go to the Creator Dashboard to publish your own.',
+      description: 'Check back later for new templates, or go to App Templates to publish your own.',
     },
   },
   templateDetail: {
@@ -208,46 +234,13 @@ export const pages: Record<
       description: 'SSH keys authenticate Hoster to your servers without passwords. Generate a key pair with ssh-keygen, add the private key here, and place the public key on your server.',
     },
   },
-  creator: {
-    title: 'Creator Dashboard',
-    subtitle: 'Create deployment templates that others can launch with one click.',
-    sections: {
-      totalTemplates: {
-        label: 'Total Templates',
-        description: 'All templates you have created, regardless of status.',
-      },
-      totalDeployments: {
-        label: 'Total Deployments',
-        description: 'How many times users have deployed any of your templates.',
-      },
-      monthlyRevenue: {
-        label: 'Monthly Revenue',
-        description: 'Sum of monthly prices across all currently running deployments of your templates.',
-      },
-      published: {
-        label: 'Published',
-        description: 'Templates visible in the marketplace. Drafts are only visible to you until published.',
-      },
-      lifecycle: {
-        label: 'Template Lifecycle',
-        description: 'Templates start as drafts, visible only to you. Publish to make available in the marketplace.',
-      },
-      composeGuide: {
-        label: 'Writing a Good Compose Spec',
-        description: 'Define services in standard docker-compose format. All Docker images must be publicly available. Include sensible defaults for environment variables.',
-      },
-      versioning: {
-        label: 'Versioning',
-        description: 'Use semantic versioning (X.Y.Z). Major for breaking changes, minor for features, patch for fixes.',
-      },
-      pricing: {
-        label: 'Pricing',
-        description: 'Set a fair monthly price based on resources consumed. Free templates attract more users.',
-      },
-    },
+  appTemplates: {
+    title: 'App Templates',
+    subtitle: 'Create and manage deployment templates. Define docker-compose specs, set pricing, and publish to the marketplace.',
+    sections: {},
     emptyState: {
       label: 'No templates yet',
-      description: 'Create your first template to start earning. Define a docker-compose spec, set a price, and publish.',
+      description: 'Create your first template. Define a docker-compose spec, set a price, and publish to the marketplace.',
     },
   },
 };

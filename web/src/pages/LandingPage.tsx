@@ -110,7 +110,7 @@ export function LandingPage() {
               <Button variant="ghost">Marketplace</Button>
             </Link>
             {isAuthenticated ? (
-              <Link to="/deployments">
+              <Link to="/dashboard">
                 <Button>Dashboard</Button>
               </Link>
             ) : (

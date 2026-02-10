@@ -1,81 +1,91 @@
 import { useState, useMemo } from 'react';
-import { Store, Search, SlidersHorizontal, ArrowUpDown } from 'lucide-react';
+import { Store, Search } from 'lucide-react';
 import { useTemplates } from '@/hooks/useTemplates';
 import { LoadingPage } from '@/components/common/LoadingSpinner';
 import { EmptyState } from '@/components/common/EmptyState';
 import { TemplateCard } from '@/components/templates/TemplateCard';
 import { Input } from '@/components/ui/Input';
-import { Select } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
+import { cn } from '@/lib/cn';
 import { pages } from '@/docs/registry';
 
 const pageDocs = pages.marketplace;
 
-type SortOption = 'name' | 'price_asc' | 'price_desc' | 'newest';
-type PriceFilter = 'all' | 'free' | 'paid';
+const categoryMeta: Record<string, { label: string; order: number }> = {
+  database:    { label: 'Databases',   order: 1 },
+  cache:       { label: 'Caching',     order: 2 },
+  web:         { label: 'Web Apps',    order: 3 },
+  runtime:     { label: 'Runtimes',    order: 4 },
+  monitoring:  { label: 'Monitoring',  order: 5 },
+  development: { label: 'Dev Tools',   order: 6 },
+  automation:  { label: 'Automation',  order: 7 },
+  analytics:   { label: 'Analytics',   order: 8 },
+};
+
+function categoryLabel(key: string): string {
+  return categoryMeta[key]?.label ?? key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+function categoryOrder(key: string): number {
+  return categoryMeta[key]?.order ?? 99;
+}
 
 export function MarketplacePage() {
   const { data: templates, isLoading, error } = useTemplates();
-
-  // Search and filter state
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<SortOption>('newest');
-  const [priceFilter, setPriceFilter] = useState<PriceFilter>('all');
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
-  // Filter and sort templates
-  const filteredTemplates = useMemo(() => {
+  // Published templates only
+  const published = useMemo(() => {
     if (!templates) return [];
+    return templates.filter((t) => t.attributes.published === true);
+  }, [templates]);
 
-    // Start with published templates only
-    let result = templates.filter((t) => t.attributes.published === true);
+  // Unique categories sorted by defined order
+  const categories = useMemo(() => {
+    const cats = new Set(published.map((t) => t.attributes.category).filter(Boolean) as string[]);
+    return [...cats].sort((a, b) => categoryOrder(a) - categoryOrder(b));
+  }, [published]);
 
-    // Apply search filter
+  // Apply search + category filter
+  const filtered = useMemo(() => {
+    let result = published;
+
+    if (activeCategory) {
+      result = result.filter((t) => t.attributes.category === activeCategory);
+    }
+
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+      const q = searchQuery.toLowerCase();
       result = result.filter(
         (t) =>
-          t.attributes.name.toLowerCase().includes(query) ||
-          (t.attributes.description ?? '').toLowerCase().includes(query)
+          t.attributes.name.toLowerCase().includes(q) ||
+          (t.attributes.description ?? '').toLowerCase().includes(q) ||
+          (t.attributes.category ?? '').toLowerCase().includes(q)
       );
     }
 
-    // Apply price filter
-    if (priceFilter === 'free') {
-      result = result.filter((t) => t.attributes.price_monthly_cents === 0);
-    } else if (priceFilter === 'paid') {
-      result = result.filter((t) => t.attributes.price_monthly_cents > 0);
-    }
-
-    // Apply sorting
-    switch (sortBy) {
-      case 'name':
-        result.sort((a, b) => a.attributes.name.localeCompare(b.attributes.name));
-        break;
-      case 'price_asc':
-        result.sort((a, b) => a.attributes.price_monthly_cents - b.attributes.price_monthly_cents);
-        break;
-      case 'price_desc':
-        result.sort((a, b) => b.attributes.price_monthly_cents - a.attributes.price_monthly_cents);
-        break;
-      case 'newest':
-        result.sort(
-          (a, b) =>
-            new Date(b.attributes.created_at).getTime() -
-            new Date(a.attributes.created_at).getTime()
-        );
-        break;
-    }
-
     return result;
-  }, [templates, searchQuery, sortBy, priceFilter]);
+  }, [published, searchQuery, activeCategory]);
+
+  // Group by category for the browse view (no search, no category filter)
+  const isBrowseView = !searchQuery.trim() && !activeCategory;
+
+  const grouped = useMemo(() => {
+    if (!isBrowseView) return [];
+    const map = new Map<string, typeof filtered>();
+    for (const t of filtered) {
+      const cat = t.attributes.category || 'other';
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(t);
+    }
+    return [...map.entries()].sort(([a], [b]) => categoryOrder(a) - categoryOrder(b));
+  }, [filtered, isBrowseView]);
 
   const clearFilters = () => {
     setSearchQuery('');
-    setSortBy('newest');
-    setPriceFilter('all');
+    setActiveCategory(null);
   };
-
-  const hasActiveFilters = searchQuery || sortBy !== 'newest' || priceFilter !== 'all';
 
   if (isLoading) {
     return <LoadingPage />;
@@ -89,79 +99,59 @@ export function MarketplacePage() {
     );
   }
 
-  const totalPublished = templates?.filter((t) => t.attributes.published === true).length ?? 0;
-
   return (
     <div>
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-2">
         <h1 className="text-2xl font-bold">{pageDocs.title}</h1>
-        <p className="text-muted-foreground">
-          {pageDocs.subtitle}
-        </p>
+        <p className="text-muted-foreground">{pageDocs.subtitle}</p>
       </div>
 
-      {/* Search and Filters */}
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center">
-        {/* Search Input */}
-        <div className="relative flex-1">
+      {/* Search */}
+      <div className="mb-4">
+        <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="text"
-            placeholder="Search templates..."
+            placeholder="Search databases, web apps, dev tools..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
           />
         </div>
-
-        {/* Sort Dropdown */}
-        <div className="flex items-center gap-2">
-          <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
-          <Select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as SortOption)}
-            options={[
-              { value: 'newest', label: 'Newest First' },
-              { value: 'name', label: 'Name (A-Z)' },
-              { value: 'price_asc', label: 'Price: Low to High' },
-              { value: 'price_desc', label: 'Price: High to Low' },
-            ]}
-            className="w-44"
-          />
-        </div>
-
-        {/* Price Filter */}
-        <div className="flex items-center gap-2">
-          <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
-          <Select
-            value={priceFilter}
-            onChange={(e) => setPriceFilter(e.target.value as PriceFilter)}
-            options={[
-              { value: 'all', label: 'All Prices' },
-              { value: 'free', label: 'Free Only' },
-              { value: 'paid', label: 'Paid Only' },
-            ]}
-            className="w-32"
-          />
-        </div>
-
-        {/* Clear Filters */}
-        {hasActiveFilters && (
-          <Button variant="ghost" size="sm" onClick={clearFilters}>
-            Clear Filters
-          </Button>
-        )}
       </div>
 
-      {/* Results Count */}
-      <div className="mb-4 text-sm text-muted-foreground">
-        Showing {filteredTemplates.length} of {totalPublished} templates
-        {searchQuery && ` matching "${searchQuery}"`}
+      {/* Category Pills */}
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => setActiveCategory(null)}
+          className={cn(
+            'rounded-full px-3 py-1 text-sm transition-colors',
+            !activeCategory
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+          )}
+        >
+          All
+        </button>
+        {categories.map((cat) => (
+          <button
+            key={cat}
+            onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}
+            className={cn(
+              'rounded-full px-3 py-1 text-sm transition-colors',
+              activeCategory === cat
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+            )}
+          >
+            {categoryLabel(cat)}
+          </button>
+        ))}
       </div>
 
-      {/* Template Grid */}
-      {filteredTemplates.length === 0 ? (
+      {/* Results */}
+      {filtered.length === 0 ? (
         <EmptyState
           icon={Store}
           title={searchQuery ? 'No matching templates' : pageDocs.emptyState.label}
@@ -171,19 +161,47 @@ export function MarketplacePage() {
               : pageDocs.emptyState.description
           }
           action={
-            hasActiveFilters
-              ? {
-                  label: 'Clear Filters',
-                  onClick: clearFilters,
-                }
+            (searchQuery || activeCategory)
+              ? { label: 'Clear Filters', onClick: clearFilters }
               : undefined
           }
         />
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredTemplates.map((template) => (
-            <TemplateCard key={template.id} template={template} />
+      ) : isBrowseView ? (
+        /* Grouped browse view */
+        <div className="space-y-8">
+          {grouped.map(([cat, items]) => (
+            <section key={cat}>
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-lg font-semibold">{categoryLabel(cat)}</h2>
+                <span className="text-sm text-muted-foreground">
+                  {items.length} template{items.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+              <div className="flex flex-col gap-2">
+                {items.map((template) => (
+                  <TemplateCard key={template.id} template={template} />
+                ))}
+              </div>
+            </section>
           ))}
+        </div>
+      ) : (
+        /* Flat filtered view */
+        <div>
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">
+              {filtered.length} result{filtered.length !== 1 ? 's' : ''}
+              {searchQuery && <> matching &ldquo;{searchQuery}&rdquo;</>}
+            </span>
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              Clear
+            </Button>
+          </div>
+          <div className="flex flex-col gap-2">
+            {filtered.map((template) => (
+              <TemplateCard key={template.id} template={template} />
+            ))}
+          </div>
         </div>
       )}
     </div>
