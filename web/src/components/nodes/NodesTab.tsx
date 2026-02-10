@@ -39,7 +39,7 @@ export function NodesTab() {
     if (!node) return;
 
     const provision = findProvisionForNode(node.attributes.provision_id);
-    if (provision) {
+    if (provision && provision.attributes.status !== 'destroyed') {
       setDestroyProvisionDialog({ open: true, id: provision.id, name: node.attributes.name });
     } else {
       setDeleteNodeDialog({ open: true, id: nodeId, name: node.attributes.name });
