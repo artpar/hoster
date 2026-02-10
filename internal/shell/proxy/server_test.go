@@ -112,6 +112,15 @@ func (m *mockStore) ListCloudProvisionsByCreator(ctx context.Context, creatorID 
 func (m *mockStore) ListActiveProvisions(ctx context.Context) ([]domain.CloudProvision, error) {
 	return nil, nil
 }
+func (m *mockStore) ListCloudProvisionsByCredential(ctx context.Context, credentialID int) ([]domain.CloudProvision, error) {
+	return nil, nil
+}
+func (m *mockStore) ListDeploymentsByNode(ctx context.Context, nodeRefID string) ([]domain.Deployment, error) {
+	return nil, nil
+}
+func (m *mockStore) ListNodesBySSHKey(ctx context.Context, sshKeyID int) ([]domain.Node, error) {
+	return nil, nil
+}
 func (m *mockStore) ResolveUser(ctx context.Context, referenceID, email, name, planID string) (int, error) {
 	return 1, nil
 }
