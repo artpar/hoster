@@ -149,6 +149,8 @@ func (p *Provisioner) processProvision(ctx context.Context, prov *domain.CloudPr
 		p.stepConfigureInstance(ctx, prov, logger)
 	case domain.ProvisionStatusConfiguring:
 		p.stepFinalize(ctx, prov, logger)
+	case domain.ProvisionStatusDestroying:
+		p.stepDestroyInstance(ctx, prov, logger)
 	}
 }
 
@@ -299,6 +301,53 @@ func (p *Provisioner) stepFinalize(ctx context.Context, prov *domain.CloudProvis
 	p.store.UpdateCloudProvision(ctx, prov)
 
 	logger.Info("provision complete", "node_id", node.ReferenceID, "ip", prov.PublicIP)
+}
+
+func (p *Provisioner) stepDestroyInstance(ctx context.Context, prov *domain.CloudProvision, logger *slog.Logger) {
+	logger.Info("starting instance destruction")
+
+	// If instance was never created, skip straight to destroyed
+	if prov.ProviderInstanceID == "" {
+		logger.Info("no provider instance to destroy, marking as destroyed")
+		prov.Transition(domain.ProvisionStatusDestroyed)
+		prov.SetStep("Destroyed (no instance to clean up)")
+		p.store.UpdateCloudProvision(ctx, prov)
+		return
+	}
+
+	// Get credentials to create provider client
+	cred, err := p.store.GetCloudCredential(ctx, prov.CredentialRefID)
+	if err != nil {
+		p.failProvision(ctx, prov, "failed to get credentials for destroy: "+err.Error(), logger)
+		return
+	}
+
+	decryptedCreds, err := crypto.DecryptSSHKey(cred.CredentialsEncrypted, p.encryptionKey)
+	if err != nil {
+		p.failProvision(ctx, prov, "failed to decrypt credentials for destroy: "+err.Error(), logger)
+		return
+	}
+
+	cloudProvider, err := provider.NewProvider(string(prov.Provider), decryptedCreds, p.logger)
+	if err != nil {
+		p.failProvision(ctx, prov, "failed to create provider client for destroy: "+err.Error(), logger)
+		return
+	}
+
+	// Destroy the instance
+	prov.SetStep("Destroying cloud instance")
+	p.store.UpdateCloudProvision(ctx, prov)
+
+	if err := cloudProvider.DestroyInstance(ctx, prov.ProviderInstanceID); err != nil {
+		p.failProvision(ctx, prov, "failed to destroy instance: "+err.Error(), logger)
+		return
+	}
+
+	prov.Transition(domain.ProvisionStatusDestroyed)
+	prov.SetStep("Instance destroyed")
+	p.store.UpdateCloudProvision(ctx, prov)
+
+	logger.Info("instance destroyed", "instance_id", prov.ProviderInstanceID)
 }
 
 func (p *Provisioner) failProvision(ctx context.Context, prov *domain.CloudProvision, errMsg string, logger *slog.Logger) {

@@ -2371,7 +2371,7 @@ func (s *SQLiteStore) ListActiveProvisions(ctx context.Context) ([]domain.CloudP
 
 func listActiveProvisions(ctx context.Context, exec executor) ([]domain.CloudProvision, error) {
 	query := `SELECT ` + provisionSelectColumns + ` ` + provisionFromClause + `
-		WHERE p.status IN ('pending', 'creating', 'configuring')
+		WHERE p.status IN ('pending', 'creating', 'configuring', 'destroying')
 		ORDER BY p.created_at ASC`
 
 	var rows []cloudProvisionRow

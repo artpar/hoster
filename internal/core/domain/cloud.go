@@ -149,7 +149,7 @@ func (s ProvisionStatus) IsTerminal() bool {
 
 // IsActive returns true if the provisioning is still in progress.
 func (s ProvisionStatus) IsActive() bool {
-	return s == ProvisionStatusPending || s == ProvisionStatusCreating || s == ProvisionStatusConfiguring
+	return s == ProvisionStatusPending || s == ProvisionStatusCreating || s == ProvisionStatusConfiguring || s == ProvisionStatusDestroying
 }
 
 // validProvisionTransitions defines the allowed state transitions.
