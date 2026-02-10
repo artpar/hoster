@@ -335,104 +335,13 @@ make coverage       # Generate coverage report
 
 ## Production Testing (MANDATORY)
 
-**CRITICAL: Unit tests mean nothing if actual user experience is broken.**
-
-### Before ANY Production Deployment
-
-You MUST test as a real non-technical user on production (https://emptychair.dev):
-
-1. **Complete all user journeys** in `specs/user-journeys.md`
-2. **Use Chrome DevTools MCP** for manual testing automation
-3. **Document results** in a test report
-4. **Take screenshots** of critical flows
-5. **Verify no regressions** from previous version
-
-### User Journey Testing
-
-See `specs/user-journeys.md` for complete testing protocol. Key journeys to verify:
-
-- ✅ Journey 1: New User Signup & First Deployment
-- ✅ Journey 2: Returning User Login
-- ✅ Journey 3: Deploy Additional Template
-- ✅ Journey 4: Deployment Lifecycle Management
-- ✅ Journey 5: Exceed Plan Limits
-- ✅ Journey 6: Creator Template Publishing
-- ✅ Journey 7: Auth Persistence
-- ✅ Journey 8: Multi-User Privacy (CRITICAL - privacy enforcement)
-- ✅ Journey 9: Node Registration & Remote Deployment
-- ✅ Journey 10: Session Recovery After Expiry
-
-### Test Report Template
-
-```markdown
-## Production Test Report - v{VERSION}
-
-**Date:** {YYYY-MM-DD}
-**Environment:** https://emptychair.dev
-
-### Journey Results
-- [ ] All journeys from specs/user-journeys.md tested
-- [ ] No critical issues found
-- [ ] Privacy enforcement verified (Journey 8)
-- [ ] Auth persistence working (Journey 7)
-
-### Issues Found
-- None / {List issues}
-
-### Recommendation
-- [ ] PASS - Ready for production
-- [ ] FAIL - Blocking issues, DO NOT DEPLOY
-```
-
-### Never Deploy Without This
-
-If you deploy to production without manual user testing:
-1. You WILL break the user experience
-2. You WILL waste time debugging later
-3. You WILL lose user trust
-
-**Unit tests are necessary but not sufficient.**
+Before ANY production deployment: test all 10 user journeys in `specs/user-journeys.md` on https://emptychair.dev using Chrome DevTools MCP. Document results. **Unit tests are necessary but not sufficient.**
 
 ---
 
 ## No-Bypass Policy (CRITICAL)
 
-**NEVER skip, bypass, or workaround any part of the system.**
-
-### Forbidden Actions:
-- ❌ Don't build custom auth in Hoster — APIGate owns auth
-- ❌ Don't create session bridges or auth hacks
-- ❌ Don't skip manual testing "just this once"
-- ❌ Don't deploy without testing all user journeys
-- ❌ Don't comment out failing tests to make CI pass
-- ❌ Don't disable security checks temporarily
-- ❌ Don't mock external dependencies in production
-- ❌ Don't skip integration tests because they're slow
-
-### Required Actions:
-- ✅ Fix the root cause, not the symptom
-- ✅ Wait for proper fixes from dependencies (like APIGate)
-- ✅ Test every user journey before deployment
-- ✅ Run full test suite (unit + integration + E2E)
-- ✅ Manual production testing ALWAYS
-- ✅ Document why something doesn't work
-- ✅ Block deployment if tests fail
-
-### If Something Is Broken:
-1. **Identify root cause** - Don't guess or workaround
-2. **File issue** - Document the problem properly
-3. **Wait for fix** - Don't bypass broken components
-4. **Test fix** - Verify it actually works
-5. **Deploy** - Only when everything works end-to-end
-
-### Why This Matters:
-- Bypasses create technical debt
-- Workarounds hide real problems
-- Skipping tests breaks user experience
-- Users will leave if UX is broken
-- Trust is hard to rebuild
-
-**Bottom line:** If it's not production-ready, don't deploy it.
+**Fix root causes, never bypass.** If broken: identify root cause → file issue → wait for fix → test → deploy. Never comment out tests, skip manual testing, build auth in Hoster, or deploy without all journeys passing.
 
 ---
 
@@ -456,212 +365,13 @@ These are intentional limitations documented in specs:
 
 ---
 
-## Current Implementation Status
+## Implementation Status
 
-### DONE ✅
-- [x] Project structure created
-- [x] Makefile with test commands
-- [x] specs/README.md (spec guidelines)
-- [x] ADR-001: Docker Direct
-- [x] ADR-002: Values as Boundaries
-- [x] specs/domain/template.md
-- [x] specs/domain/deployment.md
-- [x] Template domain (type, validation, tests)
-- [x] Deployment domain (type, state machine, tests)
-- [x] internal/core/compose/parser.go - Compose parsing with compose-go
-- [x] internal/shell/docker/client.go - Docker SDK wrapper
-- [x] internal/shell/docker/orchestrator.go - Deployment lifecycle
-- [x] internal/shell/store/sqlite.go - SQLite storage
-- [x] internal/shell/api/handler.go - HTTP API handlers
-- [x] tests/e2e/ - E2E testing infrastructure
-- [x] Docker integration (create/start/stop/restart/delete containers)
-- [x] internal/shell/apigate/client.go - Fixed admin API prefix (/admin/ instead of /api/)
-- [x] internal/shell/api/webui.go - Embedded frontend handler (following APIGate pattern)
-- [x] .github/workflows/ci.yml - CI workflow with frontend build
-- [x] .github/workflows/release.yml - Release workflow for versioned releases
-- [x] v0.1.0 released and deployed to production (backend only)
-- [x] Container event recording in orchestrator - Lifecycle tracking
-- [x] Deployment monitoring UI - Events, Stats, Logs tabs working
-- [x] Default marketplace templates - 12 templates (6 infra + 6 web-UI apps)
-- [x] Local E2E environment - APIGate + Hoster integration fully working
-- [x] Remote node E2E - AWS EC2 deployment verified (January 23, 2026)
-- [x] React dialog components - ConfirmDialog and AlertDialog replacing native dialogs
-- [x] SSH key management via web UI - Encrypted storage with AES-256-GCM
-- [x] Node registration via web UI - Health checks working
-- [x] Dedicated SSH Keys page (`/ssh-keys`) - Table with node cross-references
-- [x] Web-UI app templates (migration 008) - WordPress, Uptime Kuma, Gitea, n8n, IT Tools, Metabase
-- [x] Uptime Kuma E2E verified - deployed from marketplace, full web UI accessible
-- [x] Dev auth removed — all auth via APIGate headers (February 2026)
-- [x] Nodes.Enabled config gate removed — encryption key presence drives feature activation
-- [x] Hoster-branded login/signup pages restored — call APIGate /auth/* endpoints
-- [x] APIGate upgraded to v0.2.7 — setup wizard fix, cookie name fix
+**MVP: COMPLETE** — Full deployment loop + monitoring + remote nodes working.
+**427 tests** (180 unit + 150 integration + 100 E2E) — ALL PASS.
+**Next: Phase 0** — API layer migration (api2go + OpenAPI).
 
-### IN PROGRESS
-- [ ] Fix CI npm/rollup issues - see specs/SESSION-HANDOFF.md for details
-- [ ] Create v0.2.2 release with monitoring features
-- [ ] Deploy v0.2.2 to production
-- [ ] Production E2E testing with monitoring features
-
-### Test Counts (January 23, 2026)
-| Suite | Count | Status |
-|-------|-------|--------|
-| Unit (core/) | ~180 | PASS |
-| Integration (shell/) | ~150 | PASS |
-| E2E | ~100 | PASS |
-| **Total** | **427** | **ALL PASS** |
-
-### Remote Node E2E Test: ✅ VERIFIED (January 23, 2026)
-- AWS EC2 instance: 98.82.190.29
-- Node: aws-test-node (online)
-- Deployment: test-app-mkqrkyep (running)
-- Events: container_created, container_started
-
-### MVP STATUS: ✅ COMPLETE + MONITORING + REMOTE NODES
-
-The core deployment loop is fully functional:
-1. ✅ Creator creates template with docker-compose
-2. ✅ Creator publishes template
-3. ✅ Creator registers remote nodes (SSH key + node)
-4. ✅ Customer deploys from published template
-5. ✅ Deployment gets auto-generated domain
-6. ✅ Deployment gets Traefik labels for external routing
-7. ✅ Scheduler assigns deployment to available node
-8. ✅ Customer can start/stop/restart deployments
-9. ✅ Customer can delete deployments
-10. ✅ Customer can monitor deployments (Events, Stats, Logs)
-11. ✅ **Deployments run on remote Docker hosts** (verified on AWS EC2)
-
-### Monitoring Features: ✅ COMPLETE (January 22, 2026)
-
-1. ✅ **Container Event Recording**
-   - Events tracked: created, started, stopped, restarted, died, OOM, health checks
-   - Stored in `container_events` table with timestamps
-   - Orchestrator records events after each lifecycle operation
-
-2. ✅ **Stats Monitoring**
-   - Real-time CPU, memory, network, disk I/O metrics
-   - Endpoint: `GET /api/v1/deployments/{id}/monitoring/stats`
-   - UI: Stats tab shows current resource usage
-
-3. ✅ **Logs Streaming**
-   - Container logs with timestamps
-   - Filtering by container name and tail count
-   - Endpoint: `GET /api/v1/deployments/{id}/monitoring/logs`
-   - UI: Logs tab shows scrollable log output
-
-4. ✅ **Events Timeline**
-   - Deployment lifecycle history
-   - Event types, messages, and timestamps
-   - Endpoint: `GET /api/v1/deployments/{id}/monitoring/events`
-   - UI: Events tab shows chronological event list
-
-### Remote Node Management: ✅ COMPLETE (January 23, 2026)
-
-Full support for deploying to remote Docker hosts:
-
-1. ✅ **SSH Key Management**
-   - Add/delete SSH keys via Creator Dashboard
-   - Keys encrypted with AES-256-GCM (32-byte key required)
-   - Stored in `ssh_keys` table with encrypted private key
-
-2. ✅ **Node Registration**
-   - Register remote nodes via Creator Dashboard
-   - Health checks verify connectivity and Docker availability
-   - Nodes must be owned by template creator for scheduling
-
-3. ✅ **Remote Deployment**
-   - Scheduler assigns deployments to available nodes
-   - SSH tunnel used for Docker API communication
-   - Container events recorded from remote operations
-   - Verified on AWS EC2 (98.82.190.29)
-
-4. ✅ **UI Components**
-   - React ConfirmDialog for destructive actions (delete node/key)
-   - AlertDialog for notifications
-   - No native browser dialogs (confirm/alert) used
-
-**Critical Note:** Encryption key must be consistent across restarts:
-```bash
-HOSTER_NODES_ENCRYPTION_KEY=12345678901234567890123456789012  # exactly 32 bytes
-```
-
-### Default Marketplace Templates: ✅ COMPLETE (Updated February 6, 2026)
-
-12 templates — 6 infrastructure + 6 web-UI apps:
-
-**Infrastructure (migration 007):**
-- PostgreSQL Database ($5/month, 512MB RAM, 0.5 CPU, 5GB disk)
-- MySQL Database ($5/month, 512MB RAM, 0.5 CPU, 5GB disk)
-- Redis Cache ($3/month, 256MB RAM, 0.25 CPU, 2GB disk)
-- MongoDB Database ($5/month, 512MB RAM, 0.5 CPU, 10GB disk)
-- Nginx Web Server ($2/month, 64MB RAM, 0.1 CPU, 512MB disk)
-- Node.js Application ($4/month, 256MB RAM, 0.5 CPU, 2GB disk)
-
-**Web-UI Apps (migration 008):**
-- WordPress ($8/month, 768MB RAM, 0.75 CPU) - CMS with MySQL, port 80
-- Uptime Kuma ($4/month, 256MB RAM, 0.25 CPU) - Monitoring dashboard, port 3001
-- Gitea ($5/month, 512MB RAM, 0.5 CPU) - Self-hosted Git, port 3000
-- n8n ($6/month, 512MB RAM, 0.5 CPU) - Workflow automation, port 5678
-- IT Tools ($2/month, 64MB RAM, 0.1 CPU) - Developer utilities, port 80
-- Metabase ($7/month, 768MB RAM, 0.5 CPU) - Business intelligence, port 3000
-
-### ADR-002 Compliance: ✅ COMPLETE
-
-All pure logic has been moved to `internal/core/`:
-
-#### `internal/core/deployment/` package
-- [x] `naming.go` - networkName(), volumeName(), containerName()
-- [x] `ordering.go` - topologicalSort() for service dependencies
-- [x] `container.go` - buildContainerSpec() mapping
-- [x] `ports.go` - convertPorts() transformation
-- [x] `variables.go` - substituteVariables() for env var substitution
-- [x] `planner.go` - DetermineStartPath(), CanStopDeployment()
-
-#### `internal/core/traefik/` package
-- [x] `labels.go` - GenerateLabels() for Traefik routing
-
-#### `internal/core/validation/` package
-- [x] `template.go` - ValidateCreateTemplateFields(), CanUpdateTemplate(), CanCreateDeployment()
-
-#### `internal/core/domain/` package
-- [x] `slug.go` - Slugify() for URL-safe names
-- [x] `deployment.go` - GenerateDomain() for auto domain assignment
-
-### What's Next (Post-MVP) - SPECS COMPLETE
-
-All specs for the next phase have been written. Implementation can proceed following STC.
-
-**Phase 0: API Layer Migration** (ADR-003, ADR-004)
-- [ ] Migrate from chi to Gorilla mux
-- [ ] Implement api2go resources for Template, Deployment
-- [ ] Build reflective OpenAPI generator
-- [ ] Serve `/openapi.json` endpoint
-
-**Phase 1: Authentication** (F008, ADR-005)
-- [ ] Create auth middleware (extract X-User-ID headers)
-- [ ] Implement authorization functions (pure core)
-- [ ] Add auth checks to resources
-
-**Phase 2: Billing** (F009)
-- [ ] Create usage event storage
-- [ ] Implement APIGate billing client
-- [ ] Add plan limit validation
-- [ ] Background event reporter
-
-**Phase 3: Monitoring** (F010)
-- [ ] Add health/logs/stats/events endpoints
-- [ ] Implement Docker stats integration
-- [ ] Create event recording in orchestrator
-
-**Phase 4-6: Frontend** (F011, F012, F013, ADR-006)
-- [ ] Set up React + Vite + TailwindCSS
-- [ ] Generate TypeScript types from OpenAPI
-- [ ] Implement Marketplace UI
-- [ ] Implement Deployment Management UI
-- [ ] Implement Creator Dashboard UI
-
-### Blocked
-- Nothing blocked - specs complete, implementation ready
+See **`specs/STATUS.md`** for full implementation details, test counts, and roadmap.
 
 ---
 
@@ -719,97 +429,15 @@ internal/shell/api/
 
 ## Production Deployment (emptychair.dev)
 
-### Architecture
+**Services:** APIGate (80/443, TLS + auth + routing) → Hoster (8080, API) + App Proxy (9091, `*.apps.emptychair.dev`)
 
-```
-                    ┌─────────────────────────────────────┐
-                    │      APIGate (Direct TLS)           │
-    Internet ──────►│  Port 80  → HTTP redirect           │
-                    │  Port 443 → TLS termination         │
-                    └─────────────────────────────────────┘
-                                      │
-                    ┌─────────────────┼─────────────────┐
-                    ▼                 ▼                 ▼
-              Hoster API        App Proxy         Portal
-            localhost:8080    localhost:9091    (built-in)
-```
+**Management:** `cd deploy/local && make status|logs|restart|deploy-release`
 
-### Services
+**CI/CD:** `ci.yml` (push to main/PRs), `release.yml` (version tags → GitHub release)
+**Build:** `cd web && npm install && npm run build` → copy dist → `go build ./cmd/hoster`
+**Deploy:** `cd deploy/local && make deploy-release VERSION=v0.2.0`
 
-| Service | Port | Description |
-|---------|------|-------------|
-| APIGate | 80, 443 | TLS termination, auth, billing, routing |
-| Hoster | 8080 | Deployment API |
-| App Proxy | 9091 | Routes `*.apps.emptychair.dev` to deployments |
-
-### Deployment Files (gitignored - `deploy/local/`)
-
-| File | Purpose |
-|------|---------|
-| `Makefile` | Management commands (`make status`, `make logs`, etc.) |
-| `emptychair.env` | Environment variables |
-| `infrastructure.md` | AWS/DNS details (sensitive) |
-
-### Management Commands
-
-```bash
-cd deploy/local
-make status         # Check service status
-make logs           # Tail all logs
-make logs-apigate   # Tail APIGate logs
-make logs-hoster    # Tail Hoster logs
-make restart        # Restart all services
-make shell          # SSH into server
-make settings       # Show APIGate settings
-make errors         # Show recent errors
-```
-
-### CI/CD
-
-**Workflows:**
-- `.github/workflows/ci.yml` - Runs on push to main and PRs (test, build, vet)
-- `.github/workflows/release.yml` - Runs on version tags (v*), creates GitHub releases
-
-**Build Process:**
-1. Build frontend: `cd web && npm install && npm run build`
-2. Copy to embed dir: `cp -r dist ../internal/shell/api/webui/`
-3. Build Go binary with embedded frontend
-
-**Current Issue (January 2026):**
-- CI failing with `@rollup/rollup-linux-x64-gnu` module error
-- Fix attempt: `rm -rf node_modules package-lock.json` before `npm install`
-- See `specs/SESSION-HANDOFF.md` for detailed troubleshooting steps
-
-### Deployment Process
-
-**Via Makefile (RECOMMENDED):**
-```bash
-cd deploy/local
-make deploy-release                    # Deploy latest GitHub release
-make deploy-release VERSION=v0.2.0     # Deploy specific version
-```
-
-**Manual (if needed):**
-1. Tag a release: `git tag v0.2.0 && git push origin v0.2.0`
-2. Wait for GitHub release to be created
-3. Deploy: `make deploy-release VERSION=v0.2.0`
-
----
-
-## Files to Read First (New Session Checklist)
-
-1. **This file** (`CLAUDE.md`) - You're reading it
-2. `specs/README.md` - How to write specs
-3. `specs/SESSION-HANDOFF.md` - Session onboarding protocol
-4. `specs/decisions/ADR-001-docker-direct.md` - Docker architecture
-5. `specs/decisions/ADR-002-values-as-boundaries.md` - Code organization
-6. `specs/decisions/ADR-003-jsonapi-api2go.md` - JSON:API standard
-7. `specs/decisions/ADR-004-reflective-openapi.md` - OpenAPI generation
-8. `specs/decisions/ADR-005-apigate-integration.md` - Auth/billing
-9. `specs/decisions/ADR-006-frontend-architecture.md` - React frontend
-10. `specs/decisions/ADR-007-uiux-guidelines.md` - UI/UX patterns
-11. `specs/domain/template.md` - Template entity spec
-12. `specs/domain/deployment.md` - Deployment entity spec
+**Known issue:** CI failing with `@rollup/rollup-linux-x64-gnu` — see `specs/SESSION-HANDOFF.md`
 
 ---
 
@@ -841,44 +469,6 @@ make deploy-release VERSION=v0.2.0     # Deploy specific version
   - HOSTER-S3: Deployment Engine
 
 Use `mcp__agile__*` tools to track tasks.
-
----
-
-## Summary for New Session
-
-If you're starting a new session with no memory:
-
-1. **Read this entire file first**
-2. **Read `specs/SESSION-HANDOFF.md`** for the complete onboarding protocol
-3. You're building a deployment marketplace platform
-4. Follow STC: Spec → Test → Code (NEVER skip)
-5. Architecture: Pure core (`internal/core/`), thin shell (`internal/shell/`)
-6. **MVP is COMPLETE** - Core deployment loop is working
-7. **Post-MVP specs are COMPLETE** - See ADR-003 through ADR-006, F008-F013
-8. **Next: Implementation Phase 0** - Migrate to api2go + OpenAPI
-9. Key libraries: api2go (JSON:API), gorilla/mux (router), kin-openapi (OpenAPI)
-10. Run `make test` to verify everything works
-11. Check the plan file at `.claude/plans/merry-baking-rain.md` for detailed phases
-
-**When in doubt, read the specs in `specs/` directory.**
-
----
-
-## Failure Mode Reference
-
-What goes wrong if key decisions are forgotten:
-
-| Forgotten | Failure Mode | Impact |
-|-----------|--------------|--------|
-| STC methodology | Code without specs/tests | Future changes break things |
-| Values as Boundaries | I/O in core | Tests need mocks, tech debt |
-| State machine transitions | Invalid status changes | Runtime bugs, data corruption |
-| Library choices | Using different libs | Inconsistency, conflicts |
-| "NOT Supported" items | Building wrong features | Wasted effort, complexity |
-| Directory structure | Files in wrong places | Confusion, broken imports |
-| Testing strategy | Adding mocks to core | Slow tests, false confidence |
-
-**The cost of forgetting increases with time. Document decisions immediately.**
 
 ---
 
@@ -916,141 +506,21 @@ Internet → APIGate (:8082, front-facing) → Hoster (:8080, backend)
 
 When encountering APIGate-related issues during development or testing, report them at the issues link above. The `gh` CLI is available and logged in for creating issues.
 
-### Auth Flow (February 2026) — JWT-Only
+### Auth Flow (JWT-Only, APIGate v2.0.0+)
 
-**APIGate v2.0.0+ uses JWT-only auth.** Cookie/session auth has been removed.
+Login/signup pages at `/login`, `/signup` (Hoster-branded) → call APIGate `/mod/auth/*` endpoints → JWT stored in localStorage → sent as `Authorization: Bearer {token}` → APIGate validates, injects `X-User-ID`/`X-Plan-ID` headers → Hoster reads headers via `ResolveUser()`.
 
-1. User clicks "Sign In" → navigates to `/login` (Hoster-branded page)
-2. User submits form → `POST /mod/auth/login` or `POST /mod/auth/register` (APIGate endpoints)
-3. APIGate returns a JWT token in response (`{ token, user, success }`)
-4. Frontend stores token in localStorage (Zustand persist) and sends `Authorization: Bearer {token}` on all requests
-5. APIGate validates the JWT, then injects `X-User-ID`, `X-Plan-ID`, `X-Plan-Limits`, `X-Key-ID`, `X-Request-ID` headers
-6. APIGate strips sensitive headers (e.g., `X-API-Key`) before forwarding
-7. Hoster auth middleware reads injected headers → resolves to local user via `ResolveUser()` → `auth.Context{Authenticated: true, UserID: <int>}`
-8. If headers are absent → `auth.Context{Authenticated: false}` (public access, no error)
-
-**Frontend auth flow (`web/src/stores/authStore.ts`):**
-- `checkAuth()` → `GET /mod/auth/me` with Bearer token → `{ user: { id, email, name, plan_id } }`
-- `login(email, password)` → `POST /mod/auth/login` → receives `{ token }` → `checkAuth()`
-- `signup(email, password)` → `POST /mod/auth/register` → receives `{ token }` → auto `checkAuth()`
-- `logout()` → `POST /mod/auth/logout` with Bearer token
-- `ProtectedRoute` uses `<Navigate to="/login">` (React Router)
-- API client (`web/src/api/client.ts`) attaches `Authorization: Bearer {token}` to every request
-
-**Auth pages:**
-- `web/src/pages/auth/LoginPage.tsx` — Hoster-branded login
-- `web/src/pages/auth/SignupPage.tsx` — Hoster-branded signup
-- `web/src/pages/auth/index.ts` — barrel exports
-
-**Removed config:**
-- `HOSTER_AUTH_MODE` — no longer exists (always header mode)
-- `HOSTER_NODES_ENABLED` — no longer exists (encryption key presence drives activation)
-- Cookie/session auth — removed in APIGate v2.0.0
-
-### APIGate Version: v2.0.0+ Required
-
-- v2.0.0: JWT-only auth, removed cookie/session auth, auto-generated JWT secret
-- Fresh install: `GET /` → redirects to `/setup` (4-step browser wizard)
-- Download: `gh release download v2.0.0 --repo artpar/apigate`
+**Key files:** `web/src/stores/authStore.ts`, `web/src/api/client.ts`, `web/src/pages/auth/`
+**Removed:** `HOSTER_AUTH_MODE`, `HOSTER_NODES_ENABLED`, cookie/session auth
+**Download:** `gh release download v2.0.0 --repo artpar/apigate`
 
 ---
 
 ## Local E2E Testing Environment
 
-### Current Setup (February 6, 2026)
+**Location:** `/tmp/hoster-e2e-test/` — See **`specs/local-e2e-setup.md`** for full setup, commands, and troubleshooting.
 
-**Location:** `/tmp/hoster-e2e-test/`
-
-**Architecture:**
-```
-Browser → APIGate (:8082, front-facing) → Hoster (:8080, backend)
-
-Routes (priority order):
-    ├── hoster-billing   (/api/v1/deployments* priority 55, auth_required=1) ← billing
-    ├── hoster-api       (/api/* priority 50, auth_required=0) ← pass-through
-    └── hoster-front     (/* priority 10, auth_required=0) ← SPA
-```
-
-**Services:**
-- APIGate: localhost:8082 (single entry point)
-- Hoster: localhost:8080 (API + embedded frontend)
-- App Proxy: localhost:9091 (deployment routing)
-
-**Important:** All access MUST go through APIGate (localhost:8082). Never access Hoster directly on localhost:8080.
-
-### Starting the Environment
-
-```bash
-# Terminal 1: Start APIGate
-cd /tmp/hoster-e2e-test
-apigate serve --config apigate.yaml > apigate.log 2>&1 &
-
-# Terminal 2: Start Hoster
-cd /Users/artpar/workspace/code/hoster
-HOSTER_DATA_DIR=/tmp/hoster-e2e-test \
-./bin/hoster > /tmp/hoster-e2e-test/hoster.log 2>&1 &
-# NOTE: HOSTER_DATA_DIR sets both database (/tmp/hoster-e2e-test/hoster.db)
-# and config dir. Use the same value on every restart to persist data.
-```
-
-### Checking Status
-
-```bash
-# Check running services
-ps aux | grep -E "(apigate|hoster)" | grep -v grep
-lsof -i :8082  # APIGate
-lsof -i :8080  # Hoster
-lsof -i :9091  # App Proxy
-
-# View logs
-tail -f /tmp/hoster-e2e-test/apigate.log
-tail -f /tmp/hoster-e2e-test/hoster.log
-
-# Check routes configuration
-sqlite3 /tmp/hoster-e2e-test/apigate.db "SELECT name, path_pattern, host_pattern, priority, auth_required FROM routes ORDER BY priority DESC;"
-```
-
-### Testing E2E Flow
-
-1. **Access Frontend:** http://localhost:8082/
-2. **Browse Marketplace:** http://localhost:8082/marketplace
-3. **Sign in:** Click Sign In → `/login` (Hoster-branded page) → enter credentials
-4. **Deploy template:** Select a template and deploy
-5. **Monitor deployment:** View Events, Stats, Logs tabs
-6. **Access deployed app:** http://{deployment-name}.apps.localhost:8082/
-
-### Database Files
-
-- **Hoster:** `/tmp/hoster-e2e-test/hoster.db` - Templates, deployments, events
-- **APIGate:** `/tmp/hoster-e2e-test/apigate.db` - Routes, upstreams, users
-
-### Routes Configuration
-
-Routes are configured via APIGate module API (`/mod/route`). See `specs/architecture/apigate-integration.md` for full details.
-
-| Route | Path | auth_required | Priority | Purpose |
-|-------|------|---------------|----------|---------|
-| `hoster-billing` | `/api/v1/deployments*` | 1 (billing) | 55 | Deployment CRUD - billable |
-| `hoster-api` | `/api/*` | 0 (pass-thru) | 50 | All other APIs - Hoster handles auth |
-| `hoster-front` | `/*` | 0 (public) | 10 | SPA frontend |
-
-### Known Limitations
-
-1. **Port in URLs:** App proxy requires port in URL for local testing (`:8082`)
-
-### Troubleshooting
-
-**Problem:** Frontend shows 404
-- **Check:** APIGate is running on 8082
-- **Check:** Hoster is running on 8080
-- **Check:** Routes are configured correctly
-
-**Problem:** Monitoring tabs empty / quota exceeded
-- **Check:** Monitoring routes go through `hoster-api` (auth_required=0, pass-through)
-- **Check:** Only deployment CRUD goes through billing (auth_required=1)
-- **Root cause:** If all APIs use auth_required=1, polling exhausts quota
-
-**Problem:** Can't access deployed app
-- **Check:** App Proxy is running on 9091
-- **Check:** Deployment has domain assigned
-- **Check:** Using correct URL format: `http://{name}.apps.localhost:8082/`
+**Key points:**
+- All access through APIGate (localhost:8082) — never Hoster directly (8080)
+- Routes: billing (`/api/v1/deployments*`, auth_required=1), API (`/api/*`, pass-through), frontend (`/*`, public)
+- `HOSTER_DATA_DIR=/tmp/hoster-e2e-test` for consistent DB across restarts
