@@ -72,6 +72,9 @@ func (m *mockStore) GetContainerEvents(ctx context.Context, deploymentID string,
 }
 func (m *mockStore) CreateNode(ctx context.Context, n *domain.Node) error              { return nil }
 func (m *mockStore) GetNode(ctx context.Context, id string) (*domain.Node, error)      { return nil, nil }
+func (m *mockStore) GetNodeByCreatorAndName(ctx context.Context, creatorID int, name string) (*domain.Node, error) {
+	return nil, store.NewStoreError("GetNodeByCreatorAndName", "node", name, "not found", store.ErrNotFound)
+}
 func (m *mockStore) UpdateNode(ctx context.Context, n *domain.Node) error              { return nil }
 func (m *mockStore) DeleteNode(ctx context.Context, id string) error                   { return nil }
 func (m *mockStore) ListNodesByCreator(ctx context.Context, creatorID int, opts store.ListOptions) ([]domain.Node, error) {

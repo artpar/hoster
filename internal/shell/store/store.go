@@ -50,6 +50,7 @@ type Store interface {
 	// Node operations (Creator Worker Nodes)
 	CreateNode(ctx context.Context, node *domain.Node) error
 	GetNode(ctx context.Context, id string) (*domain.Node, error)
+	GetNodeByCreatorAndName(ctx context.Context, creatorID int, name string) (*domain.Node, error)
 	UpdateNode(ctx context.Context, node *domain.Node) error
 	DeleteNode(ctx context.Context, id string) error
 	ListNodesByCreator(ctx context.Context, creatorID int, opts ListOptions) ([]domain.Node, error)

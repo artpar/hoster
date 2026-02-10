@@ -28,9 +28,12 @@ func NewDigitalOceanProvider(apiToken string, logger *slog.Logger) *DigitalOcean
 
 // CreateInstance provisions a DigitalOcean Droplet.
 func (p *DigitalOceanProvider) CreateInstance(ctx context.Context, req ProvisionRequest) (*ProvisionResult, error) {
-	// Upload SSH key
+	// Upload SSH key (idempotent: delete existing key first if present)
+	keyName := fmt.Sprintf("hoster-%s", req.InstanceName)
+	p.deleteSSHKeyByName(ctx, keyName)
+
 	key, _, err := p.client.Keys.Create(ctx, &godo.KeyCreateRequest{
-		Name:      fmt.Sprintf("hoster-%s", req.InstanceName),
+		Name:      keyName,
 		PublicKey: req.SSHPublicKey,
 	})
 	if err != nil {
@@ -91,10 +94,10 @@ func (p *DigitalOceanProvider) waitForPublicIP(ctx context.Context, dropletID in
 	return "", errors.New("timed out waiting for droplet public IP")
 }
 
-// DestroyInstance deletes a DigitalOcean Droplet.
-func (p *DigitalOceanProvider) DestroyInstance(ctx context.Context, providerInstanceID string) error {
+// DestroyInstance deletes a DigitalOcean Droplet and cleans up SSH key.
+func (p *DigitalOceanProvider) DestroyInstance(ctx context.Context, req DestroyRequest) error {
 	var dropletID int
-	if _, err := fmt.Sscanf(providerInstanceID, "%d", &dropletID); err != nil {
+	if _, err := fmt.Sscanf(req.ProviderInstanceID, "%d", &dropletID); err != nil {
 		return fmt.Errorf("invalid droplet ID: %w", err)
 	}
 
@@ -104,7 +107,28 @@ func (p *DigitalOceanProvider) DestroyInstance(ctx context.Context, providerInst
 	}
 
 	p.logger.Info("droplet deleted", "droplet_id", dropletID)
+
+	// Best-effort cleanup of SSH key
+	keyName := fmt.Sprintf("hoster-%s", req.InstanceName)
+	p.deleteSSHKeyByName(ctx, keyName)
+
 	return nil
+}
+
+// deleteSSHKeyByName finds and deletes a DigitalOcean SSH key by name.
+func (p *DigitalOceanProvider) deleteSSHKeyByName(ctx context.Context, name string) {
+	keys, _, err := p.client.Keys.List(ctx, &godo.ListOptions{PerPage: 200})
+	if err != nil {
+		return
+	}
+	for _, k := range keys {
+		if k.Name == name {
+			if _, err := p.client.Keys.DeleteByID(ctx, k.ID); err != nil {
+				p.logger.Warn("failed to delete SSH key", "key_name", name, "error", err)
+			}
+			return
+		}
+	}
 }
 
 // ListRegions returns available DigitalOcean regions.

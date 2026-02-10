@@ -264,6 +264,17 @@ func (m *mockStore) GetNode(ctx context.Context, id string) (*domain.Node, error
 	return nil, store.ErrNotFound
 }
 
+func (m *mockStore) GetNodeByCreatorAndName(ctx context.Context, creatorID int, name string) (*domain.Node, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.nodes {
+		if m.nodes[i].CreatorID == creatorID && m.nodes[i].Name == name {
+			return &m.nodes[i], nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+
 func (m *mockStore) UpdateNode(ctx context.Context, node *domain.Node) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

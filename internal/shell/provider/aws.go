@@ -42,8 +42,11 @@ func (p *AWSProvider) newClient(region string) *ec2.Client {
 func (p *AWSProvider) CreateInstance(ctx context.Context, req ProvisionRequest) (*ProvisionResult, error) {
 	client := p.newClient(req.Region)
 
-	// Import the SSH key
+	// Import the SSH key (idempotent: delete existing key first if present)
 	keyName := fmt.Sprintf("hoster-%s", req.InstanceName)
+	_, _ = client.DeleteKeyPair(ctx, &ec2.DeleteKeyPairInput{
+		KeyName: aws.String(keyName),
+	})
 	_, err := client.ImportKeyPair(ctx, &ec2.ImportKeyPairInput{
 		KeyName:           aws.String(keyName),
 		PublicKeyMaterial: []byte(req.SSHPublicKey),
@@ -183,24 +186,35 @@ func (p *AWSProvider) waitForPublicIP(ctx context.Context, client *ec2.Client, i
 	return "", errors.New("timed out waiting for public IP")
 }
 
-// DestroyInstance terminates an EC2 instance.
-func (p *AWSProvider) DestroyInstance(ctx context.Context, providerInstanceID string) error {
-	// We need to figure out the region - for now use us-east-1 as fallback
-	// In production, the region should be stored with the provision
-	// The provisioner worker will pass the correct region via context or we get it from the provision record
-	regions := []string{"us-east-1", "us-west-2", "eu-west-1", "eu-central-1"}
+// DestroyInstance terminates an EC2 instance and cleans up SSH key and security group.
+func (p *AWSProvider) DestroyInstance(ctx context.Context, req DestroyRequest) error {
+	client := p.newClient(req.Region)
 
-	for _, region := range regions {
-		client := p.newClient(region)
-		_, err := client.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
-			InstanceIds: []string{providerInstanceID},
-		})
-		if err == nil {
-			p.logger.Info("EC2 instance terminated", "instance_id", providerInstanceID, "region", region)
-			return nil
-		}
+	_, err := client.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+		InstanceIds: []string{req.ProviderInstanceID},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to terminate instance %s: %w", req.ProviderInstanceID, err)
 	}
-	return fmt.Errorf("failed to terminate instance %s in any region", providerInstanceID)
+	p.logger.Info("EC2 instance terminated", "instance_id", req.ProviderInstanceID, "region", req.Region)
+
+	// Best-effort cleanup of SSH key
+	keyName := fmt.Sprintf("hoster-%s", req.InstanceName)
+	if _, err := client.DeleteKeyPair(ctx, &ec2.DeleteKeyPairInput{
+		KeyName: aws.String(keyName),
+	}); err != nil {
+		p.logger.Warn("failed to delete SSH key pair during destroy", "key_name", keyName, "error", err)
+	}
+
+	// Best-effort cleanup of security group
+	sgName := fmt.Sprintf("hoster-%s", req.InstanceName)
+	if _, err := client.DeleteSecurityGroup(ctx, &ec2.DeleteSecurityGroupInput{
+		GroupName: aws.String(sgName),
+	}); err != nil {
+		p.logger.Warn("failed to delete security group during destroy", "sg_name", sgName, "error", err)
+	}
+
+	return nil
 }
 
 // ListRegions returns available AWS regions.

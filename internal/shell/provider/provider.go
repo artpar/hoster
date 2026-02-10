@@ -22,13 +22,20 @@ type ProvisionResult struct {
 	PublicIP           string
 }
 
+// DestroyRequest contains parameters for destroying a cloud instance.
+type DestroyRequest struct {
+	ProviderInstanceID string
+	InstanceName       string // derives SSH key name: "hoster-{InstanceName}"
+	Region             string // AWS needs this to target correct region
+}
+
 // Provider defines the interface for cloud infrastructure providers.
 type Provider interface {
 	// CreateInstance provisions a new cloud instance.
 	CreateInstance(ctx context.Context, req ProvisionRequest) (*ProvisionResult, error)
 
-	// DestroyInstance terminates a cloud instance.
-	DestroyInstance(ctx context.Context, providerInstanceID string) error
+	// DestroyInstance terminates a cloud instance and cleans up associated resources.
+	DestroyInstance(ctx context.Context, req DestroyRequest) error
 
 	// ListRegions returns available regions (live from API).
 	ListRegions(ctx context.Context) ([]coreprovider.Region, error)

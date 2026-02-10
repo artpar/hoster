@@ -29,9 +29,13 @@ func NewHetznerProvider(apiToken string, logger *slog.Logger) *HetznerProvider {
 
 // CreateInstance provisions a Hetzner Cloud server.
 func (p *HetznerProvider) CreateInstance(ctx context.Context, req ProvisionRequest) (*ProvisionResult, error) {
-	// Upload SSH key
+	// Upload SSH key (idempotent: delete existing key first if present)
+	keyName := fmt.Sprintf("hoster-%s", req.InstanceName)
+	if existing, _, _ := p.client.SSHKey.GetByName(ctx, keyName); existing != nil {
+		p.client.SSHKey.Delete(ctx, existing)
+	}
 	key, _, err := p.client.SSHKey.Create(ctx, hcloud.SSHKeyCreateOpts{
-		Name:      fmt.Sprintf("hoster-%s", req.InstanceName),
+		Name:      keyName,
 		PublicKey: req.SSHPublicKey,
 	})
 	if err != nil {
@@ -106,9 +110,9 @@ func (p *HetznerProvider) waitForPublicIP(ctx context.Context, serverID int64) (
 	return "", errors.New("timed out waiting for server public IP")
 }
 
-// DestroyInstance deletes a Hetzner Cloud server.
-func (p *HetznerProvider) DestroyInstance(ctx context.Context, providerInstanceID string) error {
-	serverID, err := strconv.ParseInt(providerInstanceID, 10, 64)
+// DestroyInstance deletes a Hetzner Cloud server and cleans up SSH key.
+func (p *HetznerProvider) DestroyInstance(ctx context.Context, req DestroyRequest) error {
+	serverID, err := strconv.ParseInt(req.ProviderInstanceID, 10, 64)
 	if err != nil {
 		return fmt.Errorf("invalid server ID: %w", err)
 	}
@@ -118,15 +122,23 @@ func (p *HetznerProvider) DestroyInstance(ctx context.Context, providerInstanceI
 		return fmt.Errorf("failed to get server: %w", err)
 	}
 	if server == nil {
-		return nil // Already deleted
+		p.logger.Info("Hetzner server already deleted", "server_id", serverID)
+	} else {
+		_, _, err = p.client.Server.DeleteWithResult(ctx, server)
+		if err != nil {
+			return fmt.Errorf("failed to delete server: %w", err)
+		}
+		p.logger.Info("Hetzner server deleted", "server_id", serverID)
 	}
 
-	_, _, err = p.client.Server.DeleteWithResult(ctx, server)
-	if err != nil {
-		return fmt.Errorf("failed to delete server: %w", err)
+	// Best-effort cleanup of SSH key
+	keyName := fmt.Sprintf("hoster-%s", req.InstanceName)
+	if existing, _, _ := p.client.SSHKey.GetByName(ctx, keyName); existing != nil {
+		if _, err := p.client.SSHKey.Delete(ctx, existing); err != nil {
+			p.logger.Warn("failed to delete SSH key during destroy", "key_name", keyName, "error", err)
+		}
 	}
 
-	p.logger.Info("Hetzner server deleted", "server_id", serverID)
 	return nil
 }
 

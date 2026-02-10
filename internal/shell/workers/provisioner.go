@@ -155,49 +155,96 @@ func (p *Provisioner) processProvision(ctx context.Context, prov *domain.CloudPr
 }
 
 func (p *Provisioner) stepCreateInstance(ctx context.Context, prov *domain.CloudProvision, logger *slog.Logger) {
+	// Bug 3: If a previous attempt already created the cloud instance, skip to configuring
+	if prov.ProviderInstanceID != "" {
+		logger.Info("reusing existing cloud instance from previous attempt", "instance_id", prov.ProviderInstanceID)
+		if err := prov.Transition(domain.ProvisionStatusConfiguring); err != nil {
+			p.failProvision(ctx, prov, "failed to transition to configuring: "+err.Error(), logger)
+			return
+		}
+		prov.SetStep("Waiting for Docker to be ready")
+		if err := p.store.UpdateCloudProvision(ctx, prov); err != nil {
+			logger.Error("failed to persist transition to configuring", "error", err)
+		}
+		return
+	}
+
 	logger.Info("starting instance creation")
 
 	// Transition to creating
-	prov.Transition(domain.ProvisionStatusCreating)
-	prov.SetStep("Generating SSH key pair")
-	p.store.UpdateCloudProvision(ctx, prov)
-
-	// Generate SSH key pair
-	pubKey, privKeyPEM, err := generateSSHKeyPair()
-	if err != nil {
-		p.failProvision(ctx, prov, "failed to generate SSH key: "+err.Error(), logger)
+	if err := prov.Transition(domain.ProvisionStatusCreating); err != nil {
+		p.failProvision(ctx, prov, "failed to transition to creating: "+err.Error(), logger)
 		return
 	}
 
-	// Encrypt and store the SSH key
-	encryptedKey, err := crypto.EncryptSSHKey(privKeyPEM, p.encryptionKey)
-	if err != nil {
-		p.failProvision(ctx, prov, "failed to encrypt SSH key: "+err.Error(), logger)
-		return
-	}
+	var pubKey []byte
 
-	fingerprint, err := crypto.GetSSHPublicKeyFingerprint(privKeyPEM)
-	if err != nil {
-		fingerprint = "unknown"
-	}
+	// If a previous attempt already created the SSH key, reuse it
+	if prov.SSHKeyID != "" {
+		logger.Info("reusing existing SSH key from previous attempt", "ssh_key_id", prov.SSHKeyID)
+		prov.SetStep("Creating cloud instance")
+		p.store.UpdateCloudProvision(ctx, prov)
 
-	sshKey := &domain.SSHKey{
-		ReferenceID:         domain.GenerateSSHKeyID(),
-		CreatorID:           prov.CreatorID,
-		Name:                fmt.Sprintf("cloud-%s", prov.InstanceName),
-		PrivateKeyEncrypted: encryptedKey,
-		Fingerprint:         fingerprint,
-		CreatedAt:           time.Now(),
-	}
+		// Retrieve the existing key to get the public key for the provider
+		sshKey, err := p.store.GetSSHKey(ctx, prov.SSHKeyID)
+		if err != nil {
+			p.failProvision(ctx, prov, "failed to retrieve existing SSH key: "+err.Error(), logger)
+			return
+		}
+		privKeyPEM, err := crypto.DecryptSSHKey(sshKey.PrivateKeyEncrypted, p.encryptionKey)
+		if err != nil {
+			p.failProvision(ctx, prov, "failed to decrypt existing SSH key: "+err.Error(), logger)
+			return
+		}
+		signer, err := ssh.ParsePrivateKey(privKeyPEM)
+		if err != nil {
+			p.failProvision(ctx, prov, "failed to parse existing SSH key: "+err.Error(), logger)
+			return
+		}
+		pubKey = ssh.MarshalAuthorizedKey(signer.PublicKey())
+	} else {
+		prov.SetStep("Generating SSH key pair")
+		p.store.UpdateCloudProvision(ctx, prov)
 
-	if err := p.store.CreateSSHKey(ctx, sshKey); err != nil {
-		p.failProvision(ctx, prov, "failed to store SSH key: "+err.Error(), logger)
-		return
-	}
+		// Generate SSH key pair
+		var privKeyPEM []byte
+		var err error
+		pubKey, privKeyPEM, err = generateSSHKeyPair()
+		if err != nil {
+			p.failProvision(ctx, prov, "failed to generate SSH key: "+err.Error(), logger)
+			return
+		}
 
-	prov.SSHKeyID = sshKey.ReferenceID
-	prov.SetStep("Creating cloud instance")
-	p.store.UpdateCloudProvision(ctx, prov)
+		// Encrypt and store the SSH key
+		encryptedKey, err := crypto.EncryptSSHKey(privKeyPEM, p.encryptionKey)
+		if err != nil {
+			p.failProvision(ctx, prov, "failed to encrypt SSH key: "+err.Error(), logger)
+			return
+		}
+
+		fingerprint, err := crypto.GetSSHPublicKeyFingerprint(privKeyPEM)
+		if err != nil {
+			fingerprint = "unknown"
+		}
+
+		sshKey := &domain.SSHKey{
+			ReferenceID:         domain.GenerateSSHKeyID(),
+			CreatorID:           prov.CreatorID,
+			Name:                fmt.Sprintf("cloud-%s", prov.InstanceName),
+			PrivateKeyEncrypted: encryptedKey,
+			Fingerprint:         fingerprint,
+			CreatedAt:           time.Now(),
+		}
+
+		if err := p.store.CreateSSHKey(ctx, sshKey); err != nil {
+			p.failProvision(ctx, prov, "failed to store SSH key: "+err.Error(), logger)
+			return
+		}
+
+		prov.SSHKeyID = sshKey.ReferenceID
+		prov.SetStep("Creating cloud instance")
+		p.store.UpdateCloudProvision(ctx, prov)
+	}
 
 	// Get credentials and create provider client
 	cred, err := p.store.GetCloudCredential(ctx, prov.CredentialRefID)
@@ -233,14 +280,27 @@ func (p *Provisioner) stepCreateInstance(ctx context.Context, prov *domain.Cloud
 		return
 	}
 
+	// Bug 1: Persist ProviderInstanceID + PublicIP immediately BEFORE state transition.
+	// If this save fails, the cloud instance is orphaned — log critical and fail.
 	prov.ProviderInstanceID = result.ProviderInstanceID
 	prov.PublicIP = result.PublicIP
+	if err := p.store.UpdateCloudProvision(ctx, prov); err != nil {
+		logger.Error("CRITICAL: cloud instance created but failed to persist instance ID — instance may be orphaned",
+			"instance_id", result.ProviderInstanceID, "ip", result.PublicIP, "error", err)
+		p.failProvision(ctx, prov, "failed to persist instance ID after creation: "+err.Error(), logger)
+		return
+	}
 	logger.Info("instance created", "instance_id", result.ProviderInstanceID, "ip", result.PublicIP)
 
 	// Transition to configuring
-	prov.Transition(domain.ProvisionStatusConfiguring)
+	if err := prov.Transition(domain.ProvisionStatusConfiguring); err != nil {
+		p.failProvision(ctx, prov, "failed to transition to configuring: "+err.Error(), logger)
+		return
+	}
 	prov.SetStep("Waiting for Docker to be ready")
-	p.store.UpdateCloudProvision(ctx, prov)
+	if err := p.store.UpdateCloudProvision(ctx, prov); err != nil {
+		logger.Error("failed to persist transition to configuring", "error", err)
+	}
 }
 
 func (p *Provisioner) stepConfigureInstance(ctx context.Context, prov *domain.CloudProvision, logger *slog.Logger) {
@@ -253,18 +313,24 @@ func (p *Provisioner) stepConfigureInstance(ctx context.Context, prov *domain.Cl
 	p.store.UpdateCloudProvision(ctx, prov)
 
 	// Docker should already be installed via cloud-init/user data
-	// Transition to configuring and let the next cycle finalize
-	prov.Transition(domain.ProvisionStatusConfiguring)
+	// Status is already "configuring" from stepCreateInstance — just update step and let next cycle finalize
 	prov.SetStep("Creating node record")
-	p.store.UpdateCloudProvision(ctx, prov)
+	if err := p.store.UpdateCloudProvision(ctx, prov); err != nil {
+		logger.Error("failed to persist configure step", "error", err)
+	}
 }
 
 func (p *Provisioner) stepFinalize(ctx context.Context, prov *domain.CloudProvision, logger *slog.Logger) {
 	if prov.NodeID != "" { // NodeID is string reference ID
 		// Already have a node, mark as ready
-		prov.Transition(domain.ProvisionStatusReady)
+		if err := prov.Transition(domain.ProvisionStatusReady); err != nil {
+			p.failProvision(ctx, prov, "failed to transition to ready: "+err.Error(), logger)
+			return
+		}
 		prov.SetStep("Complete")
-		p.store.UpdateCloudProvision(ctx, prov)
+		if err := p.store.UpdateCloudProvision(ctx, prov); err != nil {
+			logger.Error("failed to persist ready status", "error", err)
+		}
 		logger.Info("provision complete", "node_id", prov.NodeID)
 		return
 	}
@@ -272,46 +338,77 @@ func (p *Provisioner) stepFinalize(ctx context.Context, prov *domain.CloudProvis
 	prov.SetStep("Registering node")
 	p.store.UpdateCloudProvision(ctx, prov)
 
-	// Create node in the database
-	node, err := domain.NewNode(
-		prov.CreatorID,
-		prov.InstanceName,
-		prov.PublicIP,
-		"root", // Cloud instances use root by default
-		22,
-		domain.DefaultCapabilities(),
-	)
-	if err != nil {
-		p.failProvision(ctx, prov, "failed to create node: "+err.Error(), logger)
+	// Bug 4: Check if a node with this creator+name already exists (retry after partial finalize)
+	existingNode, err := p.store.GetNodeByCreatorAndName(ctx, prov.CreatorID, prov.InstanceName)
+	if err == nil && existingNode != nil {
+		logger.Info("reusing existing node from previous attempt", "node_id", existingNode.ReferenceID)
+		prov.NodeID = existingNode.ReferenceID
+	} else {
+		// Create node in the database
+		node, err := domain.NewNode(
+			prov.CreatorID,
+			prov.InstanceName,
+			prov.PublicIP,
+			"root", // Cloud instances use root by default
+			22,
+			domain.DefaultCapabilities(),
+		)
+		if err != nil {
+			p.failProvision(ctx, prov, "failed to create node: "+err.Error(), logger)
+			return
+		}
+
+		node.SSHKeyRefID = prov.SSHKeyID
+		node.ProviderType = string(prov.Provider)
+		node.ProvisionID = prov.ReferenceID
+
+		if err := p.store.CreateNode(ctx, node); err != nil {
+			p.failProvision(ctx, prov, "failed to store node: "+err.Error(), logger)
+			return
+		}
+		prov.NodeID = node.ReferenceID
+	}
+
+	// Bug 1: Persist NodeID immediately BEFORE transitioning to ready
+	if err := p.store.UpdateCloudProvision(ctx, prov); err != nil {
+		logger.Error("CRITICAL: node created but failed to persist node ID on provision", "node_id", prov.NodeID, "error", err)
+		p.failProvision(ctx, prov, "failed to persist node ID: "+err.Error(), logger)
 		return
 	}
 
-	node.SSHKeyRefID = prov.SSHKeyID
-	node.ProviderType = string(prov.Provider)
-	node.ProvisionID = prov.ReferenceID
-
-	if err := p.store.CreateNode(ctx, node); err != nil {
-		p.failProvision(ctx, prov, "failed to store node: "+err.Error(), logger)
+	if err := prov.Transition(domain.ProvisionStatusReady); err != nil {
+		p.failProvision(ctx, prov, "failed to transition to ready: "+err.Error(), logger)
 		return
 	}
-
-	prov.NodeID = node.ReferenceID
-	prov.Transition(domain.ProvisionStatusReady)
 	prov.SetStep("Complete")
-	p.store.UpdateCloudProvision(ctx, prov)
+	if err := p.store.UpdateCloudProvision(ctx, prov); err != nil {
+		logger.Error("failed to persist ready status", "error", err)
+	}
 
-	logger.Info("provision complete", "node_id", node.ReferenceID, "ip", prov.PublicIP)
+	logger.Info("provision complete", "node_id", prov.NodeID, "ip", prov.PublicIP)
 }
 
 func (p *Provisioner) stepDestroyInstance(ctx context.Context, prov *domain.CloudProvision, logger *slog.Logger) {
 	logger.Info("starting instance destruction")
 
-	// If instance was never created, skip straight to destroyed
+	// If instance was never created, clean up SSH key and skip to destroyed
 	if prov.ProviderInstanceID == "" {
 		logger.Info("no provider instance to destroy, marking as destroyed")
-		prov.Transition(domain.ProvisionStatusDestroyed)
+		if prov.SSHKeyID != "" {
+			if err := p.store.DeleteSSHKey(ctx, prov.SSHKeyID); err != nil {
+				logger.Warn("failed to delete SSH key during cleanup", "ssh_key_id", prov.SSHKeyID, "error", err)
+			} else {
+				logger.Info("deleted SSH key during cleanup", "ssh_key_id", prov.SSHKeyID)
+			}
+		}
+		if err := prov.Transition(domain.ProvisionStatusDestroyed); err != nil {
+			p.failProvision(ctx, prov, "failed to transition to destroyed: "+err.Error(), logger)
+			return
+		}
 		prov.SetStep("Destroyed (no instance to clean up)")
-		p.store.UpdateCloudProvision(ctx, prov)
+		if err := p.store.UpdateCloudProvision(ctx, prov); err != nil {
+			logger.Error("failed to persist destroyed status", "error", err)
+		}
 		return
 	}
 
@@ -334,13 +431,38 @@ func (p *Provisioner) stepDestroyInstance(ctx context.Context, prov *domain.Clou
 		return
 	}
 
-	// Destroy the instance
+	// Destroy the instance (Bug 6, 8: pass DestroyRequest with region + instance name for cleanup)
 	prov.SetStep("Destroying cloud instance")
 	p.store.UpdateCloudProvision(ctx, prov)
 
-	if err := cloudProvider.DestroyInstance(ctx, prov.ProviderInstanceID); err != nil {
+	if err := cloudProvider.DestroyInstance(ctx, provider.DestroyRequest{
+		ProviderInstanceID: prov.ProviderInstanceID,
+		InstanceName:       prov.InstanceName,
+		Region:             prov.Region,
+	}); err != nil {
 		p.failProvision(ctx, prov, "failed to destroy instance: "+err.Error(), logger)
 		return
+	}
+
+	// Bug 5: Mark deployments on the node as deleted before removing the node
+	if prov.NodeID != "" {
+		deployments, err := p.store.ListDeploymentsByNode(ctx, prov.NodeID)
+		if err != nil {
+			logger.Warn("failed to list deployments on node", "node_id", prov.NodeID, "error", err)
+		} else {
+			now := time.Now()
+			for i := range deployments {
+				d := &deployments[i]
+				d.Status = domain.StatusDeleted
+				d.ErrorMessage = "Node destroyed via cloud provision"
+				d.StoppedAt = &now
+				if err := p.store.UpdateDeployment(ctx, d); err != nil {
+					logger.Warn("failed to mark deployment as deleted", "deployment_id", d.ReferenceID, "error", err)
+				} else {
+					logger.Info("marked deployment as deleted", "deployment_id", d.ReferenceID)
+				}
+			}
+		}
 	}
 
 	// Delete associated node if one was created
@@ -352,17 +474,37 @@ func (p *Provisioner) stepDestroyInstance(ctx context.Context, prov *domain.Clou
 		}
 	}
 
-	prov.Transition(domain.ProvisionStatusDestroyed)
+	// Delete associated SSH key (after node, since node references key via FK)
+	if prov.SSHKeyID != "" {
+		if err := p.store.DeleteSSHKey(ctx, prov.SSHKeyID); err != nil {
+			logger.Warn("failed to delete associated SSH key", "ssh_key_id", prov.SSHKeyID, "error", err)
+		} else {
+			logger.Info("deleted associated SSH key", "ssh_key_id", prov.SSHKeyID)
+		}
+	}
+
+	if err := prov.Transition(domain.ProvisionStatusDestroyed); err != nil {
+		p.failProvision(ctx, prov, "failed to transition to destroyed: "+err.Error(), logger)
+		return
+	}
 	prov.SetStep("Instance destroyed")
-	p.store.UpdateCloudProvision(ctx, prov)
+	if err := p.store.UpdateCloudProvision(ctx, prov); err != nil {
+		logger.Error("failed to persist destroyed status", "error", err)
+	}
 
 	logger.Info("instance destroyed", "instance_id", prov.ProviderInstanceID)
 }
 
 func (p *Provisioner) failProvision(ctx context.Context, prov *domain.CloudProvision, errMsg string, logger *slog.Logger) {
 	logger.Error("provision failed", "error", errMsg)
-	prov.TransitionToFailed(errMsg)
-	p.store.UpdateCloudProvision(ctx, prov)
+	if err := prov.TransitionToFailed(errMsg); err != nil {
+		// Transition invalid (e.g., already terminal) — set error message directly
+		logger.Error("failed to transition to failed state", "transition_error", err, "current_status", prov.Status)
+		prov.ErrorMessage = errMsg
+	}
+	if err := p.store.UpdateCloudProvision(ctx, prov); err != nil {
+		logger.Error("failed to persist failed status", "error", err)
+	}
 }
 
 // generateSSHKeyPair generates an Ed25519 SSH key pair.

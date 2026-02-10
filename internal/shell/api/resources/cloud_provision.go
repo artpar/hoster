@@ -263,7 +263,16 @@ func (r CloudProvisionResource) RetryProvision(id string, req *http.Request) (ap
 			fmt.Errorf("not authorized"), "Not authorized", http.StatusForbidden)
 	}
 
-	if err := prov.Transition(domain.ProvisionStatusPending); err != nil {
+	// Bug 2: Smart retry routing — if the provision completed (was ready) but destruction
+	// failed, retry into destroying instead of pending. CompletedAt is set when reaching
+	// "ready" status. If non-nil with ProviderInstanceID set, the provision completed
+	// creation but destruction failed.
+	targetStatus := domain.ProvisionStatusPending
+	if prov.ProviderInstanceID != "" && prov.CompletedAt != nil {
+		targetStatus = domain.ProvisionStatusDestroying
+	}
+
+	if err := prov.Transition(targetStatus); err != nil {
 		return &Response{Code: http.StatusConflict}, api2go.NewHTTPError(
 			err, fmt.Sprintf("Cannot retry provision in %s status", prov.Status), http.StatusConflict)
 	}

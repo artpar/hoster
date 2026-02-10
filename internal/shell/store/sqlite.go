@@ -405,6 +405,10 @@ func (s *txSQLiteStore) GetNode(ctx context.Context, id string) (*domain.Node, e
 	return getNode(ctx, s.tx, id)
 }
 
+func (s *txSQLiteStore) GetNodeByCreatorAndName(ctx context.Context, creatorID int, name string) (*domain.Node, error) {
+	return getNodeByCreatorAndName(ctx, s.tx, creatorID, name)
+}
+
 func (s *txSQLiteStore) UpdateNode(ctx context.Context, node *domain.Node) error {
 	return updateNode(ctx, s.tx, node)
 }
@@ -1658,6 +1662,25 @@ func getNode(ctx context.Context, exec executor, id string) (*domain.Node, error
 			return nil, NewStoreError("GetNode", "node", id, "node not found", ErrNotFound)
 		}
 		return nil, NewStoreError("GetNode", "node", id, err.Error(), err)
+	}
+
+	return rowToNode(&row)
+}
+
+// GetNodeByCreatorAndName returns a node by creator ID and name.
+func (s *SQLiteStore) GetNodeByCreatorAndName(ctx context.Context, creatorID int, name string) (*domain.Node, error) {
+	return getNodeByCreatorAndName(ctx, s.db, creatorID, name)
+}
+
+func getNodeByCreatorAndName(ctx context.Context, exec executor, creatorID int, name string) (*domain.Node, error) {
+	var row nodeRow
+	query := `SELECT ` + nodeSelectColumns + ` ` + nodeFromClause + ` WHERE n.creator_id = ? AND n.name = ?`
+
+	if err := exec.GetContext(ctx, &row, query, creatorID, name); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, NewStoreError("GetNodeByCreatorAndName", "node", name, "node not found", ErrNotFound)
+		}
+		return nil, NewStoreError("GetNodeByCreatorAndName", "node", name, err.Error(), err)
 	}
 
 	return rowToNode(&row)
