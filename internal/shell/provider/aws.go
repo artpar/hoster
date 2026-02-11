@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	smithy "github.com/aws/smithy-go"
 
 	coreprovider "github.com/artpar/hoster/internal/core/provider"
 )
@@ -194,9 +195,16 @@ func (p *AWSProvider) DestroyInstance(ctx context.Context, req DestroyRequest) e
 		InstanceIds: []string{req.ProviderInstanceID},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to terminate instance %s: %w", req.ProviderInstanceID, err)
+		// Treat "instance not found" as success — already terminated/deleted
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "InvalidInstanceID.NotFound" {
+			p.logger.Info("EC2 instance already terminated", "instance_id", req.ProviderInstanceID)
+		} else {
+			return fmt.Errorf("failed to terminate instance %s: %w", req.ProviderInstanceID, err)
+		}
+	} else {
+		p.logger.Info("EC2 instance terminated", "instance_id", req.ProviderInstanceID, "region", req.Region)
 	}
-	p.logger.Info("EC2 instance terminated", "instance_id", req.ProviderInstanceID, "region", req.Region)
 
 	// Best-effort cleanup of SSH key
 	keyName := fmt.Sprintf("hoster-%s", req.InstanceName)

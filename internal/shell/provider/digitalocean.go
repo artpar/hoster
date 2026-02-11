@@ -103,10 +103,16 @@ func (p *DigitalOceanProvider) DestroyInstance(ctx context.Context, req DestroyR
 
 	_, err := p.client.Droplets.Delete(ctx, dropletID)
 	if err != nil {
-		return fmt.Errorf("failed to delete droplet: %w", err)
+		// Treat 404 as success — droplet already deleted (e.g., manually via provider console)
+		var errResp *godo.ErrorResponse
+		if errors.As(err, &errResp) && errResp.Response != nil && errResp.Response.StatusCode == 404 {
+			p.logger.Info("droplet already deleted", "droplet_id", dropletID)
+		} else {
+			return fmt.Errorf("failed to delete droplet: %w", err)
+		}
+	} else {
+		p.logger.Info("droplet deleted", "droplet_id", dropletID)
 	}
-
-	p.logger.Info("droplet deleted", "droplet_id", dropletID)
 
 	// Best-effort cleanup of SSH key
 	keyName := fmt.Sprintf("hoster-%s", req.InstanceName)
