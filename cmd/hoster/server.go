@@ -23,11 +23,10 @@ import (
 // =============================================================================
 
 const (
-	ExitSuccess          = 0
-	ExitConfigError      = 1
-	ExitDatabaseError    = 2
-	ExitDockerError      = 3
-	ExitHTTPServerError  = 4
+	ExitSuccess         = 0
+	ExitConfigError     = 1
+	ExitDatabaseError   = 2
+	ExitHTTPServerError = 3
 )
 
 // =============================================================================
@@ -40,7 +39,6 @@ type Server struct {
 	httpServer      *http.Server
 	proxyServer     *http.Server
 	store           store.Store
-	docker          docker.Client
 	nodePool        *docker.NodePool
 	billingReporter *billing.Reporter
 	healthChecker   *workers.HealthChecker
@@ -61,35 +59,12 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		}
 	}
 
-	// Connect to Docker
-	d, err := docker.NewDockerClient(cfg.Docker.Host)
-	if err != nil {
-		s.Close()
-		return nil, &ServerError{
-			Op:       "NewServer",
-			Err:      err,
-			ExitCode: ExitDockerError,
-		}
-	}
-
-	// Verify Docker connection
-	if err := d.Ping(); err != nil {
-		s.Close()
-		d.Close()
-		return nil, &ServerError{
-			Op:       "NewServer",
-			Err:      err,
-			ExitCode: ExitDockerError,
-		}
-	}
-
 	// Initialize encryption key (needed for SSH keys, cloud credentials, etc.)
 	var encryptionKey []byte
 	if cfg.Nodes.EncryptionKey != "" {
 		encryptionKey = []byte(cfg.Nodes.EncryptionKey)
 		if len(encryptionKey) != 32 {
 			s.Close()
-			d.Close()
 			return nil, &ServerError{
 				Op:       "NewServer",
 				Err:      errors.New("nodes.encryption_key must be exactly 32 bytes for AES-256-GCM"),
@@ -131,13 +106,12 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 	}, logger)
 
 	// Create scheduler service for node selection
-	sched := scheduler.NewService(s, nodePool, d, logger)
+	sched := scheduler.NewService(s, nodePool, logger)
 
 	// Create HTTP handler using new JSON:API setup (ADR-003)
 	handler := api.SetupAPI(api.APIConfig{
-		Store:      s,
-		Docker:     d,
-		Scheduler:  sched,
+		Store:     s,
+		Scheduler: sched,
 		Logger:     logger,
 		BaseDomain: cfg.Domain.BaseDomain,
 		ConfigDir:  cfg.Domain.ConfigDir,
@@ -196,7 +170,6 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		}, s, logger)
 		if err != nil {
 			s.Close()
-			d.Close()
 			return nil, &ServerError{
 				Op:       "NewServer",
 				Err:      err,
@@ -225,7 +198,6 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		httpServer:      httpServer,
 		proxyServer:     proxyServer,
 		store:           s,
-		docker:          d,
 		nodePool:        nodePool,
 		billingReporter: billingReporter,
 		healthChecker:   healthChecker,
@@ -345,11 +317,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		if err := s.nodePool.CloseAll(); err != nil {
 			s.logger.Error("node pool close error", "error", err)
 		}
-	}
-
-	// Close Docker client
-	if err := s.docker.Close(); err != nil {
-		s.logger.Error("Docker client close error", "error", err)
 	}
 
 	// Close database

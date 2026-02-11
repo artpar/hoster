@@ -14,6 +14,7 @@ import (
 	"github.com/artpar/hoster/internal/core/domain"
 	"github.com/artpar/hoster/internal/core/monitoring"
 	"github.com/artpar/hoster/internal/shell/docker"
+	"github.com/artpar/hoster/internal/shell/scheduler"
 	"github.com/artpar/hoster/internal/shell/store"
 	"github.com/gorilla/mux"
 )
@@ -24,15 +25,15 @@ import (
 
 // MonitoringHandlers provides monitoring endpoints for deployments.
 type MonitoringHandlers struct {
-	store  store.Store
-	docker docker.Client
+	store     store.Store
+	scheduler *scheduler.Service
 }
 
 // NewMonitoringHandlers creates a new monitoring handlers instance.
-func NewMonitoringHandlers(s store.Store, d docker.Client) *MonitoringHandlers {
+func NewMonitoringHandlers(s store.Store, sched *scheduler.Service) *MonitoringHandlers {
 	return &MonitoringHandlers{
-		store:  s,
-		docker: d,
+		store:     s,
+		scheduler: sched,
 	}
 }
 
@@ -94,10 +95,17 @@ func (h *MonitoringHandlers) HealthHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Get Docker client for the deployment's node
+	client, err := h.scheduler.GetClientForNode(ctx, deployment.NodeID)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "Cannot reach deployment node: "+err.Error())
+		return
+	}
+
 	// Get container health for each container in the deployment
 	var containerHealths []domain.ContainerHealth
 	for _, c := range deployment.Containers {
-		info, err := h.docker.InspectContainer(c.ID)
+		info, err := client.InspectContainer(c.ID)
 		if err != nil {
 			containerHealths = append(containerHealths, domain.ContainerHealth{
 				Name:   c.ServiceName,
@@ -224,6 +232,13 @@ func (h *MonitoringHandlers) LogsHandler(w http.ResponseWriter, r *http.Request)
 		since, _ = time.Parse(time.RFC3339, sinceStr)
 	}
 
+	// Get Docker client for the deployment's node
+	client, err := h.scheduler.GetClientForNode(ctx, deployment.NodeID)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "Cannot reach deployment node: "+err.Error())
+		return
+	}
+
 	// Collect logs from containers
 	var allLogs []logEntry
 	for _, c := range deployment.Containers {
@@ -238,7 +253,7 @@ func (h *MonitoringHandlers) LogsHandler(w http.ResponseWriter, r *http.Request)
 			Since:      since,
 		}
 
-		reader, err := h.docker.ContainerLogs(c.ID, logOpts)
+		reader, err := client.ContainerLogs(c.ID, logOpts)
 		if err != nil {
 			continue
 		}
@@ -374,10 +389,17 @@ func (h *MonitoringHandlers) StatsHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Get Docker client for the deployment's node
+	client, err := h.scheduler.GetClientForNode(ctx, deployment.NodeID)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "Cannot reach deployment node: "+err.Error())
+		return
+	}
+
 	// Collect stats from containers
 	var containerStats []containerStatsResponse
 	for _, c := range deployment.Containers {
-		stats, err := h.docker.ContainerStats(c.ID)
+		stats, err := client.ContainerStats(c.ID)
 		if err != nil {
 			continue
 		}

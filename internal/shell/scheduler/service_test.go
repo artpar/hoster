@@ -2,9 +2,7 @@ package scheduler
 
 import (
 	"context"
-	"io"
 	"testing"
-	"time"
 
 	"github.com/artpar/hoster/internal/core/domain"
 	"github.com/artpar/hoster/internal/shell/docker"
@@ -16,54 +14,6 @@ import (
 // =============================================================================
 // Test Helpers
 // =============================================================================
-
-// mockDockerClient is a simple mock for docker.Client
-type mockDockerClient struct {
-	pingError error
-}
-
-func (m *mockDockerClient) Ping() error { return m.pingError }
-func (m *mockDockerClient) CreateContainer(spec docker.ContainerSpec) (string, error) {
-	return "test-container", nil
-}
-func (m *mockDockerClient) StartContainer(id string) error { return nil }
-func (m *mockDockerClient) StopContainer(id string, timeout *time.Duration) error {
-	return nil
-}
-func (m *mockDockerClient) RemoveContainer(id string, opts docker.RemoveOptions) error {
-	return nil
-}
-func (m *mockDockerClient) InspectContainer(id string) (*docker.ContainerInfo, error) {
-	return &docker.ContainerInfo{ID: id, Status: docker.ContainerStatusRunning}, nil
-}
-func (m *mockDockerClient) ListContainers(opts docker.ListOptions) ([]docker.ContainerInfo, error) {
-	return nil, nil
-}
-func (m *mockDockerClient) ContainerLogs(id string, opts docker.LogOptions) (io.ReadCloser, error) {
-	return nil, nil
-}
-func (m *mockDockerClient) ContainerStats(id string) (*docker.ContainerResourceStats, error) {
-	return nil, nil
-}
-func (m *mockDockerClient) CreateNetwork(spec docker.NetworkSpec) (string, error) {
-	return "test-network", nil
-}
-func (m *mockDockerClient) RemoveNetwork(id string) error { return nil }
-func (m *mockDockerClient) ConnectNetwork(networkID, containerID string) error {
-	return nil
-}
-func (m *mockDockerClient) DisconnectNetwork(networkID, containerID string, force bool) error {
-	return nil
-}
-func (m *mockDockerClient) CreateVolume(spec docker.VolumeSpec) (string, error) {
-	return "test-volume", nil
-}
-func (m *mockDockerClient) RemoveVolume(name string, force bool) error { return nil }
-func (m *mockDockerClient) PullImage(image string, opts docker.PullOptions) error {
-	return nil
-}
-func (m *mockDockerClient) ImageExists(image string) (bool, error) { return true, nil }
-func (m *mockDockerClient) Close() error                           { return nil }
 
 // testStore creates a test SQLite store
 func testStore(t *testing.T) store.Store {
@@ -113,19 +63,16 @@ func testTemplate(id string, creatorID int, caps []string, resources domain.Reso
 
 func TestNewService(t *testing.T) {
 	s := testStore(t)
-	localClient := &mockDockerClient{}
 
-	service := NewService(s, nil, localClient, nil)
+	service := NewService(s, nil, nil)
 
 	assert.NotNil(t, service)
-	assert.Equal(t, localClient, service.LocalClient())
 	assert.False(t, service.SupportsRemoteNodes())
 }
 
-func TestScheduleDeployment_NoNodePool_ReturnsLocal(t *testing.T) {
+func TestScheduleDeployment_NoNodePool_ReturnsError(t *testing.T) {
 	s := testStore(t)
-	localClient := &mockDockerClient{}
-	service := NewService(s, nil, localClient, nil)
+	service := NewService(s, nil, nil)
 
 	template := testTemplate("tmpl-1", 1, nil, domain.Resources{})
 	req := ScheduleDeploymentRequest{
@@ -135,14 +82,12 @@ func TestScheduleDeployment_NoNodePool_ReturnsLocal(t *testing.T) {
 
 	result, err := service.ScheduleDeployment(context.Background(), req)
 
-	require.NoError(t, err)
-	assert.Equal(t, "local", result.NodeID)
-	assert.True(t, result.IsLocal)
-	assert.Nil(t, result.Node)
-	assert.Equal(t, localClient, result.Client)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrNoNodesConfigured)
+	assert.Nil(t, result)
 }
 
-func TestScheduleDeployment_NoNodesForCreator_ReturnsLocal(t *testing.T) {
+func TestScheduleDeployment_NoNodesForCreator_ReturnsError(t *testing.T) {
 	// Create store with nodes for a different creator
 	s := testStore(t)
 	ctx := context.Background()
@@ -169,10 +114,9 @@ func TestScheduleDeployment_NoNodesForCreator_ReturnsLocal(t *testing.T) {
 	err = s.CreateNode(ctx, &node)
 	require.NoError(t, err)
 
-	localClient := &mockDockerClient{}
-	// Note: We can't easily test with a real NodePool without SSH keys,
-	// so this test verifies the local fallback behavior
-	service := NewService(s, nil, localClient, nil)
+	// NodePool required but no nodes for creator 1
+	nodePool := docker.NewNodePool(s, []byte("test-key-32-bytes-long-here!!"), docker.DefaultNodePoolConfig())
+	service := NewService(s, nodePool, nil)
 
 	template := testTemplate("tmpl-1", 1, nil, domain.Resources{})
 	req := ScheduleDeploymentRequest{
@@ -182,46 +126,37 @@ func TestScheduleDeployment_NoNodesForCreator_ReturnsLocal(t *testing.T) {
 
 	result, err := service.ScheduleDeployment(ctx, req)
 
-	require.NoError(t, err)
-	assert.Equal(t, "local", result.NodeID)
-	assert.True(t, result.IsLocal)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrNoNodesForCreator)
+	assert.Nil(t, result)
 }
 
-func TestGetClientForNode_Local(t *testing.T) {
+func TestGetClientForNode_EmptyNodeID_ReturnsError(t *testing.T) {
 	s := testStore(t)
-	localClient := &mockDockerClient{}
-	service := NewService(s, nil, localClient, nil)
+	service := NewService(s, nil, nil)
 
-	// Test with empty nodeID
-	client, err := service.GetClientForNode(context.Background(), "")
-	require.NoError(t, err)
-	assert.Equal(t, localClient, client)
+	_, err := service.GetClientForNode(context.Background(), "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "all deployments use remote nodes")
+}
 
-	// Test with "local" nodeID
-	client, err = service.GetClientForNode(context.Background(), "local")
-	require.NoError(t, err)
-	assert.Equal(t, localClient, client)
+func TestGetClientForNode_LocalNodeID_ReturnsError(t *testing.T) {
+	s := testStore(t)
+	service := NewService(s, nil, nil)
+
+	_, err := service.GetClientForNode(context.Background(), "local")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "all deployments use remote nodes")
 }
 
 func TestGetClientForNode_NoNodePool(t *testing.T) {
 	s := testStore(t)
-	localClient := &mockDockerClient{}
-	service := NewService(s, nil, localClient, nil)
+	service := NewService(s, nil, nil)
 
 	_, err := service.GetClientForNode(context.Background(), "node-1")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "node pool not configured")
-}
-
-func TestGetClientForNode_NoLocalClient(t *testing.T) {
-	s := testStore(t)
-	service := NewService(s, nil, nil, nil)
-
-	_, err := service.GetClientForNode(context.Background(), "local")
-
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "local client not configured")
 }
 
 func TestFilterNodesByCreator(t *testing.T) {
@@ -276,28 +211,13 @@ func TestFilterNodesByCreator(t *testing.T) {
 
 func TestSupportsRemoteNodes(t *testing.T) {
 	s := testStore(t)
-	localClient := &mockDockerClient{}
 
 	// Without node pool
-	service1 := NewService(s, nil, localClient, nil)
+	service1 := NewService(s, nil, nil)
 	assert.False(t, service1.SupportsRemoteNodes())
 
 	// With node pool (even if empty)
 	nodePool := docker.NewNodePool(s, []byte("test-key-32-bytes-long-here!!"), docker.DefaultNodePoolConfig())
-	service2 := NewService(s, nodePool, localClient, nil)
+	service2 := NewService(s, nodePool, nil)
 	assert.True(t, service2.SupportsRemoteNodes())
-}
-
-func TestLocalResult(t *testing.T) {
-	s := testStore(t)
-	localClient := &mockDockerClient{}
-	service := NewService(s, nil, localClient, nil)
-
-	result := service.localResult()
-
-	assert.Equal(t, "local", result.NodeID)
-	assert.True(t, result.IsLocal)
-	assert.Nil(t, result.Node)
-	assert.Equal(t, localClient, result.Client)
-	assert.Equal(t, float64(0), result.Score)
 }

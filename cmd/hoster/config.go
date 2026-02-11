@@ -20,7 +20,6 @@ type Config struct {
 	DataDir  string         `mapstructure:"data_dir"`
 	Server   ServerConfig   `mapstructure:"server"`
 	Database DatabaseConfig `mapstructure:"database"`
-	Docker   DockerConfig   `mapstructure:"docker"`
 	Log      LogConfig      `mapstructure:"log"`
 	Domain   DomainConfig   `mapstructure:"domain"`
 	Auth     AuthConfig     `mapstructure:"auth"`
@@ -46,11 +45,6 @@ func (c ServerConfig) Address() string {
 // DatabaseConfig holds database configuration.
 type DatabaseConfig struct {
 	DSN string `mapstructure:"dsn"`
-}
-
-// DockerConfig holds Docker client configuration.
-type DockerConfig struct {
-	Host string `mapstructure:"host"`
 }
 
 // LogConfig holds logging configuration.
@@ -158,7 +152,6 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("server.write_timeout", "30s")
 	v.SetDefault("server.shutdown_timeout", "30s")
 	v.SetDefault("database.dsn", "")
-	v.SetDefault("docker.host", "")
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "json")
 	v.SetDefault("domain.base_domain", "apps.localhost")

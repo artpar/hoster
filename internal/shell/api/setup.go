@@ -12,7 +12,6 @@ import (
 	"github.com/artpar/hoster/internal/shell/api/middleware"
 	"github.com/artpar/hoster/internal/shell/api/openapi"
 	"github.com/artpar/hoster/internal/shell/api/resources"
-	"github.com/artpar/hoster/internal/shell/docker"
 	"github.com/artpar/hoster/internal/shell/scheduler"
 	"github.com/artpar/hoster/internal/shell/store"
 	"github.com/gorilla/mux"
@@ -25,10 +24,9 @@ import (
 
 // APIConfig holds configuration for the API setup.
 type APIConfig struct {
-	Store      store.Store
-	Docker     docker.Client
-	Scheduler  *scheduler.Service // Scheduler for node selection (nil = local only)
-	Logger     *slog.Logger
+	Store     store.Store
+	Scheduler *scheduler.Service
+	Logger    *slog.Logger
 	BaseDomain string
 	ConfigDir  string
 
@@ -61,7 +59,7 @@ func SetupAPI(cfg APIConfig) http.Handler {
 
 	// Health endpoints (not JSON:API, just simple JSON)
 	router.HandleFunc("/health", healthHandler).Methods("GET")
-	router.HandleFunc("/ready", readyHandler(cfg.Docker)).Methods("GET")
+	router.HandleFunc("/ready", readyHandler()).Methods("GET")
 
 	// Create api2go API for JSON:API resources
 	// Using NewAPIWithResolver - it creates its own internal router
@@ -74,7 +72,6 @@ func SetupAPI(cfg APIConfig) http.Handler {
 	templateResource := resources.NewTemplateResource(cfg.Store)
 	deploymentResource := resources.NewDeploymentResource(
 		cfg.Store,
-		cfg.Docker,
 		cfg.Scheduler,
 		cfg.Logger,
 		cfg.BaseDomain,
@@ -116,7 +113,7 @@ func SetupAPI(cfg APIConfig) http.Handler {
 
 	// Health endpoints
 	customRouter.HandleFunc("/health", healthHandler).Methods("GET")
-	customRouter.HandleFunc("/ready", readyHandler(cfg.Docker)).Methods("GET")
+	customRouter.HandleFunc("/ready", readyHandler()).Methods("GET")
 
 	// Template custom actions
 	customRouter.HandleFunc("/api/v1/templates/{id}/publish", func(w http.ResponseWriter, r *http.Request) {
@@ -186,7 +183,7 @@ func SetupAPI(cfg APIConfig) http.Handler {
 	domainHandlers.RegisterRoutes(customRouter)
 
 	// Monitoring endpoints - Following F010: Monitoring Dashboard
-	monitoringHandlers := NewMonitoringHandlers(cfg.Store, cfg.Docker)
+	monitoringHandlers := NewMonitoringHandlers(cfg.Store, cfg.Scheduler)
 	monitoringHandlers.RegisterRoutes(customRouter)
 
 	// OpenAPI endpoint - Following ADR-004: Reflective OpenAPI Generation
@@ -311,26 +308,14 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
 }
 
-func readyHandler(docker docker.Client) http.HandlerFunc {
+func readyHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		checks := make(map[string]string)
-		checks["database"] = "ok"
-
-		if err := docker.Ping(); err != nil {
-			checks["docker"] = "failed"
-			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status": "not_ready",
-				"checks": checks,
-			})
-			return
-		}
-		checks["docker"] = "ok"
-
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "ready",
-			"checks": checks,
+			"checks": map[string]string{
+				"database": "ok",
+			},
 		})
 	}
 }

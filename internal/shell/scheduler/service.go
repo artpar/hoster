@@ -22,8 +22,11 @@ var (
 	// ErrNoNodesConfigured is returned when no nodes exist in the system.
 	ErrNoNodesConfigured = errors.New("no nodes configured")
 
-	// ErrLocalNodeRequired is returned when template requires local execution.
-	ErrLocalNodeRequired = errors.New("template requires local node execution")
+	// ErrNoNodesForCreator is returned when no nodes are available for a creator.
+	ErrNoNodesForCreator = errors.New("no nodes available for creator")
+
+	// ErrNoSuitableNode is returned when the scheduler cannot find a suitable node.
+	ErrNoSuitableNode = errors.New("no suitable node found")
 )
 
 // =============================================================================
@@ -33,24 +36,21 @@ var (
 // Service provides scheduling functionality with I/O operations.
 // It loads nodes from the store and uses the pure scheduler algorithm.
 type Service struct {
-	store       store.Store
-	nodePool    *docker.NodePool
-	localClient docker.Client
-	logger      *slog.Logger
+	store    store.Store
+	nodePool *docker.NodePool
+	logger   *slog.Logger
 }
 
 // NewService creates a new scheduling service.
-// localClient is used for deployments when no remote nodes are available.
-// nodePool may be nil if only local deployments are supported.
-func NewService(s store.Store, nodePool *docker.NodePool, localClient docker.Client, logger *slog.Logger) *Service {
+// nodePool may be nil if remote nodes are not yet configured.
+func NewService(s store.Store, nodePool *docker.NodePool, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Service{
-		store:       s,
-		nodePool:    nodePool,
-		localClient: localClient,
-		logger:      logger,
+		store:    s,
+		nodePool: nodePool,
+		logger:   logger,
 	}
 }
 
@@ -76,19 +76,16 @@ type ScheduleDeploymentRequest struct {
 
 // ScheduleDeploymentResult contains the result of scheduling.
 type ScheduleDeploymentResult struct {
-	// NodeID is the selected node ID ("local" for local Docker)
+	// NodeID is the selected node's reference ID
 	NodeID string
 
-	// Node is the selected node (nil for local)
+	// Node is the selected node
 	Node *domain.Node
 
 	// Client is the Docker client for the selected node
 	Client docker.Client
 
-	// IsLocal indicates if this is a local deployment
-	IsLocal bool
-
-	// Score is the scheduler score (0 for local)
+	// Score is the scheduler score
 	Score float64
 }
 
@@ -97,13 +94,13 @@ type ScheduleDeploymentResult struct {
 // =============================================================================
 
 // ScheduleDeployment selects the best node for a deployment.
-// If no remote nodes are available/suitable, falls back to local.
+// All deployments run on remote nodes — there is no local fallback.
 //
 // The algorithm:
 // 1. Get all online nodes for the template's creator
 // 2. If preferred node is specified and available, use it
 // 3. Otherwise, run the scheduler algorithm
-// 4. If no suitable node found, fall back to local
+// 4. If no suitable node found, return error
 func (s *Service) ScheduleDeployment(ctx context.Context, req ScheduleDeploymentRequest) (*ScheduleDeploymentResult, error) {
 	s.logger.Debug("scheduling deployment",
 		"template_id", req.Template.ReferenceID,
@@ -112,28 +109,25 @@ func (s *Service) ScheduleDeployment(ctx context.Context, req ScheduleDeployment
 		"preferred_node", req.PreferredNodeID,
 	)
 
-	// If no node pool configured, use local
+	// Node pool is required for all deployments
 	if s.nodePool == nil {
-		s.logger.Debug("no node pool configured, using local")
-		return s.localResult(), nil
+		return nil, ErrNoNodesConfigured
 	}
 
 	// Get online nodes for the creator
 	nodes, err := s.store.ListOnlineNodes(ctx)
 	if err != nil {
-		s.logger.Warn("failed to list online nodes, falling back to local", "error", err)
-		return s.localResult(), nil
+		return nil, fmt.Errorf("failed to list online nodes: %w", err)
 	}
 
 	// Filter nodes by creator
 	creatorNodes := filterNodesByCreator(nodes, req.CreatorID)
 	if len(creatorNodes) == 0 {
-		s.logger.Debug("no nodes for creator, using local", "creator_id", req.CreatorID)
-		return s.localResult(), nil
+		return nil, fmt.Errorf("%w: creator_id=%d", ErrNoNodesForCreator, req.CreatorID)
 	}
 
 	// If preferred node specified and available, try to use it
-	if req.PreferredNodeID != "" && req.PreferredNodeID != "local" {
+	if req.PreferredNodeID != "" {
 		for _, node := range creatorNodes {
 			if node.ReferenceID == req.PreferredNodeID && node.IsAvailable() {
 				client, err := s.nodePool.GetClient(ctx, node.ReferenceID)
@@ -143,11 +137,10 @@ func (s *Service) ScheduleDeployment(ctx context.Context, req ScheduleDeployment
 				}
 				nodeCopy := node
 				return &ScheduleDeploymentResult{
-					NodeID:  node.ReferenceID,
-					Node:    &nodeCopy,
-					Client:  client,
-					IsLocal: false,
-					Score:   100, // Preferred node gets max score
+					NodeID: node.ReferenceID,
+					Node:   &nodeCopy,
+					Client: client,
+					Score:  100, // Preferred node gets max score
 				}, nil
 			}
 		}
@@ -164,22 +157,14 @@ func (s *Service) ScheduleDeployment(ctx context.Context, req ScheduleDeployment
 	// Run pure scheduler
 	result, err := corescheduler.Schedule(schedReq)
 	if err != nil {
-		s.logger.Debug("scheduler returned no suitable node, using local",
-			"error", err,
-			"considered", result.ConsideredCount,
-			"filtered_reasons", result.FilteredOutReasons,
-		)
-		return s.localResult(), nil
+		return nil, fmt.Errorf("%w: %v (considered=%d, filtered=%v)",
+			ErrNoSuitableNode, err, result.ConsideredCount, result.FilteredOutReasons)
 	}
 
 	// Get client for selected node
 	client, err := s.nodePool.GetClient(ctx, result.SelectedNodeID)
 	if err != nil {
-		s.logger.Warn("failed to get client for selected node, falling back to local",
-			"node_id", result.SelectedNodeID,
-			"error", err,
-		)
-		return s.localResult(), nil
+		return nil, fmt.Errorf("failed to get client for node %s: %w", result.SelectedNodeID, err)
 	}
 
 	s.logger.Info("scheduled deployment to node",
@@ -189,11 +174,10 @@ func (s *Service) ScheduleDeployment(ctx context.Context, req ScheduleDeployment
 	)
 
 	return &ScheduleDeploymentResult{
-		NodeID:  result.SelectedNodeID,
-		Node:    result.SelectedNode,
-		Client:  client,
-		IsLocal: false,
-		Score:   result.Score,
+		NodeID: result.SelectedNodeID,
+		Node:   result.SelectedNode,
+		Client: client,
+		Score:  result.Score,
 	}, nil
 }
 
@@ -202,13 +186,10 @@ func (s *Service) ScheduleDeployment(ctx context.Context, req ScheduleDeployment
 // =============================================================================
 
 // GetClientForNode returns the Docker client for a specific node ID.
-// Returns the local client if nodeID is "local".
+// All deployments use remote nodes — empty or "local" nodeID returns an error.
 func (s *Service) GetClientForNode(ctx context.Context, nodeID string) (docker.Client, error) {
 	if nodeID == "" || nodeID == "local" {
-		if s.localClient == nil {
-			return nil, errors.New("local client not configured")
-		}
-		return s.localClient, nil
+		return nil, errors.New("no local client: all deployments use remote nodes")
 	}
 
 	if s.nodePool == nil {
@@ -218,29 +199,9 @@ func (s *Service) GetClientForNode(ctx context.Context, nodeID string) (docker.C
 	return s.nodePool.GetClient(ctx, nodeID)
 }
 
-// =============================================================================
-// Local Fallback
-// =============================================================================
-
-// localResult returns a result for local deployment.
-func (s *Service) localResult() *ScheduleDeploymentResult {
-	return &ScheduleDeploymentResult{
-		NodeID:  "local",
-		Node:    nil,
-		Client:  s.localClient,
-		IsLocal: true,
-		Score:   0,
-	}
-}
-
 // SupportsRemoteNodes returns true if the service has a node pool configured.
 func (s *Service) SupportsRemoteNodes() bool {
 	return s.nodePool != nil
-}
-
-// LocalClient returns the local Docker client.
-func (s *Service) LocalClient() docker.Client {
-	return s.localClient
 }
 
 // =============================================================================

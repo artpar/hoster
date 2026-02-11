@@ -27,7 +27,6 @@ func TestLoadConfig_DefaultValues(t *testing.T) {
 	assert.Equal(t, 30*time.Second, cfg.Server.WriteTimeout)
 	assert.Equal(t, 30*time.Second, cfg.Server.ShutdownTimeout)
 	assert.Equal(t, "data/hoster.db", cfg.Database.DSN)
-	assert.Equal(t, "", cfg.Docker.Host)
 	assert.Equal(t, "info", cfg.Log.Level)
 	assert.Equal(t, "json", cfg.Log.Format)
 }
@@ -47,9 +46,6 @@ server:
 database:
   dsn: "/tmp/test.db"
 
-docker:
-  host: "unix:///var/run/docker.sock"
-
 log:
   level: "debug"
   format: "text"
@@ -66,7 +62,6 @@ log:
 	assert.Equal(t, 60*time.Second, cfg.Server.WriteTimeout)
 	assert.Equal(t, 15*time.Second, cfg.Server.ShutdownTimeout)
 	assert.Equal(t, "/tmp/test.db", cfg.Database.DSN)
-	assert.Equal(t, "unix:///var/run/docker.sock", cfg.Docker.Host)
 	assert.Equal(t, "debug", cfg.Log.Level)
 	assert.Equal(t, "text", cfg.Log.Format)
 }
@@ -78,7 +73,6 @@ func TestLoadConfig_EnvironmentOverride(t *testing.T) {
 	t.Setenv("HOSTER_SERVER_HOST", "192.168.1.1")
 	t.Setenv("HOSTER_SERVER_PORT", "3000")
 	t.Setenv("HOSTER_DATABASE_DSN", "/custom/path.db")
-	t.Setenv("HOSTER_DOCKER_HOST", "tcp://localhost:2375")
 	t.Setenv("HOSTER_LOG_LEVEL", "warn")
 	t.Setenv("HOSTER_LOG_FORMAT", "text")
 
@@ -88,7 +82,6 @@ func TestLoadConfig_EnvironmentOverride(t *testing.T) {
 	assert.Equal(t, "192.168.1.1", cfg.Server.Host)
 	assert.Equal(t, 3000, cfg.Server.Port)
 	assert.Equal(t, "/custom/path.db", cfg.Database.DSN)
-	assert.Equal(t, "tcp://localhost:2375", cfg.Docker.Host)
 	assert.Equal(t, "warn", cfg.Log.Level)
 	assert.Equal(t, "text", cfg.Log.Format)
 }
@@ -242,7 +235,6 @@ func clearEnv(t *testing.T) {
 		"HOSTER_SERVER_PORT",
 		"HOSTER_DATABASE_DSN",
 		"HOSTER_DATA_DIR",
-		"HOSTER_DOCKER_HOST",
 		"HOSTER_LOG_LEVEL",
 		"HOSTER_LOG_FORMAT",
 	}

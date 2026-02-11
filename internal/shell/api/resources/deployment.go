@@ -152,36 +152,28 @@ func (d Deployment) ToDomain() *domain.Deployment {
 
 // DeploymentResource implements the api2go resource interface for deployments.
 type DeploymentResource struct {
-	Store        store.Store
-	Docker       docker.Client
-	Orchestrator *docker.Orchestrator
-	Scheduler    *scheduler.Service
-	Logger       *slog.Logger
-	BaseDomain   string
-	ConfigDir    string
+	Store      store.Store
+	Scheduler  *scheduler.Service
+	Logger     *slog.Logger
+	BaseDomain string
+	ConfigDir  string
 }
 
 // NewDeploymentResource creates a new deployment resource handler.
-// The scheduler parameter is used to schedule deployments to nodes.
-// If scheduler is nil, a default scheduler with no remote node support is created.
-func NewDeploymentResource(s store.Store, d docker.Client, sched *scheduler.Service, l *slog.Logger, baseDomain, configDir string) *DeploymentResource {
+// The scheduler parameter is required for scheduling deployments to nodes.
+func NewDeploymentResource(s store.Store, sched *scheduler.Service, l *slog.Logger, baseDomain, configDir string) *DeploymentResource {
 	if l == nil {
 		l = slog.Default()
 	}
 	if configDir == "" {
 		configDir = "/var/lib/hoster/configs"
 	}
-	if sched == nil {
-		sched = scheduler.NewService(s, nil, d, l) // nil NodePool for backward compat
-	}
 	return &DeploymentResource{
-		Store:        s,
-		Docker:       d,
-		Orchestrator: docker.NewOrchestrator(d, l, configDir, s),
-		Scheduler:    sched,
-		Logger:       l,
-		BaseDomain:   baseDomain,
-		ConfigDir:    configDir,
+		Store:      s,
+		Scheduler:  sched,
+		Logger:     l,
+		BaseDomain: baseDomain,
+		ConfigDir:  configDir,
 	}
 }
 
@@ -425,20 +417,16 @@ func (r DeploymentResource) Delete(id string, req api2go.Request) (api2go.Respon
 		)
 	}
 
-	// Get client for the deployment's node
+	// Get client for the deployment's node and clean up Docker resources
 	client, err := r.Scheduler.GetClientForNode(ctx, deployment.NodeID)
 	if err != nil {
-		r.Logger.Warn("failed to get client for node, using local client", "node_id", deployment.NodeID, "error", err)
-		client = r.Docker // Fallback to local client for cleanup
-	}
-
-	// Create orchestrator with the node's client
-	orchestrator := docker.NewOrchestrator(client, r.Logger, r.ConfigDir, r.Store)
-
-	// Remove all Docker resources
-	if err := orchestrator.RemoveDeployment(ctx, deployment); err != nil {
-		r.Logger.Warn("failed to remove deployment resources", "error", err)
-		// Continue with database deletion even if Docker cleanup fails
+		r.Logger.Warn("failed to get client for node, skipping Docker cleanup", "node_id", deployment.NodeID, "error", err)
+	} else {
+		orchestrator := docker.NewOrchestrator(client, r.Logger, r.ConfigDir, r.Store)
+		if err := orchestrator.RemoveDeployment(ctx, deployment); err != nil {
+			r.Logger.Warn("failed to remove deployment resources", "error", err)
+			// Continue with database deletion even if Docker cleanup fails
+		}
 	}
 
 	if err := r.Store.DeleteDeployment(ctx, id); err != nil {
@@ -540,7 +528,6 @@ func (r DeploymentResource) StartDeployment(id string, req *http.Request) (api2g
 	r.Logger.Info("scheduled deployment",
 		"deployment_id", deployment.ReferenceID,
 		"node_id", schedResult.NodeID,
-		"is_local", schedResult.IsLocal,
 		"score", schedResult.Score,
 	)
 

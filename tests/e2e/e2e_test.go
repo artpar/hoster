@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/artpar/hoster/internal/shell/api"
-	"github.com/artpar/hoster/internal/shell/docker"
 	"github.com/artpar/hoster/internal/shell/store"
 )
 
@@ -31,7 +30,6 @@ import (
 
 var (
 	testStore  store.Store
-	testDocker docker.Client
 	testClient *http.Client
 	baseURL    string
 	testServer *http.Server
@@ -78,39 +76,15 @@ func setup() int {
 	testStore = s
 	log.Println("E2E Setup: SQLite store initialized")
 
-	// 3. Create Docker client
-	d, err := docker.NewDockerClient("")
-	if err != nil {
-		log.Printf("Failed to create Docker client: %v", err)
-		return 1
-	}
-	testDocker = d
-	log.Println("E2E Setup: Docker client created")
-
-	// 4. Verify Docker connection
-	if err := d.Ping(); err != nil {
-		log.Printf("Failed to ping Docker: %v", err)
-		log.Println("Make sure Docker daemon is running")
-		return 1
-	}
-	log.Println("E2E Setup: Docker daemon is reachable")
-
-	// 5. Cleanup any leftover test containers
-	log.Println("E2E Setup: Cleaning up any leftover test containers...")
-	if err := CleanupAllTestResources(context.Background(), d); err != nil {
-		log.Printf("WARN: Failed to cleanup old containers: %v", err)
-	}
-
-	// 6. Create HTTP handler
+	// 3. Create HTTP handler (no local Docker needed — all deployments use remote nodes)
 	handler := api.SetupAPI(api.APIConfig{
 		Store:      testStore,
-		Docker:     testDocker,
 		BaseDomain: "apps.localhost",
 		ConfigDir:  tmpDir + "/configs",
 	})
 	log.Println("E2E Setup: HTTP handler created")
 
-	// 7. Find an available port
+	// 4. Find an available port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		log.Printf("Failed to find available port: %v", err)
@@ -120,12 +94,12 @@ func setup() int {
 	baseURL = fmt.Sprintf("http://127.0.0.1:%d", port)
 	log.Printf("E2E Setup: Server will listen on port %d", port)
 
-	// 8. Create HTTP server
+	// 5. Create HTTP server
 	testServer = &http.Server{
 		Handler: handler,
 	}
 
-	// 9. Start server in goroutine
+	// 6. Start server in goroutine
 	go func() {
 		if err := testServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 			log.Printf("Server error: %v", err)
@@ -133,12 +107,12 @@ func setup() int {
 	}()
 	log.Println("E2E Setup: HTTP server started")
 
-	// 10. Create HTTP client
+	// 7. Create HTTP client
 	testClient = &http.Client{
 		Timeout: 30 * time.Second,
 	}
 
-	// 11. Wait for server to be ready
+	// 8. Wait for server to be ready
 	if err := waitForReady(baseURL+"/health", 10*time.Second); err != nil {
 		log.Printf("Server failed to become ready: %v", err)
 		return 1
@@ -160,14 +134,7 @@ func teardown() {
 		log.Println("E2E Teardown: HTTP server stopped")
 	}
 
-	// 2. Cleanup test containers
-	if testDocker != nil {
-		CleanupAllTestResources(context.Background(), testDocker)
-		testDocker.Close()
-		log.Println("E2E Teardown: Docker client closed")
-	}
-
-	// 3. Close database
+	// 2. Close database
 	if testStore != nil {
 		testStore.Close()
 		log.Println("E2E Teardown: Database closed")
