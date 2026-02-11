@@ -12,6 +12,8 @@ func dispatch(cmd string, args []string) error {
 		return versionCmd()
 	case "ping":
 		return pingCmd()
+	case "system-info":
+		return systemInfoCmd()
 
 	// Container commands
 	case "create-container":

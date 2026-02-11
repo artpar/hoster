@@ -152,6 +152,87 @@ func TestPingInfo_JSON(t *testing.T) {
 }
 
 // =============================================================================
+// SystemInfo Tests
+// =============================================================================
+
+func TestSystemInfo_JSON_RoundTrip(t *testing.T) {
+	info := SystemInfo{
+		CPUCores:      4,
+		MemoryTotalMB: 16384,
+		DiskTotalMB:   102400,
+		CPUUsedPct:    35.5,
+		MemoryUsedMB:  8192,
+		DiskUsedMB:    51200,
+	}
+
+	bytes, err := json.Marshal(info)
+	require.NoError(t, err)
+
+	var parsed SystemInfo
+	err = json.Unmarshal(bytes, &parsed)
+	require.NoError(t, err)
+
+	assert.Equal(t, 4.0, parsed.CPUCores)
+	assert.Equal(t, int64(16384), parsed.MemoryTotalMB)
+	assert.Equal(t, int64(102400), parsed.DiskTotalMB)
+	assert.Equal(t, 35.5, parsed.CPUUsedPct)
+	assert.Equal(t, int64(8192), parsed.MemoryUsedMB)
+	assert.Equal(t, int64(51200), parsed.DiskUsedMB)
+}
+
+func TestSystemInfo_JSON_Zeros(t *testing.T) {
+	info := SystemInfo{}
+
+	bytes, err := json.Marshal(info)
+	require.NoError(t, err)
+
+	var parsed SystemInfo
+	err = json.Unmarshal(bytes, &parsed)
+	require.NoError(t, err)
+
+	assert.Equal(t, 0.0, parsed.CPUCores)
+	assert.Equal(t, int64(0), parsed.MemoryTotalMB)
+	assert.Equal(t, int64(0), parsed.DiskTotalMB)
+	assert.Equal(t, 0.0, parsed.CPUUsedPct)
+	assert.Equal(t, int64(0), parsed.MemoryUsedMB)
+	assert.Equal(t, int64(0), parsed.DiskUsedMB)
+}
+
+func TestSystemInfo_SuccessResponse_RoundTrip(t *testing.T) {
+	info := SystemInfo{
+		CPUCores:      2,
+		MemoryTotalMB: 4096,
+		DiskTotalMB:   50000,
+		CPUUsedPct:    10.0,
+		MemoryUsedMB:  2048,
+		DiskUsedMB:    25000,
+	}
+
+	resp, err := NewSuccessResponse(info)
+	require.NoError(t, err)
+	assert.True(t, resp.Success)
+
+	// Marshal then parse (simulates over-the-wire)
+	respBytes, err := json.Marshal(resp)
+	require.NoError(t, err)
+
+	parsed, err := ParseResponse(respBytes)
+	require.NoError(t, err)
+	assert.True(t, parsed.Success)
+
+	var result SystemInfo
+	err = parsed.UnmarshalData(&result)
+	require.NoError(t, err)
+
+	assert.Equal(t, info.CPUCores, result.CPUCores)
+	assert.Equal(t, info.MemoryTotalMB, result.MemoryTotalMB)
+	assert.Equal(t, info.DiskTotalMB, result.DiskTotalMB)
+	assert.Equal(t, info.CPUUsedPct, result.CPUUsedPct)
+	assert.Equal(t, info.MemoryUsedMB, result.MemoryUsedMB)
+	assert.Equal(t, info.DiskUsedMB, result.DiskUsedMB)
+}
+
+// =============================================================================
 // ContainerSpec Tests
 // =============================================================================
 

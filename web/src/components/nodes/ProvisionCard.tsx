@@ -1,5 +1,5 @@
-import { Cloud, RefreshCw, Trash2, AlertCircle, Loader2 } from 'lucide-react';
-import type { CloudProvision } from '@/api/types';
+import { Cloud, RefreshCw, Trash2, AlertCircle, Loader2, Check, Circle } from 'lucide-react';
+import type { CloudProvision, ProvisionStatus } from '@/api/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -17,6 +17,76 @@ const providerLabels: Record<string, string> = {
   digitalocean: 'DigitalOcean',
   hetzner: 'Hetzner',
 };
+
+const PROVISION_STEPS = ['pending', 'creating', 'configuring', 'ready'] as const;
+
+function stepState(step: string, currentStatus: ProvisionStatus): 'completed' | 'active' | 'pending' {
+  const stepIdx = PROVISION_STEPS.indexOf(step as typeof PROVISION_STEPS[number]);
+  const statusIdx = PROVISION_STEPS.indexOf(currentStatus as typeof PROVISION_STEPS[number]);
+
+  if (statusIdx < 0) {
+    // Status is failed/destroying/destroyed — show steps up to where it failed
+    return 'pending';
+  }
+  if (stepIdx < statusIdx) return 'completed';
+  if (stepIdx === statusIdx) return 'active';
+  return 'pending';
+}
+
+const stepLabels: Record<string, string> = {
+  pending: 'Queued',
+  creating: 'Creating',
+  configuring: 'Configuring',
+  ready: 'Ready',
+};
+
+function StepTimeline({ status }: { status: ProvisionStatus }) {
+  const isDestructive = status === 'failed' || status === 'destroying' || status === 'destroyed';
+  if (isDestructive) return null;
+
+  return (
+    <div className="flex items-center gap-1">
+      {PROVISION_STEPS.map((step, i) => {
+        const state = stepState(step, status);
+        return (
+          <div key={step} className="flex items-center gap-1">
+            <div className="flex flex-col items-center">
+              <div className="flex items-center gap-1">
+                {state === 'completed' && (
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                    <Check className="h-3 w-3" />
+                  </div>
+                )}
+                {state === 'active' && (
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-primary">
+                    <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                  </div>
+                )}
+                {state === 'pending' && (
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-muted-foreground/30">
+                    <Circle className="h-2 w-2 text-muted-foreground/30" />
+                  </div>
+                )}
+              </div>
+              <span className={`mt-1 text-[10px] leading-tight ${
+                state === 'active' ? 'font-medium text-primary' :
+                state === 'completed' ? 'text-muted-foreground' :
+                'text-muted-foreground/50'
+              }`}>
+                {stepLabels[step]}
+              </span>
+            </div>
+            {i < PROVISION_STEPS.length - 1 && (
+              <div className={`mb-4 h-px w-6 ${
+                state === 'completed' ? 'bg-primary' : 'bg-muted-foreground/20'
+              }`} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function ProvisionCard({ provision, onRetry, onDestroy, isRetrying }: ProvisionCardProps) {
   const attrs = provision.attributes;
@@ -42,7 +112,10 @@ export function ProvisionCard({ provision, onRetry, onDestroy, isRetrying }: Pro
       </CardHeader>
 
       <CardContent className="space-y-3">
-        {/* Progress / step */}
+        {/* Step timeline for active provisions */}
+        <StepTimeline status={attrs.status} />
+
+        {/* Current step detail text */}
         {isActive && attrs.current_step && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" />

@@ -38,9 +38,17 @@ type Provisioner struct {
 	config        ProvisionerConfig
 	logger        *slog.Logger
 
+	healthChecker *HealthChecker
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+}
+
+// SetHealthChecker sets the health checker so the provisioner can trigger
+// an immediate health check when a node is finalized.
+func (p *Provisioner) SetHealthChecker(hc *HealthChecker) {
+	p.healthChecker = hc
 }
 
 // NewProvisioner creates a new provisioner worker.
@@ -399,6 +407,17 @@ func (p *Provisioner) stepFinalize(ctx context.Context, prov *domain.CloudProvis
 	}
 
 	logger.Info("provision complete", "node_id", prov.NodeID, "ip", prov.PublicIP)
+
+	// Trigger immediate health check so the node comes online quickly
+	if p.healthChecker != nil && prov.NodeID != "" {
+		go func() {
+			checkCtx, checkCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer checkCancel()
+			if err := p.healthChecker.CheckNodeNow(checkCtx, prov.NodeID); err != nil {
+				logger.Warn("immediate health check failed", "node_id", prov.NodeID, "error", err)
+			}
+		}()
+	}
 }
 
 func (p *Provisioner) stepDestroyInstance(ctx context.Context, prov *domain.CloudProvision, logger *slog.Logger) {

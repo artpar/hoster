@@ -10,6 +10,7 @@ import (
 
 	"github.com/artpar/hoster/internal/core/crypto"
 	"github.com/artpar/hoster/internal/core/domain"
+	"github.com/artpar/hoster/internal/core/minion"
 	"github.com/artpar/hoster/internal/shell/docker"
 	"github.com/artpar/hoster/internal/shell/store"
 )
@@ -189,7 +190,7 @@ func (h *HealthChecker) checkNode(ctx context.Context, node *domain.Node) {
 	logger := h.logger.With("node_id", node.ID, "node_name", node.Name)
 
 	// Try to ping the node (includes auto-deploying minion if needed)
-	err := h.pingNode(nodeCtx, node)
+	sysInfo, err := h.pingNode(nodeCtx, node)
 
 	now := time.Now()
 	node.LastHealthCheck = &now
@@ -209,6 +210,11 @@ func (h *HealthChecker) checkNode(ctx context.Context, node *domain.Node) {
 		}
 		node.Status = domain.NodeStatusOnline
 		node.ErrorMessage = ""
+
+		// Apply system metrics if available
+		if sysInfo != nil {
+			domain.ApplySystemInfo(node, sysInfo.CPUCores, sysInfo.MemoryTotalMB, sysInfo.MemoryUsedMB, sysInfo.DiskTotalMB, sysInfo.DiskUsedMB, sysInfo.CPUUsedPct)
+		}
 	}
 
 	// Update node in database
@@ -218,21 +224,22 @@ func (h *HealthChecker) checkNode(ctx context.Context, node *domain.Node) {
 }
 
 // pingNode checks if a node is reachable and Docker is running.
-func (h *HealthChecker) pingNode(ctx context.Context, node *domain.Node) error {
+// On success, it also collects system metrics (best-effort).
+func (h *HealthChecker) pingNode(ctx context.Context, node *domain.Node) (*minion.SystemInfo, error) {
 	// Skip nodes without SSH key configured
 	if node.SSHKeyID == 0 {
-		return domain.ErrSSHHostRequired
+		return nil, domain.ErrSSHHostRequired
 	}
 
 	// Get the SSH key and decrypt it
 	sshKey, err := h.store.GetSSHKey(ctx, node.SSHKeyRefID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	privateKey, err := crypto.DecryptSSHKey(sshKey.PrivateKeyEncrypted, h.encryptionKey)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Create a temporary SSH client for the health check
@@ -243,7 +250,7 @@ func (h *HealthChecker) pingNode(ctx context.Context, node *domain.Node) error {
 		ConnectTimeout: h.config.NodeTimeout,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer client.Close()
 
@@ -251,11 +258,21 @@ func (h *HealthChecker) pingNode(ctx context.Context, node *domain.Node) error {
 	ensureCtx, ensureCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer ensureCancel()
 	if err := client.AutoEnsureMinion(ensureCtx); err != nil {
-		return fmt.Errorf("ensure minion: %w", err)
+		return nil, fmt.Errorf("ensure minion: %w", err)
 	}
 
 	// Ping the Docker daemon via minion
-	return client.Ping()
+	if err := client.Ping(); err != nil {
+		return nil, err
+	}
+
+	// Collect system metrics (best-effort — don't fail the health check)
+	sysInfo, err := client.SystemInfo()
+	if err != nil {
+		h.logger.Debug("failed to collect system metrics", "node_id", node.ID, "error", err)
+		return nil, nil
+	}
+	return sysInfo, nil
 }
 
 // CheckNodeNow performs an immediate health check on a specific node.

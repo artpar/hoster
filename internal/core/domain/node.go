@@ -369,3 +369,14 @@ func IsStandardCapability(cap string) bool {
 func DefaultCapabilities() []string {
 	return []string{"standard"}
 }
+
+// ApplySystemInfo updates a node's capacity fields from system metrics.
+// This is a pure function — it modifies the node in place but performs no I/O.
+func ApplySystemInfo(node *Node, cpuCores float64, memTotalMB, memUsedMB, diskTotalMB, diskUsedMB int64, cpuUsedPct float64) {
+	node.Capacity.CPUCores = cpuCores
+	node.Capacity.MemoryMB = memTotalMB
+	node.Capacity.DiskMB = diskTotalMB
+	node.Capacity.CPUUsed = cpuCores * cpuUsedPct / 100.0
+	node.Capacity.MemoryUsedMB = memUsedMB
+	node.Capacity.DiskUsedMB = diskUsedMB
+}

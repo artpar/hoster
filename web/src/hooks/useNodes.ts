@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { nodesApi } from '@/api/nodes';
 import type { Node, CreateNodeRequest, UpdateNodeRequest } from '@/api/types';
 import { createResourceHooks, createIdActionHook } from './createResourceHooks';
@@ -5,7 +6,7 @@ import { createResourceHooks, createIdActionHook } from './createResourceHooks';
 /**
  * TanStack Query hooks for Node resources.
  *
- * Generated from createResourceHooks factory with custom maintenance actions.
+ * Uses smart polling: 15s when any node is offline, 60s otherwise.
  */
 const nodeHooks = createResourceHooks<Node, CreateNodeRequest, UpdateNodeRequest>({
   resourceName: 'nodes',
@@ -15,8 +16,19 @@ const nodeHooks = createResourceHooks<Node, CreateNodeRequest, UpdateNodeRequest
 // Export query keys for external cache management
 export const nodeKeys = nodeHooks.keys;
 
-// Export standard CRUD hooks with friendly names
-export const useNodes = nodeHooks.useList;
+// Override useList with smart polling
+export function useNodes() {
+  return useQuery({
+    queryKey: nodeKeys.lists(),
+    queryFn: nodesApi.list,
+    refetchInterval: (query) => {
+      const nodes = query.state.data || [];
+      const hasOffline = nodes.some((n) => n.attributes.status === 'offline');
+      return hasOffline ? 15000 : 60000;
+    },
+  });
+}
+
 export const useNode = nodeHooks.useGet;
 export const useCreateNode = nodeHooks.useCreate;
 export const useUpdateNode = nodeHooks.useUpdate;

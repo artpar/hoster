@@ -19,7 +19,7 @@ import (
 
 // Version is the current minion protocol version.
 // Bump MAJOR for breaking changes, MINOR for new commands, PATCH for fixes.
-const Version = "1.0.0"
+const Version = "1.1.0"
 
 // =============================================================================
 // Response Envelope
@@ -121,6 +121,17 @@ type PingInfo struct {
 	APIVersion    string `json:"api_version"`
 	OS            string `json:"os"`
 	Arch          string `json:"arch"`
+}
+
+// SystemInfo is returned by the "system-info" command.
+// It contains host-level resource metrics for the node.
+type SystemInfo struct {
+	CPUCores      float64 `json:"cpu_cores"`
+	MemoryTotalMB int64   `json:"memory_total_mb"`
+	DiskTotalMB   int64   `json:"disk_total_mb"`
+	CPUUsedPct    float64 `json:"cpu_used_percent"`
+	MemoryUsedMB  int64   `json:"memory_used_mb"`
+	DiskUsedMB    int64   `json:"disk_used_mb"`
 }
 
 // CreateResult is returned when creating containers, networks, or volumes.

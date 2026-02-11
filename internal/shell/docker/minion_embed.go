@@ -52,4 +52,4 @@ func GetMinionBinaryForCurrentPlatform() ([]byte, error) {
 
 // MinionVersion is the version of the embedded minion binaries.
 // This should match the version in cmd/hoster-minion/main.go.
-var MinionVersion = "1.0.0"
+var MinionVersion = "1.1.0"

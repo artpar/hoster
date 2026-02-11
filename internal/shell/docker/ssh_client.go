@@ -763,6 +763,26 @@ func (c *SSHDockerClient) Ping() error {
 	return nil
 }
 
+// SystemInfo collects host-level CPU, memory, and disk metrics from the remote node.
+func (c *SSHDockerClient) SystemInfo() (*minion.SystemInfo, error) {
+	ctx := context.Background()
+
+	resp, err := c.execMinion(ctx, "system-info", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if !resp.Success {
+		return nil, c.translateError(resp.Error)
+	}
+
+	var info minion.SystemInfo
+	if err := resp.UnmarshalData(&info); err != nil {
+		return nil, fmt.Errorf("unmarshal system info: %w", err)
+	}
+	return &info, nil
+}
+
 // =============================================================================
 // Type Conversions
 // =============================================================================

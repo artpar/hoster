@@ -498,3 +498,67 @@ func TestGenerateSSHKeyID(t *testing.T) {
 	assert.True(t, id1[:7] == "sshkey_")
 	assert.NotEqual(t, id1, id2) // IDs should be unique
 }
+
+// =============================================================================
+// ApplySystemInfo Tests
+// =============================================================================
+
+func TestApplySystemInfo_FullMetrics(t *testing.T) {
+	node := &Node{Capacity: NodeCapacity{}}
+
+	ApplySystemInfo(node, 4, 16384, 8192, 102400, 51200, 35.5)
+
+	assert.Equal(t, 4.0, node.Capacity.CPUCores)
+	assert.Equal(t, int64(16384), node.Capacity.MemoryMB)
+	assert.Equal(t, int64(102400), node.Capacity.DiskMB)
+	assert.InDelta(t, 1.42, node.Capacity.CPUUsed, 0.01) // 4 * 35.5 / 100
+	assert.Equal(t, int64(8192), node.Capacity.MemoryUsedMB)
+	assert.Equal(t, int64(51200), node.Capacity.DiskUsedMB)
+}
+
+func TestApplySystemInfo_ZeroValues(t *testing.T) {
+	node := &Node{Capacity: NodeCapacity{
+		CPUCores: 8,
+		MemoryMB: 32768,
+	}}
+
+	ApplySystemInfo(node, 0, 0, 0, 0, 0, 0)
+
+	assert.Equal(t, 0.0, node.Capacity.CPUCores)
+	assert.Equal(t, int64(0), node.Capacity.MemoryMB)
+	assert.Equal(t, int64(0), node.Capacity.DiskMB)
+	assert.Equal(t, 0.0, node.Capacity.CPUUsed)
+	assert.Equal(t, int64(0), node.Capacity.MemoryUsedMB)
+	assert.Equal(t, int64(0), node.Capacity.DiskUsedMB)
+}
+
+func TestApplySystemInfo_HighCPU(t *testing.T) {
+	node := &Node{Capacity: NodeCapacity{}}
+
+	ApplySystemInfo(node, 2, 4096, 3000, 50000, 40000, 100.0)
+
+	assert.Equal(t, 2.0, node.Capacity.CPUCores)
+	assert.Equal(t, 2.0, node.Capacity.CPUUsed) // 2 * 100% = 2
+	assert.Equal(t, int64(3000), node.Capacity.MemoryUsedMB)
+	assert.Equal(t, int64(40000), node.Capacity.DiskUsedMB)
+}
+
+func TestApplySystemInfo_PreservesOtherFields(t *testing.T) {
+	node := &Node{
+		Name:   "test-node",
+		Status: NodeStatusOnline,
+		Capacity: NodeCapacity{
+			CPUCores: 99, // Will be overwritten
+		},
+	}
+
+	ApplySystemInfo(node, 4, 8192, 4096, 50000, 25000, 50.0)
+
+	// Capacity fields updated
+	assert.Equal(t, 4.0, node.Capacity.CPUCores)
+	assert.Equal(t, int64(8192), node.Capacity.MemoryMB)
+
+	// Non-capacity fields preserved
+	assert.Equal(t, "test-node", node.Name)
+	assert.Equal(t, NodeStatusOnline, node.Status)
+}

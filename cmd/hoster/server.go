@@ -120,6 +120,9 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 	var provisioner *workers.Provisioner
 	if encryptionKey != nil {
 		provisioner = workers.NewProvisioner(s, encryptionKey, workers.DefaultProvisionerConfig(), logger)
+		if healthChecker != nil {
+			provisioner.SetHealthChecker(healthChecker)
+		}
 	}
 
 	// Create DNS verifier worker for custom domain verification
