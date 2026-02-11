@@ -26,7 +26,7 @@ export function useCloudProvisions() {
 
   const query = useQuery({
     queryKey: cloudProvisionKeys.lists(),
-    queryFn: cloudProvisionsApi.list,
+    queryFn: () => cloudProvisionsApi.list(),
     refetchInterval: (q) => {
       const provisions = q.state.data || [];
       const hasActive = provisions.some((p) =>
