@@ -31,7 +31,7 @@ jobs:
           rm -rf node_modules package-lock.json
           npm install
           npm run build
-          cp -r dist ../internal/shell/api/webui/
+          mkdir -p ../internal/engine/webui && cp -r dist ../internal/engine/webui/
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -68,7 +68,7 @@ jobs:
           rm -rf node_modules package-lock.json
           npm install
           npm run build
-          cp -r dist ../internal/shell/api/webui/
+          mkdir -p ../internal/engine/webui && cp -r dist ../internal/engine/webui/
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -114,7 +114,7 @@ jobs:
           rm -rf node_modules package-lock.json
           npm install
           npm run build
-          cp -r dist ../internal/shell/api/webui/
+          mkdir -p ../internal/engine/webui && cp -r dist ../internal/engine/webui/
 
       - name: Set up Go
         uses: actions/setup-go@v5
