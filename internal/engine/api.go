@@ -132,7 +132,7 @@ func listHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 
 		// Strip write-only and internal fields from responses
 		for _, row := range rows {
-			stripFields(res, row)
+			stripFields(res, row, cfg.Store)
 		}
 
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -178,7 +178,7 @@ func getHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 			}
 		}
 
-		stripFields(res, row)
+		stripFields(res, row, cfg.Store)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": rowToJSONAPI(res.Name, row),
 		})
@@ -216,6 +216,12 @@ func createHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 			}
 		}
 
+		// Resolve RefField reference_ids to integer PKs
+		if err := resolveRefFields(res, data, cfg.Store); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
 		// BeforeCreate hook
 		if res.BeforeCreate != nil {
 			if err := res.BeforeCreate(ctx, authCtx, data); err != nil {
@@ -234,7 +240,7 @@ func createHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 			return
 		}
 
-		stripFields(res, row)
+		stripFields(res, row, cfg.Store)
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"data": rowToJSONAPI(res.Name, row),
 		})
@@ -286,13 +292,19 @@ func updateHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 			}
 		}
 
+		// Resolve RefField reference_ids to integer PKs
+		if err := resolveRefFields(res, data, cfg.Store); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
 		row, err := cfg.Store.Update(ctx, res.Name, id, data)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 
-		stripFields(res, row)
+		stripFields(res, row, cfg.Store)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": rowToJSONAPI(res.Name, row),
 		})
@@ -401,7 +413,7 @@ func transitionHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 			}
 		}
 
-		stripFields(res, row)
+		stripFields(res, row, cfg.Store)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": rowToJSONAPI(res.Name, row),
 		})
@@ -443,11 +455,54 @@ func rowsToJSONAPI(resourceType string, rows []map[string]any) []map[string]any 
 	return result
 }
 
-// stripFields removes write-only fields from a row before sending in a response.
-func stripFields(res *Resource, row map[string]any) {
+// resolveRefFields converts reference_id strings in RefField columns to integer PKs.
+// API clients send reference_ids (e.g., "tmpl_c9fab67f"), but RefField DB columns store integer FKs.
+func resolveRefFields(res *Resource, data map[string]any, store *Store) error {
+	for _, f := range res.Fields {
+		if f.Type != TypeRef || f.Internal {
+			continue
+		}
+		v, exists := data[f.Name]
+		if !exists || v == nil {
+			continue
+		}
+		// If already numeric, skip
+		if _, ok := toInt64(v); ok {
+			continue
+		}
+		// Must be a reference_id string — resolve to integer PK
+		refID, ok := v.(string)
+		if !ok || refID == "" {
+			continue
+		}
+		var intID int
+		err := store.DB().QueryRow(
+			fmt.Sprintf("SELECT id FROM %s WHERE reference_id = ?", f.RefTable), refID,
+		).Scan(&intID)
+		if err != nil {
+			return fmt.Errorf("invalid %s: %s not found", f.Name, refID)
+		}
+		data[f.Name] = intID
+	}
+	return nil
+}
+
+// stripFields removes write-only fields and resolves ref field integer IDs
+// to reference_ids for API responses.
+func stripFields(res *Resource, row map[string]any, store ...*Store) {
 	for _, f := range res.Fields {
 		if f.WriteOnly {
 			delete(row, f.Name)
+		}
+		// Resolve FK integer IDs to reference_ids
+		if f.RefTable != "" && len(store) > 0 && store[0] != nil {
+			intID, ok := toInt64(row[f.Name])
+			if ok && intID > 0 {
+				refID, err := store[0].GetRefIDByIntID(f.RefTable, int(intID))
+				if err == nil {
+					row[f.Name] = refID
+				}
+			}
 		}
 	}
 	// Don't expose internal integer PK in API responses

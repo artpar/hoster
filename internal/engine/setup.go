@@ -1,14 +1,21 @@
 package engine
 
 import (
+	"context"
 	"crypto/rand"
+	"embed"
 	"encoding/json"
+	"io/fs"
 	"log/slog"
 	"math/big"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/mux"
 )
+
+//go:embed all:webui/dist
+var webUI embed.FS
 
 // SetupConfig holds configuration for the engine HTTP handler.
 type SetupConfig struct {
@@ -37,6 +44,23 @@ func Setup(cfg SetupConfig) http.Handler {
 	// Health endpoints
 	router.HandleFunc("/health", healthHandler).Methods("GET")
 	router.HandleFunc("/ready", readyHandler).Methods("GET")
+
+	// Wire deployment BeforeCreate: resolve template_version from template
+	if deplRes := cfg.Store.Resource("deployments"); deplRes != nil {
+		store := cfg.Store
+		deplRes.BeforeCreate = func(ctx context.Context, authCtx AuthContext, data map[string]any) error {
+			// If template_version not set, copy from template
+			if _, ok := data["template_version"]; !ok || data["template_version"] == nil || data["template_version"] == "" {
+				if tid, ok := toInt64(data["template_id"]); ok && tid > 0 {
+					tmpl, err := store.GetByID(ctx, "templates", int(tid))
+					if err == nil {
+						data["template_version"] = strVal(tmpl["version"])
+					}
+				}
+			}
+			return nil
+		}
+	}
 
 	// Register generic CRUD + state machine routes for all resources
 	RegisterRoutes(router, APIConfig{
@@ -88,7 +112,7 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 		}
 
 		res := cfg.Store.Resource("templates")
-		stripFields(res, row)
+		stripFields(res, row, cfg.Store)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": rowToJSONAPI("templates", row),
 		})
@@ -147,7 +171,7 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 		}
 
 		res := cfg.Store.Resource("deployments")
-		stripFields(res, row)
+		stripFields(res, row, cfg.Store)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": rowToJSONAPI("deployments", row),
 		})
@@ -190,7 +214,7 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 		}
 
 		res := cfg.Store.Resource("deployments")
-		stripFields(res, row)
+		stripFields(res, row, cfg.Store)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": rowToJSONAPI("deployments", row),
 		})
@@ -250,15 +274,37 @@ func readyHandler(w http.ResponseWriter, _ *http.Request) {
 // =============================================================================
 
 func spaHandler() http.Handler {
+	distFS, err := fs.Sub(webUI, "webui/dist")
+	if err != nil {
+		// Fallback if dist not embedded
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte(`<!DOCTYPE html><html><head><title>Hoster</title></head><body><p>Frontend not built. Run: cd web && npm run build</p></body></html>`))
+		})
+	}
+
+	fileServer := http.FileServer(http.FS(distFS))
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// For API paths that weren't matched, return 404
 		if len(r.URL.Path) > 4 && r.URL.Path[:5] == "/api/" {
 			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
-		// For non-API paths, serve index.html (SPA routing)
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<!DOCTYPE html><html><head><title>Hoster</title></head><body><div id="root"></div><script>window.location.href='/health'</script></body></html>`))
+
+		// Try to serve the file directly
+		path := strings.TrimPrefix(r.URL.Path, "/")
+		if path == "" {
+			path = "index.html"
+		}
+		if _, err := fs.Stat(distFS, path); err == nil {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// SPA fallback: serve index.html for all unmatched paths
+		r.URL.Path = "/"
+		fileServer.ServeHTTP(w, r)
 	})
 }
 

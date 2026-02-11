@@ -239,6 +239,13 @@ func (s *Store) GetByID(ctx context.Context, resource string, id int) (map[strin
 	return result, nil
 }
 
+// GetRefIDByIntID returns the reference_id for a given internal integer ID.
+func (s *Store) GetRefIDByIntID(resource string, id int) (string, error) {
+	var refID string
+	err := s.db.QueryRow(fmt.Sprintf("SELECT reference_id FROM %s WHERE id = ?", resource), id).Scan(&refID)
+	return refID, err
+}
+
 // List retrieves rows with optional filters and pagination.
 func (s *Store) List(ctx context.Context, resource string, filters []Filter, page Page) ([]map[string]any, error) {
 	res, ok := s.schema[resource]
@@ -828,6 +835,22 @@ func (s *Store) decodeRow(res *Resource, row map[string]any) {
 	for key, val := range row {
 		if b, ok := val.([]byte); ok {
 			row[key] = string(b)
+		}
+	}
+
+	// Coerce bool fields from SQLite integer (0/1) to Go bool
+	for _, f := range res.Fields {
+		if f.Type == TypeBool {
+			if v, ok := row[f.Name]; ok {
+				switch val := v.(type) {
+				case int64:
+					row[f.Name] = val != 0
+				case int:
+					row[f.Name] = val != 0
+				case float64:
+					row[f.Name] = val != 0
+				}
+			}
 		}
 	}
 
