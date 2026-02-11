@@ -4,9 +4,11 @@ package auth
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // =============================================================================
@@ -117,11 +119,38 @@ func (h headerGetter) Get(key string) string {
 // This is a pure function that can be tested without HTTP dependencies.
 // Note: UserID (int) is NOT set here — it must be resolved by the middleware
 // via a user upsert against the database. Only ReferenceID is extracted.
+//
+// Auth sources (checked in order):
+//  1. X-User-ID header (injected by APIGate for some routes)
+//  2. Authorization: Bearer {jwt} — decode payload, extract sub claim
 func ExtractFromHeaders(headers HeaderGetter) Context {
 	referenceID := headers.Get(HeaderUserID)
 
+	// Fallback: parse Bearer token payload when X-User-ID is absent.
+	// Per architecture spec, Hoster validates Bearer tokens directly.
+	// No signature verification — APIGate has already validated the token.
 	if referenceID == "" {
-		return Context{Authenticated: false}
+		claims := parseBearer(headers.Get("Authorization"))
+		if claims == nil || claims.Sub == "" {
+			return Context{Authenticated: false}
+		}
+
+		limits, err := ParsePlanLimits(headers.Get(HeaderPlanLimits))
+		if err != nil {
+			limits = DefaultPlanLimits()
+		}
+
+		planID := claims.PlanID
+		if planID == "" {
+			planID = headers.Get(HeaderPlanID)
+		}
+
+		return Context{
+			ReferenceID:   claims.Sub,
+			PlanID:        planID,
+			PlanLimits:    limits,
+			Authenticated: true,
+		}
 	}
 
 	limits, err := ParsePlanLimits(headers.Get(HeaderPlanLimits))
@@ -138,6 +167,33 @@ func ExtractFromHeaders(headers HeaderGetter) Context {
 		OrganizationID: headers.Get(HeaderOrganizationID),
 		Authenticated:  true,
 	}
+}
+
+// jwtClaims holds the fields extracted from a JWT payload.
+type jwtClaims struct {
+	Sub    string `json:"sub"`
+	PlanID string `json:"pid"`
+}
+
+// parseBearer extracts claims from a Bearer token by base64-decoding the payload.
+// No signature verification — Hoster trusts APIGate to have validated the token.
+func parseBearer(authHeader string) *jwtClaims {
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		return nil
+	}
+	parts := strings.Split(authHeader[7:], ".")
+	if len(parts) != 3 {
+		return nil
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil
+	}
+	var claims jwtClaims
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil
+	}
+	return &claims
 }
 
 // =============================================================================

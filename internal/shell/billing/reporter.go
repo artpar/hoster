@@ -7,8 +7,14 @@ import (
 	"time"
 
 	"github.com/artpar/hoster/internal/core/domain"
-	"github.com/artpar/hoster/internal/shell/store"
 )
+
+// BillingStore is the minimal store interface the billing reporter needs.
+type BillingStore interface {
+	GetUnreportedEvents(ctx context.Context, limit int) ([]domain.MeterEvent, error)
+	MarkEventsReported(ctx context.Context, ids []string, reportedAt time.Time) error
+	CreateUsageEvent(ctx context.Context, event *domain.MeterEvent) error
+}
 
 // =============================================================================
 // Background Reporter
@@ -16,7 +22,7 @@ import (
 
 // Reporter batches and reports usage events to APIGate in the background.
 type Reporter struct {
-	store     store.Store
+	store     BillingStore
 	client    Client
 	interval  time.Duration
 	batchSize int
@@ -27,7 +33,7 @@ type Reporter struct {
 
 // ReporterConfig holds configuration for the background reporter.
 type ReporterConfig struct {
-	Store     store.Store
+	Store     BillingStore
 	Client    Client
 	Interval  time.Duration
 	BatchSize int
@@ -142,7 +148,7 @@ func (r *Reporter) ReportNow(ctx context.Context) {
 
 // RecordEvent is a convenience function to record a usage event.
 // It creates the event and stores it for later batch reporting.
-func RecordEvent(ctx context.Context, s store.Store, userID int, eventType domain.EventType, resourceID, resourceType string, metadata map[string]string) error {
+func RecordEvent(ctx context.Context, s BillingStore, userID int, eventType domain.EventType, resourceID, resourceType string, metadata map[string]string) error {
 	event := domain.NewMeterEvent(
 		generateEventID(),
 		userID,

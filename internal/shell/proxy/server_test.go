@@ -2,137 +2,31 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/artpar/hoster/internal/core/domain"
-	"github.com/artpar/hoster/internal/shell/store"
+	"github.com/artpar/hoster/internal/engine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// mockStore implements store.Store for testing
-type mockStore struct {
+// mockProxyStore implements ProxyStore for testing.
+type mockProxyStore struct {
 	deployments map[string]*domain.Deployment // keyed by hostname
-	usedPorts   map[string][]int              // keyed by nodeID
 }
 
-func (m *mockStore) GetDeploymentByDomain(ctx context.Context, hostname string) (*domain.Deployment, error) {
+func (m *mockProxyStore) GetDeploymentByDomain(ctx context.Context, hostname string) (*domain.Deployment, error) {
 	d, ok := m.deployments[hostname]
 	if !ok {
-		return nil, store.NewStoreError("GetDeploymentByDomain", "deployment", hostname, "not found", store.ErrNotFound)
+		return nil, fmt.Errorf("deployment %s: %w", hostname, engine.ErrNotFound)
 	}
 	return d, nil
 }
 
-func (m *mockStore) GetUsedProxyPorts(ctx context.Context, nodeID string) ([]int, error) {
-	return m.usedPorts[nodeID], nil
-}
-
-// Implement remaining Store interface methods as no-ops for testing
-func (m *mockStore) CreateTemplate(ctx context.Context, t *domain.Template) error       { return nil }
-func (m *mockStore) GetTemplate(ctx context.Context, id string) (*domain.Template, error) { return nil, nil }
-func (m *mockStore) GetTemplateBySlug(ctx context.Context, slug string) (*domain.Template, error) {
-	return nil, nil
-}
-func (m *mockStore) UpdateTemplate(ctx context.Context, t *domain.Template) error       { return nil }
-func (m *mockStore) DeleteTemplate(ctx context.Context, id string) error                { return nil }
-func (m *mockStore) ListTemplates(ctx context.Context, opts store.ListOptions) ([]domain.Template, error) {
-	return nil, nil
-}
-func (m *mockStore) CreateDeployment(ctx context.Context, d *domain.Deployment) error { return nil }
-func (m *mockStore) GetDeployment(ctx context.Context, id string) (*domain.Deployment, error) {
-	return nil, nil
-}
-func (m *mockStore) UpdateDeployment(ctx context.Context, d *domain.Deployment) error { return nil }
-func (m *mockStore) DeleteDeployment(ctx context.Context, id string) error            { return nil }
-func (m *mockStore) ListDeployments(ctx context.Context, opts store.ListOptions) ([]domain.Deployment, error) {
-	return nil, nil
-}
-func (m *mockStore) ListDeploymentsByTemplate(ctx context.Context, templateID string, opts store.ListOptions) ([]domain.Deployment, error) {
-	return nil, nil
-}
-func (m *mockStore) ListDeploymentsByCustomer(ctx context.Context, customerID int, opts store.ListOptions) ([]domain.Deployment, error) {
-	return nil, nil
-}
-func (m *mockStore) CreateUsageEvent(ctx context.Context, e *domain.MeterEvent) error { return nil }
-func (m *mockStore) GetUnreportedEvents(ctx context.Context, limit int) ([]domain.MeterEvent, error) {
-	return nil, nil
-}
-func (m *mockStore) MarkEventsReported(ctx context.Context, ids []string, t time.Time) error {
-	return nil
-}
-func (m *mockStore) CreateContainerEvent(ctx context.Context, e *domain.ContainerEvent) error {
-	return nil
-}
-func (m *mockStore) GetContainerEvents(ctx context.Context, deploymentID string, limit int, eventType *string) ([]domain.ContainerEvent, error) {
-	return nil, nil
-}
-func (m *mockStore) CreateNode(ctx context.Context, n *domain.Node) error              { return nil }
-func (m *mockStore) GetNode(ctx context.Context, id string) (*domain.Node, error)      { return nil, nil }
-func (m *mockStore) GetNodeByCreatorAndName(ctx context.Context, creatorID int, name string) (*domain.Node, error) {
-	return nil, store.NewStoreError("GetNodeByCreatorAndName", "node", name, "not found", store.ErrNotFound)
-}
-func (m *mockStore) UpdateNode(ctx context.Context, n *domain.Node) error              { return nil }
-func (m *mockStore) DeleteNode(ctx context.Context, id string) error                   { return nil }
-func (m *mockStore) ListNodesByCreator(ctx context.Context, creatorID int, opts store.ListOptions) ([]domain.Node, error) {
-	return nil, nil
-}
-func (m *mockStore) ListOnlineNodes(ctx context.Context) ([]domain.Node, error)    { return nil, nil }
-func (m *mockStore) ListCheckableNodes(ctx context.Context) ([]domain.Node, error) { return nil, nil }
-func (m *mockStore) CreateSSHKey(ctx context.Context, k *domain.SSHKey) error      { return nil }
-func (m *mockStore) GetSSHKey(ctx context.Context, id string) (*domain.SSHKey, error) {
-	return nil, nil
-}
-func (m *mockStore) GetSSHKeyByCreatorAndName(ctx context.Context, creatorID int, name string) (*domain.SSHKey, error) {
-	return nil, store.NewStoreError("GetSSHKeyByCreatorAndName", "ssh_key", name, "not found", store.ErrNotFound)
-}
-func (m *mockStore) DeleteSSHKey(ctx context.Context, id string) error { return nil }
-func (m *mockStore) ListSSHKeysByCreator(ctx context.Context, creatorID int, opts store.ListOptions) ([]domain.SSHKey, error) {
-	return nil, nil
-}
-func (m *mockStore) CreateCloudCredential(ctx context.Context, c *domain.CloudCredential) error {
-	return nil
-}
-func (m *mockStore) GetCloudCredential(ctx context.Context, id string) (*domain.CloudCredential, error) {
-	return nil, nil
-}
-func (m *mockStore) DeleteCloudCredential(ctx context.Context, id string) error { return nil }
-func (m *mockStore) ListCloudCredentialsByCreator(ctx context.Context, creatorID int, opts store.ListOptions) ([]domain.CloudCredential, error) {
-	return nil, nil
-}
-func (m *mockStore) CreateCloudProvision(ctx context.Context, p *domain.CloudProvision) error {
-	return nil
-}
-func (m *mockStore) GetCloudProvision(ctx context.Context, id string) (*domain.CloudProvision, error) {
-	return nil, nil
-}
-func (m *mockStore) UpdateCloudProvision(ctx context.Context, p *domain.CloudProvision) error {
-	return nil
-}
-func (m *mockStore) ListCloudProvisionsByCreator(ctx context.Context, creatorID int, opts store.ListOptions) ([]domain.CloudProvision, error) {
-	return nil, nil
-}
-func (m *mockStore) ListActiveProvisions(ctx context.Context) ([]domain.CloudProvision, error) {
-	return nil, nil
-}
-func (m *mockStore) ListCloudProvisionsByCredential(ctx context.Context, credentialID int) ([]domain.CloudProvision, error) {
-	return nil, nil
-}
-func (m *mockStore) ListDeploymentsByNode(ctx context.Context, nodeRefID string) ([]domain.Deployment, error) {
-	return nil, nil
-}
-func (m *mockStore) ListNodesBySSHKey(ctx context.Context, sshKeyID int) ([]domain.Node, error) {
-	return nil, nil
-}
-func (m *mockStore) ResolveUser(ctx context.Context, referenceID, email, name, planID string) (int, error) {
-	return 1, nil
-}
-func (m *mockStore) WithTx(ctx context.Context, fn func(store.Store) error) error { return fn(m) }
-func (m *mockStore) Close() error                                                 { return nil }
-func (m *mockStore) CountRoutableDeployments(ctx context.Context) (int, error) {
+func (m *mockProxyStore) CountRoutableDeployments(ctx context.Context) (int, error) {
 	count := 0
 	for _, d := range m.deployments {
 		if d.Status == domain.StatusRunning && d.ProxyPort > 0 {
@@ -143,7 +37,7 @@ func (m *mockStore) CountRoutableDeployments(ctx context.Context) (int, error) {
 }
 
 func TestServer_ServeHTTP_Health(t *testing.T) {
-	ms := &mockStore{
+	ms := &mockProxyStore{
 		deployments: map[string]*domain.Deployment{
 			"app1.apps.test.io": {
 				ReferenceID: "depl_1",
@@ -183,7 +77,7 @@ func TestServer_ServeHTTP_Health(t *testing.T) {
 }
 
 func TestServer_ServeHTTP_NotFound(t *testing.T) {
-	ms := &mockStore{
+	ms := &mockProxyStore{
 		deployments: map[string]*domain.Deployment{},
 	}
 
@@ -204,7 +98,7 @@ func TestServer_ServeHTTP_NotFound(t *testing.T) {
 }
 
 func TestServer_ServeHTTP_Stopped(t *testing.T) {
-	ms := &mockStore{
+	ms := &mockProxyStore{
 		deployments: map[string]*domain.Deployment{
 			"my-app.apps.test.io": {
 				ReferenceID: "depl_123",
@@ -233,7 +127,7 @@ func TestServer_ServeHTTP_Stopped(t *testing.T) {
 }
 
 func TestServer_ServeHTTP_WrongDomain(t *testing.T) {
-	ms := &mockStore{
+	ms := &mockProxyStore{
 		deployments: map[string]*domain.Deployment{},
 	}
 
@@ -266,7 +160,7 @@ func TestServer_ServeHTTP_RunningDeployment(t *testing.T) {
 	// For this test, we'll verify the proxy tries to connect correctly
 	// but since ports won't match, we test the error handling
 
-	ms := &mockStore{
+	ms := &mockProxyStore{
 		deployments: map[string]*domain.Deployment{
 			"my-app.apps.test.io": {
 				ReferenceID: "depl_123",

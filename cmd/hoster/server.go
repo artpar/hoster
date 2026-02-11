@@ -9,13 +9,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/artpar/hoster/internal/shell/api"
+	"github.com/artpar/hoster/internal/engine"
 	"github.com/artpar/hoster/internal/shell/billing"
 	"github.com/artpar/hoster/internal/shell/docker"
 	"github.com/artpar/hoster/internal/shell/proxy"
-	"github.com/artpar/hoster/internal/shell/scheduler"
-	"github.com/artpar/hoster/internal/shell/store"
-	"github.com/artpar/hoster/internal/shell/workers"
 )
 
 // =============================================================================
@@ -38,19 +35,19 @@ type Server struct {
 	config          *Config
 	httpServer      *http.Server
 	proxyServer     *http.Server
-	store           store.Store
+	store           *engine.Store
 	nodePool        *docker.NodePool
 	billingReporter *billing.Reporter
-	healthChecker   *workers.HealthChecker
-	provisioner     *workers.Provisioner
-	dnsVerifier     *workers.DNSVerifier
+	healthChecker   *engine.HealthChecker
+	provisioner     *engine.Provisioner
+	dnsVerifier     *engine.DNSVerifier
 	logger          *slog.Logger
 }
 
 // NewServer creates a new server with the given config.
 func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
-	// Connect to database
-	s, err := store.NewSQLiteStore(cfg.Database.DSN)
+	// Open database and run migrations via engine
+	store, err := engine.OpenDB(cfg.Database.DSN, engine.Schema(), logger)
 	if err != nil {
 		return nil, &ServerError{
 			Op:       "NewServer",
@@ -64,7 +61,7 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 	if cfg.Nodes.EncryptionKey != "" {
 		encryptionKey = []byte(cfg.Nodes.EncryptionKey)
 		if len(encryptionKey) != 32 {
-			s.Close()
+			store.Close()
 			return nil, &ServerError{
 				Op:       "NewServer",
 				Err:      errors.New("nodes.encryption_key must be exactly 32 bytes for AES-256-GCM"),
@@ -75,16 +72,12 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 
 	// Create NodePool and health checker if encryption key is configured
 	var nodePool *docker.NodePool
-	var healthChecker *workers.HealthChecker
+	var healthChecker *engine.HealthChecker
 
 	if encryptionKey != nil {
-		nodePool = docker.NewNodePool(s, encryptionKey, docker.DefaultNodePoolConfig())
+		nodePool = docker.NewNodePool(store, encryptionKey, docker.DefaultNodePoolConfig())
 
-		healthChecker = workers.NewHealthChecker(s, nodePool, encryptionKey, workers.HealthCheckerConfig{
-			Interval:      cfg.Nodes.HealthCheckInterval,
-			NodeTimeout:   cfg.Nodes.HealthCheckTimeout,
-			MaxConcurrent: cfg.Nodes.HealthCheckMaxConcurrent,
-		}, logger)
+		healthChecker = engine.NewHealthChecker(store, nodePool, encryptionKey, 0, logger)
 
 		logger.Info("remote nodes enabled",
 			"health_check_interval", cfg.Nodes.HealthCheckInterval,
@@ -92,32 +85,36 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 	}
 
 	// Create provisioner worker for cloud provider provisioning
-	var provisioner *workers.Provisioner
+	var provisioner *engine.Provisioner
 	if encryptionKey != nil {
-		provisioner = workers.NewProvisioner(s, encryptionKey, workers.DefaultProvisionerConfig(), logger)
+		provisioner = engine.NewProvisioner(store, encryptionKey, 0, logger)
 		if healthChecker != nil {
 			provisioner.SetHealthChecker(healthChecker)
 		}
 	}
 
 	// Create DNS verifier worker for custom domain verification
-	dnsVerifier := workers.NewDNSVerifier(s, workers.DNSVerifierConfig{
-		BaseDomain: cfg.Domain.BaseDomain,
-	}, logger)
+	dnsVerifier := engine.NewDNSVerifier(store, cfg.Domain.BaseDomain, 0, logger)
 
-	// Create scheduler service for node selection
-	sched := scheduler.NewService(s, nodePool, logger)
+	// Create command bus and register handlers
+	bus := engine.NewBus(store, logger)
+	engine.RegisterHandlers(bus)
 
-	// Create HTTP handler using new JSON:API setup (ADR-003)
-	handler := api.SetupAPI(api.APIConfig{
-		Store:     s,
-		Scheduler: sched,
-		Logger:     logger,
-		BaseDomain: cfg.Domain.BaseDomain,
-		ConfigDir:  cfg.Domain.ConfigDir,
-		// Auth configuration (ADR-005)
-		AuthSharedSecret: cfg.Auth.SharedSecret,
-		// Encryption key for SSH keys (required for node management)
+	// Set extra dependencies for command handlers
+	if nodePool != nil {
+		bus.SetExtra("node_pool", nodePool)
+	}
+	bus.SetExtra("base_domain", cfg.Domain.BaseDomain)
+	bus.SetExtra("config_dir", cfg.Domain.ConfigDir)
+
+	// Create HTTP handler using the engine
+	handler := engine.Setup(engine.SetupConfig{
+		Store:         store,
+		Bus:           bus,
+		Logger:        logger,
+		BaseDomain:    cfg.Domain.BaseDomain,
+		ConfigDir:     cfg.Domain.ConfigDir,
+		SharedSecret:  cfg.Auth.SharedSecret,
 		EncryptionKey: encryptionKey,
 	})
 
@@ -130,6 +127,7 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 	}
 
 	// Create billing reporter (F009: Billing Integration)
+	// Billing reporter still uses its own store interface — it reads usage_events table directly.
 	var billingReporter *billing.Reporter
 	if cfg.Billing.Enabled {
 		var billingClient billing.Client
@@ -148,7 +146,7 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		}
 
 		billingReporter = billing.NewReporter(billing.ReporterConfig{
-			Store:     s,
+			Store:     store,
 			Client:    billingClient,
 			Interval:  cfg.Billing.ReportInterval,
 			BatchSize: cfg.Billing.BatchSize,
@@ -159,7 +157,7 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 	}
 
 	// Create App Proxy server (specs/domain/proxy.md)
-	var proxyServer *http.Server
+	var proxyHTTPServer *http.Server
 	if cfg.Proxy.Enabled {
 		proxyHandler, err := proxy.NewServer(proxy.Config{
 			Address:      cfg.Proxy.Address(),
@@ -167,9 +165,9 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 			ReadTimeout:  cfg.Proxy.ReadTimeout,
 			WriteTimeout: cfg.Proxy.WriteTimeout,
 			IdleTimeout:  cfg.Proxy.IdleTimeout,
-		}, s, logger)
+		}, store, logger)
 		if err != nil {
-			s.Close()
+			store.Close()
 			return nil, &ServerError{
 				Op:       "NewServer",
 				Err:      err,
@@ -177,7 +175,7 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 			}
 		}
 
-		proxyServer = &http.Server{
+		proxyHTTPServer = &http.Server{
 			Addr:         cfg.Proxy.Address(),
 			Handler:      proxyHandler,
 			ReadTimeout:  cfg.Proxy.ReadTimeout,
@@ -196,8 +194,8 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 	return &Server{
 		config:          cfg,
 		httpServer:      httpServer,
-		proxyServer:     proxyServer,
-		store:           s,
+		proxyServer:     proxyHTTPServer,
+		store:           store,
 		nodePool:        nodePool,
 		billingReporter: billingReporter,
 		healthChecker:   healthChecker,
@@ -218,7 +216,7 @@ func (s *Server) Start(ctx context.Context) error {
 		go s.billingReporter.Start(ctx)
 	}
 
-	// Start health checker in background (Creator Worker Nodes Phase 7)
+	// Start health checker in background
 	if s.healthChecker != nil {
 		s.healthChecker.Start()
 	}
@@ -233,7 +231,7 @@ func (s *Server) Start(ctx context.Context) error {
 		s.dnsVerifier.Start()
 	}
 
-	// Start App Proxy server in goroutine (specs/domain/proxy.md)
+	// Start App Proxy server in goroutine
 	errCh := make(chan error, 2)
 	if s.proxyServer != nil {
 		go func() {
@@ -285,19 +283,19 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.logger.Error("HTTP server shutdown error", "error", err)
 	}
 
-	// Shutdown App Proxy server (specs/domain/proxy.md)
+	// Shutdown App Proxy server
 	if s.proxyServer != nil {
 		if err := s.proxyServer.Shutdown(shutdownCtx); err != nil {
 			s.logger.Error("App Proxy server shutdown error", "error", err)
 		}
 	}
 
-	// Stop billing reporter (F009: Billing Integration)
+	// Stop billing reporter
 	if s.billingReporter != nil {
 		s.billingReporter.Stop()
 	}
 
-	// Stop health checker (Creator Worker Nodes Phase 7)
+	// Stop health checker
 	if s.healthChecker != nil {
 		s.healthChecker.Stop()
 	}

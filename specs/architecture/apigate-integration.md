@@ -116,26 +116,25 @@ Response → APIGate → Browser
 
 ## APIGate Request Lifecycle (auth_required=1 only)
 
-Full 16-step pipeline (from APIGate wiki):
+Full 15-step pipeline (from APIGate wiki):
 
 1. Extract API key (X-API-Key / Bearer / query param)
-2. If no key → try session cookie (apigate_session)
-3. Validate format (key prefix or cookie decode)
-4. Lookup key / validate cookie
-5. Verify hash (bcrypt for keys)
-6. Check user status = "active"
-7. **Check quota** (monthly limit from user's plan)
-8. **Check rate limit** (per-minute from plan)
-9. Resolve entitlements (plan features → headers)
-10. Match route (path, method, headers, priority)
-11. Transform request (add/modify headers per route config)
-12. Rewrite path (if path_rewrite expression set)
-13. Forward to upstream
-14. Transform response
-15. Calculate cost (metering_expr)
-16. Record usage event (async)
+2. Validate format (key prefix)
+3. Lookup key / validate token
+4. Verify hash (bcrypt for keys)
+5. Check user status = "active"
+6. **Check quota** (monthly limit from user's plan)
+7. **Check rate limit** (per-minute from plan)
+8. Resolve entitlements (plan features → headers)
+9. Match route (path, method, headers, priority)
+10. Transform request (add/modify headers per route config)
+11. Rewrite path (if path_rewrite expression set)
+12. Forward to upstream
+13. Transform response
+14. Calculate cost (metering_expr)
+15. Record usage event (async)
 
-Steps 7-8 are what blocked monitoring previously. Pass-through routes skip all 16 steps.
+Steps 6-7 are what blocked monitoring previously. Pass-through routes skip all 15 steps.
 
 ## Why Monitoring Was Broken
 

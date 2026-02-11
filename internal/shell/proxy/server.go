@@ -18,8 +18,14 @@ import (
 
 	"github.com/artpar/hoster/internal/core/domain"
 	"github.com/artpar/hoster/internal/core/proxy"
-	"github.com/artpar/hoster/internal/shell/store"
+	"github.com/artpar/hoster/internal/engine"
 )
+
+// ProxyStore is the minimal store interface the proxy needs.
+type ProxyStore interface {
+	GetDeploymentByDomain(ctx context.Context, hostname string) (*domain.Deployment, error)
+	CountRoutableDeployments(ctx context.Context) (int, error)
+}
 
 //go:embed templates/*.html
 var templatesFS embed.FS
@@ -46,7 +52,7 @@ func DefaultConfig() Config {
 
 // Server is the HTTP server that handles app routing.
 type Server struct {
-	store   store.Store
+	store   ProxyStore
 	parser  proxy.HostnameParser
 	logger  *slog.Logger
 	config  Config
@@ -54,7 +60,7 @@ type Server struct {
 }
 
 // NewServer creates a new proxy server.
-func NewServer(cfg Config, s store.Store, logger *slog.Logger) (*Server, error) {
+func NewServer(cfg Config, s ProxyStore, logger *slog.Logger) (*Server, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -167,7 +173,7 @@ func (s *Server) resolveTarget(ctx context.Context, slug, hostname string) (prox
 	// Query database for deployment by domain hostname
 	deployment, err := s.store.GetDeploymentByDomain(ctx, hostname)
 	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
+		if errors.Is(err, engine.ErrNotFound) {
 			return proxy.ProxyTarget{}, proxy.NewNotFoundError(hostname)
 		}
 		return proxy.ProxyTarget{}, err

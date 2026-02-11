@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -258,4 +260,147 @@ func TestMapHeaderGetter_Get(t *testing.T) {
 
 	assert.Equal(t, "value", m.Get("X-Custom-Header"))
 	assert.Empty(t, m.Get("X-Missing"))
+}
+
+// =============================================================================
+// Bearer Token Fallback Tests
+// =============================================================================
+
+// makeBearerToken builds a fake JWT with the given claims payload (no signature verification).
+func makeBearerToken(claims map[string]interface{}) string {
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
+	payload, _ := json.Marshal(claims)
+	payloadB64 := base64.RawURLEncoding.EncodeToString(payload)
+	sig := base64.RawURLEncoding.EncodeToString([]byte("fake-signature"))
+	return "Bearer " + header + "." + payloadB64 + "." + sig
+}
+
+func TestExtractFromHeaders_BearerToken_NoUserID(t *testing.T) {
+	token := makeBearerToken(map[string]interface{}{
+		"sub": "user_bc6849d9ab6dc0e5",
+		"pid": "free",
+		"iss": "apigate",
+	})
+	headers := MapHeaderGetter{
+		"Authorization": token,
+	}
+	ctx := ExtractFromHeaders(headers)
+
+	assert.True(t, ctx.Authenticated)
+	assert.Equal(t, "user_bc6849d9ab6dc0e5", ctx.ReferenceID)
+	assert.Equal(t, "free", ctx.PlanID)
+}
+
+func TestExtractFromHeaders_UserIDTakesPrecedenceOverBearer(t *testing.T) {
+	token := makeBearerToken(map[string]interface{}{
+		"sub": "user_from_jwt",
+		"pid": "premium",
+	})
+	headers := MapHeaderGetter{
+		HeaderUserID:    "user_from_header",
+		HeaderPlanID:    "enterprise",
+		"Authorization": token,
+	}
+	ctx := ExtractFromHeaders(headers)
+
+	assert.True(t, ctx.Authenticated)
+	assert.Equal(t, "user_from_header", ctx.ReferenceID)
+	assert.Equal(t, "enterprise", ctx.PlanID)
+}
+
+func TestExtractFromHeaders_BearerToken_EmptySub(t *testing.T) {
+	token := makeBearerToken(map[string]interface{}{
+		"sub": "",
+		"pid": "free",
+	})
+	headers := MapHeaderGetter{
+		"Authorization": token,
+	}
+	ctx := ExtractFromHeaders(headers)
+
+	assert.False(t, ctx.Authenticated)
+}
+
+func TestExtractFromHeaders_BearerToken_MissingSub(t *testing.T) {
+	token := makeBearerToken(map[string]interface{}{
+		"pid": "free",
+		"iss": "apigate",
+	})
+	headers := MapHeaderGetter{
+		"Authorization": token,
+	}
+	ctx := ExtractFromHeaders(headers)
+
+	assert.False(t, ctx.Authenticated)
+}
+
+func TestExtractFromHeaders_BearerToken_Malformed(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"not bearer", "Basic dXNlcjpwYXNz"},
+		{"no token", "Bearer "},
+		{"one part", "Bearer abc"},
+		{"two parts", "Bearer abc.def"},
+		{"bad base64 payload", "Bearer abc.!!!.def"},
+		{"empty", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			headers := MapHeaderGetter{
+				"Authorization": tt.value,
+			}
+			ctx := ExtractFromHeaders(headers)
+			assert.False(t, ctx.Authenticated)
+		})
+	}
+}
+
+func TestExtractFromHeaders_BearerToken_DefaultPlanLimits(t *testing.T) {
+	token := makeBearerToken(map[string]interface{}{
+		"sub": "user_test",
+		"pid": "free",
+	})
+	headers := MapHeaderGetter{
+		"Authorization": token,
+	}
+	ctx := ExtractFromHeaders(headers)
+
+	require.True(t, ctx.Authenticated)
+	defaults := DefaultPlanLimits()
+	assert.Equal(t, defaults.MaxDeployments, ctx.PlanLimits.MaxDeployments)
+}
+
+func TestExtractFromHeaders_BearerToken_PlanLimitsFromHeader(t *testing.T) {
+	token := makeBearerToken(map[string]interface{}{
+		"sub": "user_test",
+	})
+	headers := MapHeaderGetter{
+		"Authorization":  token,
+		HeaderPlanLimits: `{"max_deployments": 10}`,
+	}
+	ctx := ExtractFromHeaders(headers)
+
+	require.True(t, ctx.Authenticated)
+	assert.Equal(t, 10, ctx.PlanLimits.MaxDeployments)
+}
+
+func TestParseBearer_ValidToken(t *testing.T) {
+	token := makeBearerToken(map[string]interface{}{
+		"sub": "user_abc",
+		"pid": "pro",
+	})
+	claims := parseBearer(token)
+
+	require.NotNil(t, claims)
+	assert.Equal(t, "user_abc", claims.Sub)
+	assert.Equal(t, "pro", claims.PlanID)
+}
+
+func TestParseBearer_NilOnInvalid(t *testing.T) {
+	assert.Nil(t, parseBearer(""))
+	assert.Nil(t, parseBearer("Basic xyz"))
+	assert.Nil(t, parseBearer("Bearer not.valid"))
+	assert.Nil(t, parseBearer("Bearer a.!!!.c"))
 }

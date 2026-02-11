@@ -138,6 +138,7 @@ type Template struct {
 	Tags                 []string     `json:"tags,omitempty"`
 	Published            bool         `json:"published"`
 	CreatorID            int          `json:"-"`
+	CreatorRefID         string       `json:"-"` // populated via JOIN with users table
 	CreatedAt            time.Time    `json:"created_at"`
 	UpdatedAt            time.Time    `json:"updated_at"`
 }

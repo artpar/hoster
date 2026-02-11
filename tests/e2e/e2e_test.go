@@ -20,8 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/artpar/hoster/internal/shell/api"
-	"github.com/artpar/hoster/internal/shell/store"
+	"github.com/artpar/hoster/internal/engine"
 )
 
 // =============================================================================
@@ -29,7 +28,7 @@ import (
 // =============================================================================
 
 var (
-	testStore  store.Store
+	testStore  *engine.Store
 	testClient *http.Client
 	baseURL    string
 	testServer *http.Server
@@ -67,17 +66,17 @@ func setup() int {
 	tmpDB := filepath.Join(tmpDir, "test.db")
 	log.Printf("E2E Setup: Using database: %s", tmpDB)
 
-	// 2. Create SQLite store
-	s, err := store.NewSQLiteStore(tmpDB)
+	// 2. Create engine store (opens DB, runs migrations, registers schema)
+	s, err := engine.OpenDB(tmpDB, engine.Schema(), nil)
 	if err != nil {
 		log.Printf("Failed to create store: %v", err)
 		return 1
 	}
 	testStore = s
-	log.Println("E2E Setup: SQLite store initialized")
+	log.Println("E2E Setup: Engine store initialized")
 
 	// 3. Create HTTP handler (no local Docker needed — all deployments use remote nodes)
-	handler := api.SetupAPI(api.APIConfig{
+	handler := engine.Setup(engine.SetupConfig{
 		Store:      testStore,
 		BaseDomain: "apps.localhost",
 		ConfigDir:  tmpDir + "/configs",

@@ -113,13 +113,13 @@ curl -X POST http://localhost:8082/portal/api/register \
   -d '{"email": "user@example.com", "password": "password123", "name": "Test User"}'
 ```
 
-### 2. Login and Get Session
+### 2. Login and Get JWT Token
 
 ```bash
-curl -X POST http://localhost:8082/portal/api/login \
+# Login via APIGate auth endpoint
+TOKEN=$(curl -s -X POST http://localhost:8082/mod/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com", "password": "password123"}' \
-  -c cookies.txt
+  -d '{"email": "user@example.com", "password": "password123"}' | jq -r '.token')
 ```
 
 ### 3. Create API Key
@@ -127,7 +127,7 @@ curl -X POST http://localhost:8082/portal/api/login \
 ```bash
 curl -X POST http://localhost:8082/portal/api/keys \
   -H "Content-Type: application/json" \
-  -b cookies.txt \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"name": "my-key"}'
 ```
 

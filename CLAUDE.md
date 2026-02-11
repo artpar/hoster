@@ -9,7 +9,7 @@
 
 **Vision**: Package creators define deployment templates (docker-compose + config + pricing), customers one-click deploy instances onto YOUR VPS infrastructure.
 
-**Status**: Backend deployed to production at https://emptychair.dev. Monitoring features complete. Local E2E environment fully functional. **Remote node deployment verified on AWS EC2.** SSH Keys promoted to standalone page. 12 marketplace templates (6 database/infra + 6 web-UI apps). Uptime Kuma deployed and verified E2E locally. **Dev auth removed — all auth via APIGate headers.**
+**Status**: Backend deployed to production at https://emptychair.dev. **Engine rewrite complete** — generic schema-driven CRUD replaced ~13,700 lines of per-entity boilerplate with a ~3,400-line generic engine. Monitoring features complete. Remote node deployment verified on AWS EC2. 12 marketplace templates. All auth via APIGate headers.
 
 ---
 
@@ -45,43 +45,59 @@
 
 ---
 
-## Architecture: Values as Boundaries
+## Architecture: Schema → Engine → Handlers
 
-### THE PATTERN - NEVER VIOLATE
+### THE PATTERN
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                     IMPERATIVE SHELL                           │
-│  internal/shell/ - HTTP handlers, Docker client, Database     │
-│                                                                 │
-│    ┌──────────────────────────────────────────────────────┐    │
-│    │                 FUNCTIONAL CORE                       │    │
-│    │  internal/core/ - Pure functions, NO I/O              │    │
-│    │                                                       │    │
-│    │   • Takes VALUES in (structs, primitives)            │    │
-│    │   • Returns VALUES out (structs, errors)             │    │
-│    │   • Has NO side effects                              │    │
-│    │   • Is trivially testable (no mocks needed)          │    │
-│    └──────────────────────────────────────────────────────┘    │
-└────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────┐
+│     RESOURCE SCHEMA (data)           │  resources.go (~300 lines)
+│  entities, fields, state machines,   │  Define once, get CRUD for free
+│  relationships, validations          │
+└──────────────────┬───────────────────┘
+                   │ interpreted by
+                   ▼
+┌──────────────────────────────────────┐
+│     GENERIC ENGINE (code)            │  store.go + api.go (~1,200 lines)
+│  auto-CRUD, REST API, state machine  │  One implementation, all entities
+│  enforcer, migration generator       │
+└──────────────────┬───────────────────┘
+                   │ emits transition events to
+                   ▼
+┌──────────────────────────────────────┐
+│     COMMAND HANDLERS (code)          │  handlers.go + workers.go (~2,000 lines)
+│  StartDeployment, StopDeployment,    │  Side effects on state transitions
+│  ProvisionNode, HealthCheck          │
+└──────────────────┬───────────────────┘
+                   │ calls into
+                   ▼
+┌──────────────────────────────────────┐
+│     INFRASTRUCTURE (code)            │  shell/ (~1,500 lines)
+│  Docker SSH client, cloud providers, │  Irreducible I/O
+│  reverse proxy, billing reporter     │
+└──────────────────────────────────────┘
 ```
+
+### Layers
+
+1. **`internal/engine/resources.go`** = Entity definitions as data. ~50 lines per entity. Adding a new entity = add schema definition, get full CRUD + API + migration for free.
+
+2. **`internal/engine/store.go`** = Generic CRUD. One `Create/Get/List/Update/Delete/Transition` works for all entities. State machine transitions validated + commands dispatched automatically.
+
+3. **`internal/engine/api.go`** = Generic REST handlers. JSON:API format for all entities. No per-entity handler code.
+
+4. **`internal/engine/handlers.go`** = Business logic. Command handlers fire on state transitions (e.g., entering "starting" dispatches `StartDeployment`).
+
+5. **`internal/shell/`** = Thin I/O only: Docker SSH, cloud providers, reverse proxy, billing.
+
+6. **`internal/core/`** = Pure functions only. NO I/O. Domain types, compose parsing, validation.
 
 ### Rules
 
-1. **`internal/core/`** = Pure functions only. NO:
-   - Database calls
-   - HTTP calls
-   - File I/O
-   - Docker API calls
-   - Any external dependency
-
-2. **`internal/shell/`** = Thin I/O wrapper. Pattern:
-   - Read data (I/O) → Pass values to core
-   - Core returns decisions → Shell executes them
-
-3. **Testing**:
-   - Core tests: NO mocks, just values in/out
-   - Shell tests: Real dependencies (Docker, SQLite)
+- **Add new entity**: Add to `resources.go` (~50 lines). Done.
+- **Add new state**: Add transition to schema's `StateMachine.Transitions` + command handler.
+- **No per-entity CRUD code**: The engine handles it generically.
+- **Shell consumers use narrow interfaces**: `proxy.ProxyStore` (2 methods), `billing.BillingStore` (3 methods), `docker.NodeStore` (2 methods).
 
 ---
 
@@ -91,60 +107,40 @@
 hoster/
 ├── CLAUDE.md                   # THIS FILE - READ FIRST
 ├── specs/                      # SOURCE OF TRUTH
-│   ├── README.md               # How to write specs
-│   ├── SESSION-HANDOFF.md      # New session onboarding protocol
 │   ├── domain/                 # Entity specifications
-│   │   ├── template.md         # Template entity (IMPLEMENTED)
-│   │   ├── deployment.md       # Deployment entity (IMPLEMENTED)
-│   │   ├── monitoring.md       # Monitoring types (SPEC READY)
-│   │   └── user-context.md     # Auth context (SPEC READY)
 │   ├── features/               # Feature specifications
-│   │   ├── F008-authentication.md       # Auth integration (SPEC READY)
-│   │   ├── F009-billing-integration.md  # Billing (SPEC READY)
-│   │   ├── F010-monitoring-dashboard.md # Monitoring (SPEC READY)
-│   │   ├── F011-marketplace-ui.md       # Marketplace UI (SPEC READY)
-│   │   ├── F012-deployment-management-ui.md # Deployment UI (SPEC READY)
-│   │   └── F013-creator-dashboard-ui.md # Creator UI (SPEC READY)
 │   └── decisions/              # Architecture Decision Records
-│       ├── ADR-001-docker-direct.md       # (IMPLEMENTED)
-│       ├── ADR-002-values-as-boundaries.md # (IMPLEMENTED)
-│       ├── ADR-003-jsonapi-api2go.md      # JSON:API (SPEC READY)
-│       ├── ADR-004-reflective-openapi.md  # OpenAPI gen (SPEC READY)
-│       ├── ADR-005-apigate-integration.md # APIGate auth (SPEC READY)
-│       ├── ADR-006-frontend-architecture.md # React frontend (SPEC READY)
-│       └── ADR-007-uiux-guidelines.md     # UI/UX patterns (SPEC READY)
 ├── internal/
 │   ├── core/                   # FUNCTIONAL CORE (no I/O)
-│   │   ├── domain/             # Domain types + validation (IMPLEMENTED)
-│   │   ├── compose/            # Compose parsing (IMPLEMENTED)
-│   │   ├── deployment/         # Deployment logic (IMPLEMENTED)
-│   │   ├── traefik/            # Traefik config generation (IMPLEMENTED)
-│   │   ├── auth/               # Auth context extraction (IMPLEMENTED)
-│   │   ├── limits/             # Plan limits (TODO - F009)
-│   │   └── monitoring/         # Health aggregation (TODO - F010)
-│   └── shell/                  # IMPERATIVE SHELL (I/O)
-│       ├── api/                # HTTP handlers (IMPLEMENTED)
-│       │   ├── resources/      # api2go resources (TODO - ADR-003)
-│       │   ├── openapi/        # OpenAPI generator (TODO - ADR-004)
-│       │   └── middleware/     # Auth middleware (IMPLEMENTED)
-│       ├── docker/             # Docker SDK wrapper (IMPLEMENTED)
-│       ├── store/              # Database layer (IMPLEMENTED)
-│       └── billing/            # APIGate billing client (TODO - F009)
-├── web/                        # FRONTEND (TODO - ADR-006)
-│   ├── src/
-│   │   ├── api/                # API client + generated types
-│   │   ├── pages/              # Page components
-│   │   ├── components/         # Reusable components
-│   │   ├── hooks/              # TanStack Query hooks
-│   │   └── stores/             # Zustand stores
-│   └── package.json
-├── tests/
-│   ├── e2e/                    # End-to-end tests (IMPLEMENTED)
-│   └── fixtures/               # Test data (IMPLEMENTED)
-├── examples/                   # Sample templates (IMPLEMENTED)
-├── cmd/hoster/                 # Entry point (IMPLEMENTED)
-├── Makefile                    # Build commands (IMPLEMENTED)
-└── go.mod                      # Go module (IMPLEMENTED)
+│   │   ├── domain/             # Domain types + validation
+│   │   ├── compose/            # Compose parsing
+│   │   ├── deployment/         # Deployment logic
+│   │   ├── traefik/            # Traefik config generation
+│   │   ├── auth/               # Auth context extraction
+│   │   ├── crypto/             # AES encryption
+│   │   ├── limits/             # Plan limits
+│   │   └── monitoring/         # Health aggregation
+│   ├── engine/                 # GENERIC ENGINE (schema → CRUD → API)
+│   │   ├── schema.go           # Resource/Field/StateMachine types
+│   │   ├── resources.go        # Schema() — all entity definitions as data
+│   │   ├── store.go            # Generic CRUD store (Create/Get/List/Update/Delete/Transition)
+│   │   ├── api.go              # Generic REST handlers (JSON:API format)
+│   │   ├── setup.go            # HTTP router setup + middleware + action handlers
+│   │   ├── handlers.go         # Command handlers (start/stop/delete deployment)
+│   │   ├── commands.go         # Command bus (dispatch side-effects on state transitions)
+│   │   ├── workers.go          # Background workers (health, DNS, provisioner)
+│   │   ├── auth_bridge.go      # Auth context from APIGate headers
+│   │   └── migrate.go          # File + schema migrations
+│   └── shell/                  # IMPERATIVE SHELL (I/O only)
+│       ├── docker/             # Docker SSH client + orchestrator
+│       ├── proxy/              # Reverse proxy (*.apps.domain → containers)
+│       ├── billing/            # APIGate usage reporter
+│       ├── dns/                # DNS verification client
+│       └── provider/           # Cloud providers (AWS/DO/Hetzner)
+├── web/                        # FRONTEND (React + Vite + TailwindCSS)
+├── tests/e2e/                  # End-to-end tests
+├── cmd/hoster/                 # Entry point
+└── go.mod
 ```
 
 ---
@@ -165,20 +161,20 @@ hoster/
 - **Implication**: Core has NO I/O, shell is thin
 - **DO NOT**: Put I/O in `internal/core/`
 
-### ADR-003: JSON:API with api2go
+### ADR-003: JSON:API Format (Generic Engine)
 
-- **Decision**: Use JSON:API specification via api2go library
-- **Rationale**: Standardized format, relationship support, tooling ecosystem
-- **Implication**: Consistent `{type, id, attributes, relationships}` format
-- **DO NOT**: Use custom JSON format or GraphQL
+- **Decision**: Use JSON:API format via the generic engine (replaced api2go with schema-driven handlers)
+- **Rationale**: Standardized format, zero per-entity handler code
+- **Implication**: Consistent `{data: {type, id, attributes}}` format for all entities
+- **DO NOT**: Write per-entity API handler code
 - **Spec**: `specs/decisions/ADR-003-jsonapi-api2go.md`
 
-### ADR-004: Reflective OpenAPI Generation
+### ADR-004: Schema-Driven Types
 
-- **Decision**: Generate OpenAPI 3.0 spec at runtime by reflecting on api2go resources
-- **Rationale**: Spec always matches implementation, no drift
-- **Implication**: Serve `/openapi.json` endpoint, generate TypeScript types
-- **DO NOT**: Use annotation-based generation (swaggo) or manual spec
+- **Decision**: Generate types from schema definitions in `resources.go`
+- **Rationale**: Single source of truth for entities, no drift between schema/API/types
+- **Implication**: Schema drives migrations, CRUD, API responses, and validation
+- **DO NOT**: Write per-entity store methods or migration SQL
 - **Spec**: `specs/decisions/ADR-004-reflective-openapi.md`
 
 ### ADR-005: APIGate Integration
@@ -219,10 +215,9 @@ hoster/
 | Docker SDK | `github.com/docker/docker/client` | Other Docker libs |
 | Compose parsing | `github.com/compose-spec/compose-go/v2` | Custom parser |
 | HTTP router | `github.com/gorilla/mux` | chi, gin, echo |
-| JSON:API | `github.com/manyminds/api2go` | Custom marshaling |
-| OpenAPI types | `github.com/getkin/kin-openapi` | Other OpenAPI libs |
+| JSON:API | Generic engine (`internal/engine/api.go`) | api2go, custom marshaling |
 | Database | `github.com/jmoiron/sqlx` | gorm, ent |
-| Migrations | `github.com/golang-migrate/migrate/v4` | goose, others |
+| Migrations | `github.com/golang-migrate/migrate/v4` + schema-driven | goose, others |
 | Testing | `github.com/stretchr/testify` | Other assertion libs |
 | UUID | `github.com/google/uuid` | Other UUID libs |
 | Config | `github.com/spf13/viper` | Other config libs |
@@ -252,9 +247,9 @@ Every entity in the system has **two IDs**:
 
 1. **FK columns use `id` (integer PK)** — e.g., `deployments.customer_id` references `users.id`, `deployments.template_id` references `templates.id`
 2. **API/frontend use `reference_id`** — all JSON:API responses expose `reference_id` as the resource `id`, never the integer PK
-3. **Store lookups by `reference_id`** — `GetTemplate(ctx, "tmpl_abc123")` looks up by `reference_id`, returns struct with both `ID` (int) and `ReferenceID` (string)
-4. **Domain structs carry both** — e.g., `domain.Deployment{ ID: 42, ReferenceID: "depl_xyz789", TemplateID: 3, TemplateRefID: "tmpl_abc123" }`
-5. **JSON:API resource conversion** — `DeploymentFromDomain()` maps `ReferenceID` → JSON:API `id`, integer FK fields → string for JSON attributes
+3. **Store lookups by `reference_id`** — `store.Get(ctx, "templates", "tmpl_abc123")` looks up by `reference_id`, returns `map[string]any` with both `id` (int) and `reference_id` (string)
+4. **Engine works with `map[string]any`** — generic store returns maps, domain conversion at boundaries (`mapToDeployment`, `mapToNode`, etc.)
+5. **JSON:API resource conversion** — generic `rowToJSONAPI()` maps `reference_id` → JSON:API `id`, strips internal `id` field
 
 ### Reference ID Prefixes
 
@@ -368,10 +363,9 @@ These are intentional limitations documented in specs:
 ## Implementation Status
 
 **MVP: COMPLETE** — Full deployment loop + monitoring + remote nodes working.
-**427 tests** (180 unit + 150 integration + 100 E2E) — ALL PASS.
-**Next: Phase 0** — API layer migration (api2go + OpenAPI).
+**Engine rewrite: COMPLETE** — Replaced ~13,700 lines of per-entity boilerplate with ~3,400-line generic engine. Old packages (`shell/api`, `shell/store`, `shell/workers`, `shell/scheduler`) deleted.
 
-See **`specs/STATUS.md`** for full implementation details, test counts, and roadmap.
+See **`specs/STATUS.md`** for full implementation details and roadmap.
 
 ---
 
@@ -398,32 +392,18 @@ make vet            # Vet code
 
 ---
 
-## Embedded Frontend Architecture
+## Frontend Architecture
 
-Following APIGate's pattern, the frontend is embedded into the Go binary using `//go:embed`.
-
-```
-internal/shell/api/
-├── setup.go           # Mounts WebUIHandler() at PathPrefix("/")
-├── webui.go           # Embedded UI handler (SPA pattern)
-└── webui/
-    ├── .gitignore     # Ignores dist/
-    └── dist/          # Copied from web/dist during build (NOT committed)
-```
-
-**Key Files:**
-- `internal/shell/api/webui.go` - Handler using `//go:embed all:webui/dist`
-- `web/vite.config.ts` - Base path set to `/` (served at root)
-
-**Build Process:**
-1. `cd web && npm install && npm run build`
-2. `cp -r dist ../internal/shell/api/webui/`
-3. `go build ./cmd/hoster` (embeds webui/dist via //go:embed)
+The engine serves a minimal SPA shell at `/` (non-API paths). The full React frontend is in `web/`.
 
 **Local Development:**
 - Frontend: `cd web && npm run dev` (Vite dev server on :3000 or :5173)
 - Backend: `make run` (Hoster on :8080)
-- Vite proxies /api to backend
+- Vite proxies `/api` to backend
+
+**Key Files:**
+- `internal/engine/setup.go` — SPA handler at `PathPrefix("/")`
+- `web/vite.config.ts` — Base path set to `/`
 
 ---
 

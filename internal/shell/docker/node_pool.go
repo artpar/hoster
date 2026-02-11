@@ -7,14 +7,19 @@ import (
 
 	"github.com/artpar/hoster/internal/core/crypto"
 	"github.com/artpar/hoster/internal/core/domain"
-	"github.com/artpar/hoster/internal/shell/store"
 )
+
+// NodeStore is the minimal store interface NodePool needs to look up nodes and SSH keys.
+type NodeStore interface {
+	GetNode(ctx context.Context, nodeID string) (*domain.Node, error)
+	GetSSHKey(ctx context.Context, sshKeyRefID string) (*domain.SSHKey, error)
+}
 
 // NodePool manages SSH Docker clients for remote nodes.
 // It provides lazy initialization and connection caching.
 type NodePool struct {
 	clients       map[string]*SSHDockerClient // nodeID -> client
-	store         store.Store
+	store         NodeStore
 	encryptionKey []byte        // Key for decrypting SSH private keys
 	config        SSHClientConfig
 	mu            sync.RWMutex
@@ -34,7 +39,7 @@ func DefaultNodePoolConfig() NodePoolConfig {
 
 // NewNodePool creates a new node pool.
 // The encryptionKey is used to decrypt SSH private keys stored in the database.
-func NewNodePool(s store.Store, encryptionKey []byte, config NodePoolConfig) *NodePool {
+func NewNodePool(s NodeStore, encryptionKey []byte, config NodePoolConfig) *NodePool {
 	return &NodePool{
 		clients:       make(map[string]*SSHDockerClient),
 		store:         s,

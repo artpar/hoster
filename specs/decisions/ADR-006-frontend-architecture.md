@@ -196,7 +196,7 @@ export async function jsonApiClient<T>(
       'Accept': 'application/vnd.api+json',
       ...options?.headers,
     },
-    credentials: 'include', // For cookies from APIGate
+    credentials: 'same-origin',
   });
 
   if (!response.ok) {
