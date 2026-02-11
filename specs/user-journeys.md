@@ -1,356 +1,691 @@
-# Hoster User Journeys
+# Hoster User Journey Book
 
-**Purpose:** Document every user interaction flow for manual testing validation.
+## Personas
 
-**CRITICAL:** Unit tests mean nothing if actual user experience is broken. These journeys must be tested manually before every production deployment.
+### Visitor
+Anonymous user browsing the platform. Has not signed up. Wants to understand what Hoster offers before committing.
 
----
+### Customer
+Signed-up user who deploys applications from the marketplace onto their own infrastructure. Manages deployments, monitors health, controls lifecycle.
 
-## Journey 1: New User Signup & First Deployment
+### Creator
+Power user who builds docker-compose templates, sets pricing, and publishes them to the marketplace for others to deploy.
 
-**Actors:** Non-technical user, never used Hoster before
-
-**Steps:**
-1. Visit https://emptychair.dev
-2. Click "Get Started" button
-3. Fill signup form (name, email, password)
-4. Submit → Should redirect to /marketplace
-5. See marketplace with all templates
-6. Click on a template (e.g., "Redis Cache")
-7. Click "Deploy Now" button
-8. Fill deployment name and variables
-9. Click "Deploy"
-10. See deployment in "My Deployments"
-
-**Expected Results:**
-- ✅ No "Sign In Required" errors after signup
-- ✅ Header shows user profile/email (NOT "Sign in via APIGate")
-- ✅ "My Deployments" link visible in navigation
-- ✅ Deployment appears in list
-- ✅ Only user's own deployments shown
-
-**Test Data:**
-- Email: testuser-{timestamp}@example.com
-- Name: Test User
-- Password: test123456
+### Operator
+User who manages infrastructure — registers servers, uploads SSH keys, provisions cloud instances, monitors node health.
 
 ---
 
-## Journey 2: Returning User Login
+## Part 1: Discovery
 
-**Actors:** Existing user with deployments
+### J1. Visitor Lands on Homepage
 
-**Steps:**
-1. Visit https://emptychair.dev
-2. Click "Sign In"
-3. Enter email and password
-4. Submit → Should redirect to /marketplace or /deployments
-5. Navigate to "My Deployments"
-6. See list of deployments
+**Persona:** Visitor
+**Goal:** Understand what Hoster is and decide whether to sign up
+**Entry:** Direct URL or search engine
 
-**Expected Results:**
-- ✅ Login succeeds without errors
-- ✅ Redirected to appropriate page
-- ✅ Session persists across page refreshes
-- ✅ Only user's deployments shown (privacy check)
-
----
-
-## Journey 3: Deploy Additional Template
-
-**Actors:** Authenticated user
-
-**Steps:**
-1. Navigate to /marketplace
-2. Browse templates
-3. Select different template
-4. Click "Deploy Now"
-5. Fill deployment details
-6. Submit
-
-**Expected Results:**
-- ✅ No auth errors
-- ✅ Deployment created successfully
-- ✅ Appears in "My Deployments"
-- ✅ Can manage (start/stop/restart)
-
----
-
-## Journey 4: Deployment Lifecycle Management
-
-**Actors:** User with existing deployment
-
-**Steps:**
-1. Go to "My Deployments"
-2. Click on a deployment
-3. View monitoring tabs (Events, Stats, Logs)
-4. Click "Stop" button
-5. Deployment status → "stopped"
-6. Click "Start" button
-7. Deployment status → "running"
-8. Click "Restart" button
-9. Deployment restarts
-
-**Expected Results:**
-- ✅ All buttons work without auth errors
-- ✅ Status updates correctly
-- ✅ Monitoring data shows
-- ✅ No access to other users' deployments
-
----
-
-## Journey 5: Exceed Plan Limits
-
-**Actors:** Free tier user
-
-**Steps:**
-1. Deploy first template (within free limit)
-2. Try to deploy second template (exceeds limit)
-3. See billing error message
-4. Navigate to billing/upgrade page
-5. Select paid plan
-6. Complete payment
-7. Retry deployment
-
-**Expected Results:**
-- ✅ Clear error message about plan limits
-- ✅ Upgrade flow works
-- ✅ After upgrade, deployment succeeds
-- ✅ Billing integration functional
-
----
-
-## Journey 6: Creator Template Publishing
-
-**Actors:** Template creator
-
-**Steps:**
-1. Navigate to "Creator Dashboard"
-2. Click "Create Template"
-3. Fill template details:
-   - Name, description
-   - Docker Compose spec
-   - Environment variables
-   - Pricing
-4. Click "Publish"
-5. Template appears in marketplace
-6. Other users can deploy it
-
-**Expected Results:**
-- ✅ Creator can create and publish
-- ✅ Template validation works
-- ✅ Marketplace shows published template
-- ✅ Deployment from published template works
-
----
-
-## Journey 7: Auth Persistence
-
-**Actors:** Authenticated user
-
-**Steps:**
-1. Sign in successfully
-2. Refresh page → Should stay logged in
-3. Close browser tab
-4. Reopen tab → Should stay logged in
-5. Wait 10 minutes
-6. Interact with site → Should still be logged in
-7. Wait 24 hours
-8. Return to site → Session may expire, redirect to login
-
-**Expected Results:**
-- ✅ Session persists across refreshes
-- ✅ Session persists across tab close/reopen
-- ✅ Session timeout handled gracefully
-- ✅ No data loss on session expiry
-
----
-
-## Journey 8: Multi-User Privacy (CRITICAL)
-
-**Actors:** Two different users (User A, User B)
-
-**Steps:**
-1. User A signs in, creates deployment "A-deployment"
-2. User A signs out
-3. User B signs in, creates deployment "B-deployment"
-4. User B views "My Deployments"
-5. User B should NOT see "A-deployment"
-6. User B tries to access A's deployment URL directly
-7. Should get 403 Forbidden
-
-**Expected Results:**
-- ✅ Users only see their own deployments
-- ✅ No way to view/modify other users' deployments
-- ✅ Privacy enforced at API level
-- ✅ Direct URL access blocked
-
----
-
-## Journey 9: Node Registration & Remote Deployment
-
-**Actors:** Template creator with remote node
-
-**Steps:**
-1. Navigate to "Creator Dashboard" → "Nodes" tab
-2. Click "Add SSH Key"
-3. Upload private key
-4. Click "Add Node"
-5. Fill node details (name, host, port, SSH key)
-6. Submit → Node health check passes
-7. Deploy template → Gets scheduled to remote node
-8. Verify deployment running on remote Docker host
-
-**Expected Results:**
-- ✅ SSH key encrypted and stored
-- ✅ Node health check succeeds
-- ✅ Deployment scheduled to available node
-- ✅ Container events recorded from remote operations
-- ✅ Monitoring (Events, Stats, Logs) works for remote deployments
-
----
-
-## Journey 10: Session Recovery After Expiry
-
-**Actors:** User whose session expired
-
-**Steps:**
-1. User signs in
-2. Leave browser open for 24+ hours (session expires)
-3. User returns and clicks on deployment
-4. See "Sign In Required" message
-5. User clicks "Sign In"
-6. Redirected to login page
-7. User logs in
-8. Redirected back to original destination
-
-**Expected Results:**
-- ✅ Clear message when session expires
-- ✅ Redirect to login preserves intended destination
-- ✅ After login, redirected to original page
-- ✅ No data loss
-
----
-
-## Testing Protocol
-
-For EVERY deployment to production:
-
-1. **Test ALL journeys manually**
-2. Use Chrome DevTools MCP for automation where possible
-3. Document results in test report (template below)
-4. Take screenshots of critical steps
-5. Verify no regressions
-
-**Never deploy without testing ALL journeys.**
-
----
-
-## Test Report Template
-
-```markdown
-## Production Test Report - v{VERSION}
-
-**Tested by:** {Name}
-**Date:** {YYYY-MM-DD}
-**Environment:** https://emptychair.dev
-
-### Journey Results
-
-- [ ] Journey 1: New User Signup & First Deployment
-- [ ] Journey 2: Returning User Login
-- [ ] Journey 3: Deploy Additional Template
-- [ ] Journey 4: Deployment Lifecycle Management
-- [ ] Journey 5: Exceed Plan Limits
-- [ ] Journey 6: Creator Template Publishing
-- [ ] Journey 7: Auth Persistence
-- [ ] Journey 8: Multi-User Privacy (CRITICAL)
-- [ ] Journey 9: Node Registration & Remote Deployment
-- [ ] Journey 10: Session Recovery After Expiry
-
-### Issues Found
-
-- None / {List issues with details}
-
-### Screenshots
-
-{Attach screenshots of critical flows}
-
-### Notes
-
-{Any additional observations}
-
-### Recommendation
-
-- [ ] PASS - Ready for production
-- [ ] FAIL - Blocking issues found, DO NOT DEPLOY
+**Flow:**
+```
+Homepage (/)
+  |
+  |- Reads hero: "Deploy apps to your own servers"
+  |- Reads 3-step guide (Deploy, Bring Servers, Create Templates)
+  |- Reads feature cards (Monitoring, SSH Keys, Self-Hosted)
+  |
+  +-> "Browse Apps" -> Marketplace (J2)
+  +-> "Get Started" -> Sign Up (J3)
 ```
 
+**Sees:**
+- Hero with value proposition
+- 3-step explainer
+- Feature highlights (monitoring, SSH keys, self-hosted)
+- Navigation: Marketplace, Sign In, Get Started
+- Footer with links
+
+**Acceptance:**
+- [ ] Page loads without auth errors
+- [ ] No sidebar navigation (anonymous layout)
+- [ ] CTAs link to correct destinations
+- [ ] Page is fast (<2s load)
+
 ---
 
-## Automation Guidelines
+### J2. Visitor Browses Marketplace
 
-### Using Chrome DevTools MCP
+**Persona:** Visitor
+**Goal:** See available templates before signing up
+**Entry:** Homepage CTA or direct /marketplace link
 
-For automated testing, use these tools:
-- `mcp__chrome-devtools__navigate_page` - Navigate to pages
-- `mcp__chrome-devtools__take_snapshot` - Capture page state
-- `mcp__chrome-devtools__fill` - Fill form fields
-- `mcp__chrome-devtools__click` - Click buttons
-- `mcp__chrome-devtools__wait_for` - Wait for elements
-- `mcp__chrome-devtools__take_screenshot` - Capture visual state
-
-### Example Test Script
-
-```typescript
-// Journey 1: New User Signup
-1. navigate_page({ url: "https://emptychair.dev" })
-2. take_snapshot() // Verify homepage loads
-3. click({ uid: "sign-up-button" })
-4. fill({ uid: "email-input", value: "test@example.com" })
-5. fill({ uid: "password-input", value: "test123456" })
-6. fill({ uid: "name-input", value: "Test User" })
-7. click({ uid: "submit-button" })
-8. wait_for({ text: "Marketplace" })
-9. take_screenshot() // Verify redirect
+**Flow:**
+```
+Marketplace (/marketplace)
+  |
+  |- Sees published templates grouped by category
+  |- Can search by name/description
+  |- Can filter by category pill
+  |
+  +-> Click template card -> Template Detail (J5)
+  +-> Click "Deploy Now" -> Auth Required dialog -> Sign In (J3)
 ```
 
----
+**Sees:**
+- Template cards with name, version, description, price
+- Category pills (Database, Web Apps, Monitoring, etc.)
+- Search box
+- "Sign In" button in header (not username)
 
-## Failure Patterns to Watch For
-
-### Auth Issues
-- User appears logged out after successful signup/login
-- "Sign In Required" dialog appears for authenticated users
-- Header shows "Sign in via APIGate" instead of user profile
-- Session doesn't persist across page loads
-
-### Privacy Issues
-- Users can see other users' deployments
-- Users can access other users' deployments via direct URL
-- Deployment list not filtered by customer_id
-
-### UX Issues
-- Confusing error messages
-- No indication of what went wrong
-- Broken navigation links
-- Missing visual feedback
+**Acceptance:**
+- [ ] Published templates visible without login
+- [ ] Unpublished (draft) templates NOT visible
+- [ ] Category filter works
+- [ ] Search filters by name and description
+- [ ] "Deploy Now" on template detail shows auth prompt, not a crash
 
 ---
 
-## Pre-Deployment Checklist
+## Part 2: Onboarding
 
-Before tagging a release:
+### J3. Visitor Signs Up
 
-- [ ] All journeys tested locally
-- [ ] All journeys tested on staging (if available)
-- [ ] Test report completed
-- [ ] Screenshots captured
-- [ ] No critical issues found
-- [ ] UX flows feel smooth
-- [ ] Error messages are clear
-- [ ] Privacy is enforced
-- [ ] Auth persistence works
-- [ ] No regressions from previous version
+**Persona:** Visitor -> Customer
+**Goal:** Create an account to deploy apps
+**Entry:** Homepage "Get Started" or Login page "Sign up" link
 
-**If ANY item fails, DO NOT DEPLOY.**
+**Flow:**
+```
+Sign Up (/signup)
+  |
+  |- Fills: Full Name, Email, Password
+  |- Submits form
+  |
+  +-> Success -> Redirect to Marketplace (/marketplace)
+  +-> Error (duplicate email) -> Inline error message
+```
+
+**Sees:**
+- Clean form: name, email, password
+- "Create Account" button
+- "Already have an account? Sign in" link
+- After success: header shows username + "Sign Out"
+
+**Acceptance:**
+- [ ] Form validates required fields client-side
+- [ ] Password minimum length enforced
+- [ ] Duplicate email shows clear error
+- [ ] Redirect to marketplace after success
+- [ ] JWT stored in localStorage, sent on subsequent requests
+- [ ] User resolved in Hoster DB via `ResolveUser()`
+
+---
+
+### J4. Customer Signs In
+
+**Persona:** Customer
+**Goal:** Access their account on return visit
+**Entry:** Homepage "Sign In" or direct /login
+
+**Flow:**
+```
+Sign In (/login)
+  |
+  |- Fills: Email, Password
+  |- Submits form
+  |
+  +-> Success -> Redirect to Marketplace (/marketplace)
+  +-> Error (wrong password) -> Inline error message
+```
+
+**Sees:**
+- Email + password form
+- "Sign in" button
+- "Don't have an account? Sign up" link
+- After success: full sidebar navigation, username in header
+
+**Acceptance:**
+- [ ] Login succeeds with correct credentials
+- [ ] Wrong password shows clear error (not 500)
+- [ ] Session persists across page refresh
+- [ ] Session persists across tab close/reopen
+- [ ] JWT stored in localStorage under `hoster-auth` key
+
+---
+
+## Part 3: Deploying Applications
+
+### J5. Customer Views Template Detail
+
+**Persona:** Customer (or Visitor)
+**Goal:** Evaluate a template before deploying
+**Entry:** Click template card from Marketplace
+
+**Flow:**
+```
+Template Detail (/marketplace/{template_id})
+  |
+  |- Reads: name, version, description, published status
+  |- Reviews: included services, compose spec
+  |- Sees: price, publish date
+  |
+  +-> "Deploy Now" -> Deploy Dialog (J6)
+  +-> "Back to Marketplace" -> Marketplace (J2)
+```
+
+**Sees:**
+- Template name + "Published" badge + version
+- Description section
+- Included Services (parsed from compose spec)
+- Full Docker Compose specification
+- Price card (Free or $X.XX/month)
+- Published date, last updated date
+
+**Acceptance:**
+- [ ] All template fields rendered correctly
+- [ ] Services extracted from compose spec
+- [ ] Price formatted correctly (Free vs dollar amount)
+- [ ] "Deploy Now" opens deploy dialog (authenticated) or auth prompt (anonymous)
+
+---
+
+### J6. Customer Deploys a Template
+
+**Persona:** Customer
+**Goal:** Launch a running instance of a template
+**Precondition:** Signed in, viewing template detail
+
+**Flow:**
+```
+Deploy Dialog (modal on template detail)
+  |
+  |- Auto-generated deployment name (editable)
+  |- Optional: custom domain
+  |- Optional: environment variable overrides
+  |- Shows monthly cost
+  |- Clicks "Deploy"
+  |
+  +-> Success -> Deployment Detail (/deployments/{id})
+  |             Status: "pending" -> "scheduled" -> "starting" -> "running"
+  |             (or "failed" if no nodes available)
+  |
+  +-> Error (plan limit) -> Error message in dialog
+  +-> Cancel -> Closes dialog
+```
+
+**Sees:**
+- Deployment name field (pre-filled slug)
+- Domain hint: "{name}.yourdomain.com"
+- Custom domain input (optional)
+- Environment overrides textarea (KEY=value format)
+- Monthly cost summary
+- Deploy / Cancel buttons
+
+**Acceptance:**
+- [ ] Default name is valid slug
+- [ ] Name validation (lowercase, alphanumeric, hyphens)
+- [ ] Template version auto-populated from template
+- [ ] template_id resolved from reference_id to integer FK
+- [ ] Deployment created in DB with correct customer_id
+- [ ] Auto-start triggered after creation
+- [ ] Navigates to deployment detail page
+- [ ] Status transitions visible in real-time
+
+---
+
+### J7. Customer Views Deployment Detail
+
+**Persona:** Customer
+**Goal:** Monitor and manage a running deployment
+**Entry:** Deploy success redirect, or My Deployments list
+
+**Flow:**
+```
+Deployment Detail (/deployments/{id})
+  |
+  |- Header: name, status badge, action buttons
+  |- Tabs: Overview | Logs | Stats | Events | Domains
+  |
+  |- Overview: container health, resource usage, deployment info
+  |- Logs: container stdout/stderr streams
+  |- Stats: CPU, memory, network charts
+  |- Events: lifecycle event timeline
+  |- Domains: assigned domains, DNS status
+  |
+  +-> "Start" -> Transition to starting -> running
+  +-> "Stop" -> Transition to stopping -> stopped
+  +-> "Delete" -> Transition to deleting -> deleted -> redirect to list
+  +-> "Back to Deployments" -> Deployments list (J8)
+```
+
+**Sees:**
+- Deployment name as heading
+- Status badge (pending/scheduled/starting/running/stopping/stopped/failed/deleted)
+- Error message (if failed)
+- Action buttons contextual to current state
+- Tab navigation for monitoring views
+- Created/updated timestamps
+
+**Acceptance:**
+- [ ] Status badge color matches state
+- [ ] Action buttons only show valid transitions
+- [ ] Error message displayed when status is "failed"
+- [ ] Tabs switch content without page reload
+- [ ] Start/Stop dispatch correct state machine transitions
+- [ ] Cannot access another user's deployment (404 not 403)
+
+---
+
+### J8. Customer Views Deployment List
+
+**Persona:** Customer
+**Goal:** See all their deployments at a glance
+**Entry:** Sidebar "My Deployments"
+
+**Flow:**
+```
+My Deployments (/deployments)
+  |
+  |- List of deployment cards (name, status, created date)
+  |
+  +-> Click card -> Deployment Detail (J7)
+  +-> "New Deployment" -> Marketplace (J2)
+```
+
+**Sees:**
+- Page heading + description
+- "New Deployment" link to marketplace
+- Deployment cards with: name, status badge, created date
+- Empty state if no deployments: "No deployments yet" + link to marketplace
+
+**Acceptance:**
+- [ ] Only shows current user's deployments (owner scoping)
+- [ ] Status badges accurate
+- [ ] Cards link to detail page
+- [ ] Empty state has helpful CTA
+
+---
+
+## Part 4: Creating Templates
+
+### J9. Creator Builds a Template
+
+**Persona:** Creator
+**Goal:** Package a docker-compose app as a deployable template
+**Entry:** Sidebar "App Templates"
+
+**Flow:**
+```
+App Templates (/templates)
+  |
+  |- List of creator's templates (drafts + published)
+  |- Search + status filter (All/Drafts/Published)
+  |- "Create Template" button
+  |
+  +-> "Create Template" -> Create Dialog
+      |
+      |- Fills: name, description, version (semver)
+      |- Fills: docker-compose spec
+      |- Optional: category, variables, pricing
+      |- Submits
+      |
+      +-> Success -> Template appears in list with "Draft" badge
+      +-> Validation error -> Inline error
+```
+
+**Sees:**
+- Template cards with: name, status (Draft/Published), version, description, price
+- Action buttons per card: Publish (if draft), Edit, Delete
+- Search box + status filter dropdown
+- Create dialog with form fields
+
+**Acceptance:**
+- [ ] Only shows current user's templates
+- [ ] Name validated: 3-100 chars, alphanumeric + spaces + hyphens
+- [ ] Version validated: semver X.Y.Z
+- [ ] Compose spec required
+- [ ] Slug auto-generated from name
+- [ ] Resource defaults applied (cpu=0, memory=0, disk=0, price=0)
+- [ ] New template appears as "Draft"
+
+---
+
+### J10. Creator Publishes a Template
+
+**Persona:** Creator
+**Goal:** Make template visible in the public marketplace
+**Precondition:** Has a draft template
+
+**Flow:**
+```
+App Templates (/templates)
+  |
+  |- Finds draft template card
+  |- Clicks "Publish" button
+  |
+  +-> Success -> "Draft" badge removed, "Publish" button removed
+  +-> Template now visible in Marketplace for all users
+```
+
+**Acceptance:**
+- [ ] Publish button only on draft templates
+- [ ] After publish: badge gone, button gone
+- [ ] Template appears in Marketplace immediately
+- [ ] Other users can see and deploy it
+- [ ] Creator can still Edit and Delete
+
+---
+
+## Part 5: Infrastructure Management
+
+### J11. Operator Adds an SSH Key
+
+**Persona:** Operator
+**Goal:** Store an SSH private key for node authentication
+**Entry:** Sidebar "SSH Keys"
+
+**Flow:**
+```
+SSH Keys (/ssh-keys)
+  |
+  |- "Add SSH Key" button
+  |
+  +-> Dialog: name + private key paste
+      |
+      +-> Success -> Key appears in list with fingerprint
+      +-> Error (invalid key) -> Inline error
+```
+
+**Sees:**
+- Page description: AES-256 encryption
+- Key list with: name, fingerprint, created date
+- Empty state with explanation of what SSH keys are for
+
+**Acceptance:**
+- [ ] Private key encrypted at rest (AES-256)
+- [ ] Private key never returned in GET responses (write-only)
+- [ ] Fingerprint derived and displayed
+- [ ] Key usable when registering nodes
+
+---
+
+### J12. Operator Registers a Node
+
+**Persona:** Operator
+**Goal:** Connect a remote server for deployments
+**Entry:** Sidebar "My Nodes"
+
+**Flow:**
+```
+My Nodes (/nodes)
+  |
+  |- Tabs: Nodes | Cloud Servers | Credentials
+  |- "Add Existing Server" button
+  |
+  +-> Add Node form (/nodes/new)
+      |
+      |- Fills: name, SSH host, SSH port, SSH user
+      |- Selects: SSH key (from J11)
+      |- Submits
+      |
+      +-> Success -> Node appears in list, health check runs
+      +-> Health check passes -> Status: "online"
+      +-> Health check fails -> Status: "offline" with error
+```
+
+**Sees:**
+- Node cards with: name, host, status (online/offline), capacity
+- Cloud Servers tab for provisioned instances
+- Credentials tab for cloud API keys
+- Node Setup Guide in empty state
+
+**Acceptance:**
+- [ ] Node created with correct SSH details
+- [ ] SSH key association works
+- [ ] Health check runs automatically after creation
+- [ ] Status reflects actual connectivity
+- [ ] Node available for deployment scheduling
+
+---
+
+### J13. Operator Provisions a Cloud Server
+
+**Persona:** Operator
+**Goal:** Spin up a new VPS from a cloud provider
+**Precondition:** Cloud credential stored
+
+**Flow:**
+```
+Cloud Servers (/nodes/cloud)
+  |
+  +-> "Create Cloud Server" (/nodes/cloud/new)
+      |
+      |- Selects: credential, provider, region, size
+      |- Fills: instance name
+      |- Submits
+      |
+      +-> Provision starts: pending -> creating -> configuring -> ready
+      +-> On ready: Node auto-registered, SSH key auto-assigned
+      +-> On failure: error message, can retry or destroy
+```
+
+**Acceptance:**
+- [ ] Cloud credential required
+- [ ] Region/size options loaded from provider
+- [ ] Provisioning progress visible in real-time
+- [ ] On success: node auto-registered and online
+- [ ] On failure: clear error, destroy option available
+
+---
+
+## Part 6: Dashboard & Monitoring
+
+### J14. Customer Views Dashboard
+
+**Persona:** Customer
+**Goal:** Get an overview of everything at a glance
+**Entry:** Sidebar "Dashboard"
+
+**Flow:**
+```
+Dashboard (/dashboard)
+  |
+  |- Stat cards: Deployments (running/total), Templates (published/total),
+  |              Nodes (online/total), Monthly Revenue
+  |- Recent Deployments list
+  |- Node Health summary
+  |- Template Performance (deployment count, revenue)
+```
+
+**Acceptance:**
+- [ ] Stats accurate and up-to-date
+- [ ] Recent deployments link to detail pages
+- [ ] Node health reflects actual status
+- [ ] Template performance shows deployment counts
+- [ ] Revenue calculated from running deployments
+
+---
+
+### J15. Customer Monitors a Running Deployment
+
+**Persona:** Customer
+**Goal:** Check health, read logs, view metrics for a live deployment
+**Precondition:** Deployment in "running" state on an online node
+
+**Flow:**
+```
+Deployment Detail (/deployments/{id})
+  |
+  |- Overview tab: container health (up/down), resource bars
+  |- Logs tab: real-time container stdout/stderr
+  |- Stats tab: CPU %, memory MB, network bytes charts
+  |- Events tab: lifecycle event timeline (created, started, health checks)
+  |- Domains tab: assigned domains, DNS verification status
+```
+
+**Acceptance:**
+- [ ] Container health shows per-service status
+- [ ] Logs stream in near-real-time
+- [ ] Stats charts update periodically
+- [ ] Events ordered newest-first
+- [ ] Domain DNS status reflects actual resolution
+
+---
+
+## Part 7: Account & Session
+
+### J16. Customer Signs Out
+
+**Persona:** Customer
+**Goal:** End their session
+**Entry:** "Sign Out" button in header
+
+**Flow:**
+```
+Any page (authenticated)
+  |
+  |- Click "Sign Out"
+  |
+  +-> JWT cleared from localStorage
+  +-> Redirect to Homepage (/)
+  +-> Header shows "Sign In" instead of username
+```
+
+**Acceptance:**
+- [ ] Token removed from localStorage
+- [ ] Subsequent API calls fail with 401
+- [ ] Redirected to landing page
+- [ ] No stale data visible after sign out
+
+---
+
+### J17. Session Expires Gracefully
+
+**Persona:** Customer
+**Goal:** Continue working after session timeout
+**Precondition:** JWT has expired (24h+ inactivity)
+
+**Flow:**
+```
+Any authenticated page (expired token)
+  |
+  |- User clicks any action
+  |- API returns 401
+  |
+  +-> "Authentication Required" dialog appears
+      |
+      +-> "Sign In" -> Login page (/login)
+      +-> After login -> Redirect back to original page
+```
+
+**Acceptance:**
+- [ ] Clear "session expired" message (not raw 401 error)
+- [ ] Login preserves intended destination
+- [ ] No data loss from in-progress forms
+- [ ] Re-authentication restores full access
+
+---
+
+## Part 8: Security & Privacy
+
+### J18. Multi-User Data Isolation
+
+**Persona:** Customer A + Customer B
+**Goal:** Verify users cannot see each other's data
+**Priority:** CRITICAL
+
+**Flow:**
+```
+User A: sign in -> create deployment "A-deploy" -> sign out
+User B: sign in -> create deployment "B-deploy"
+  |
+  |- "My Deployments" shows only "B-deploy"
+  |- Direct URL to A's deployment -> 404 Not Found
+  |- API call for A's deployment -> 404 Not Found
+  |- "App Templates" shows only B's templates
+```
+
+**Acceptance:**
+- [ ] Deployment list scoped by customer_id
+- [ ] Template list scoped by creator_id
+- [ ] Node list scoped by creator_id
+- [ ] SSH key list scoped by creator_id
+- [ ] Direct reference_id access returns 404 (not 403) for wrong owner
+- [ ] API-level enforcement (not just frontend filtering)
+
+---
+
+### J19. Anonymous Access Boundaries
+
+**Persona:** Visitor
+**Goal:** Verify anonymous users can only access public resources
+
+**Flow:**
+```
+Anonymous user:
+  |
+  |- GET /marketplace -> Published templates visible
+  |- GET /marketplace/{id} -> Template detail visible
+  |- POST /api/v1/deployments -> 401 Unauthorized
+  |- GET /deployments -> Empty (no auth context)
+  |- GET /templates -> Empty (no auth context)
+  |- GET /nodes -> Empty (no auth context)
+```
+
+**Acceptance:**
+- [ ] Marketplace browsable without login
+- [ ] Template detail accessible without login
+- [ ] All write operations require authentication
+- [ ] Owner-scoped lists return empty (not error) for anonymous users
+- [ ] "Deploy Now" on template shows auth prompt
+
+---
+
+## Part 9: Billing & Limits
+
+### J20. Free Tier Limit Enforcement
+
+**Persona:** Customer on free plan
+**Goal:** Understand limits and upgrade path
+**Precondition:** Free plan allows 1 deployment
+
+**Flow:**
+```
+Customer deploys first template -> Success
+Customer deploys second template
+  |
+  +-> APIGate returns 429 / quota error
+  +-> Clear message: "Free plan allows 1 deployment. Upgrade to deploy more."
+  +-> Link to upgrade path
+```
+
+**Acceptance:**
+- [ ] First deployment succeeds
+- [ ] Second deployment blocked with clear message
+- [ ] Error message includes plan name and limit
+- [ ] Upgrade path accessible
+- [ ] After upgrade, deployment succeeds
+
+---
+
+## Appendix: State Machine Reference
+
+### Deployment States
+```
+pending -> scheduled -> starting -> running -> stopping -> stopped -> deleting -> deleted
+                           |           |
+                           v           v
+                         failed <------+
+                           |
+                           +-> starting (retry)
+                           +-> deleting (give up)
+```
+
+### Cloud Provision States
+```
+pending -> creating -> configuring -> ready -> destroying -> destroyed
+   |          |            |                       |
+   v          v            v                       v
+ failed <-----+------------+-----------------------+
+   |
+   +-> pending (retry)
+   +-> destroying (give up)
+```
