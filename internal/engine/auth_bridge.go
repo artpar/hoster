@@ -2,9 +2,12 @@ package engine
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
+	"time"
 )
 
 // Auth header constants (injected by APIGate).
@@ -49,13 +52,24 @@ func AuthMiddleware(store *Store, sharedSecret string, logger *slog.Logger) func
 			}
 
 			referenceID := r.Header.Get(HeaderUserID)
+			planID := r.Header.Get(HeaderPlanID)
+
+			// Fallback: extract from JWT Bearer token when APIGate
+			// doesn't inject identity headers (no request_transform configured).
+			if referenceID == "" {
+				if claims := parseJWTClaims(r); claims != nil {
+					referenceID = claims.UserID
+					if planID == "" {
+						planID = claims.PlanID
+					}
+				}
+			}
+
 			if referenceID == "" {
 				// Unauthenticated — continue with empty AuthContext
 				next.ServeHTTP(w, r)
 				return
 			}
-
-			planID := r.Header.Get(HeaderPlanID)
 
 			// Resolve integer user ID
 			userID, err := store.ResolveUser(r.Context(), referenceID, "", "", planID)
@@ -84,6 +98,43 @@ func AuthMiddleware(store *Store, sharedSecret string, logger *slog.Logger) func
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// jwtClaims represents the relevant fields from an APIGate JWT payload.
+type jwtClaims struct {
+	UserID string `json:"uid"`
+	PlanID string `json:"pid"`
+	Exp    int64  `json:"exp"`
+}
+
+// parseJWTClaims extracts user identity from the Authorization Bearer token.
+// Signature verification is skipped because APIGate already validated the JWT
+// and Hoster is only reachable via APIGate on localhost.
+func parseJWTClaims(r *http.Request) *jwtClaims {
+	auth := r.Header.Get("Authorization")
+	if !strings.HasPrefix(auth, "Bearer ") {
+		return nil
+	}
+	token := strings.TrimPrefix(auth, "Bearer ")
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return nil
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil
+	}
+	var claims jwtClaims
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil
+	}
+	if claims.Exp > 0 && time.Now().Unix() > claims.Exp {
+		return nil
+	}
+	if claims.UserID == "" {
+		return nil
+	}
+	return &claims
 }
 
 // PlanLimits defines resource limits for a user's subscription plan.
