@@ -98,8 +98,9 @@ func listHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 		var filters []Filter
 
 		// Owner scoping: if resource has an owner field and user is authenticated,
-		// filter by owner
-		if res.Owner != "" && authCtx.Authenticated && !res.PublicRead {
+		// filter by owner. For PublicRead resources, only scope when ?scope=mine.
+		scopeMine := r.URL.Query().Get("scope") == "mine"
+		if res.Owner != "" && authCtx.Authenticated && (!res.PublicRead || scopeMine) {
 			filters = append(filters, Filter{Field: res.Owner, Value: authCtx.UserID})
 		}
 
@@ -168,13 +169,18 @@ func getHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 			return
 		}
 
-		// Check owner
-		if res.Owner != "" && authCtx.Authenticated {
-			if ownerID, ok := toInt64(row[res.Owner]); ok {
-				if int(ownerID) != authCtx.UserID && !res.PublicRead {
-					writeError(w, http.StatusNotFound, res.Name+" not found")
-					return
-				}
+		// Check owner — fail closed: if owner field exists but can't be parsed, deny access
+		if res.Owner != "" && authCtx.Authenticated && !res.PublicRead {
+			ownerID, ok := toInt64(row[res.Owner])
+			if !ok {
+				cfg.Logger.Warn("ownership check failed: unparseable owner field",
+					"resource", res.Name, "field", res.Owner, "value", row[res.Owner])
+				writeError(w, http.StatusForbidden, "access denied")
+				return
+			}
+			if int(ownerID) != authCtx.UserID {
+				writeError(w, http.StatusNotFound, res.Name+" not found")
+				return
 			}
 		}
 
@@ -270,11 +276,16 @@ func updateHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 		}
 
 		if res.Owner != "" {
-			if ownerID, ok := toInt64(existing[res.Owner]); ok {
-				if int(ownerID) != authCtx.UserID {
-					writeError(w, http.StatusForbidden, "not authorized to modify this "+res.Name)
-					return
-				}
+			ownerID, ok := toInt64(existing[res.Owner])
+			if !ok {
+				cfg.Logger.Warn("ownership check failed: unparseable owner field",
+					"resource", res.Name, "field", res.Owner, "value", existing[res.Owner])
+				writeError(w, http.StatusForbidden, "access denied")
+				return
+			}
+			if int(ownerID) != authCtx.UserID {
+				writeError(w, http.StatusForbidden, "not authorized to modify this "+res.Name)
+				return
 			}
 		}
 
@@ -334,11 +345,16 @@ func deleteHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 		}
 
 		if res.Owner != "" {
-			if ownerID, ok := toInt64(existing[res.Owner]); ok {
-				if int(ownerID) != authCtx.UserID {
-					writeError(w, http.StatusForbidden, "not authorized to delete this "+res.Name)
-					return
-				}
+			ownerID, ok := toInt64(existing[res.Owner])
+			if !ok {
+				cfg.Logger.Warn("ownership check failed: unparseable owner field",
+					"resource", res.Name, "field", res.Owner, "value", existing[res.Owner])
+				writeError(w, http.StatusForbidden, "access denied")
+				return
+			}
+			if int(ownerID) != authCtx.UserID {
+				writeError(w, http.StatusForbidden, "not authorized to delete this "+res.Name)
+				return
 			}
 		}
 
@@ -383,11 +399,16 @@ func transitionHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 		}
 
 		if res.Owner != "" {
-			if ownerID, ok := toInt64(existing[res.Owner]); ok {
-				if int(ownerID) != authCtx.UserID {
-					writeError(w, http.StatusForbidden, "not authorized")
-					return
-				}
+			ownerID, ok := toInt64(existing[res.Owner])
+			if !ok {
+				cfg.Logger.Warn("ownership check failed: unparseable owner field",
+					"resource", res.Name, "field", res.Owner, "value", existing[res.Owner])
+				writeError(w, http.StatusForbidden, "access denied")
+				return
+			}
+			if int(ownerID) != authCtx.UserID {
+				writeError(w, http.StatusForbidden, "not authorized")
+				return
 			}
 		}
 
@@ -489,18 +510,27 @@ func resolveRefFields(res *Resource, data map[string]any, store *Store) error {
 
 // stripFields removes write-only fields and resolves ref field integer IDs
 // to reference_ids for API responses.
-func stripFields(res *Resource, row map[string]any, store ...*Store) {
+func stripFields(res *Resource, row map[string]any, store *Store) {
 	for _, f := range res.Fields {
 		if f.WriteOnly {
 			delete(row, f.Name)
 		}
 		// Resolve FK integer IDs to reference_ids
-		if f.RefTable != "" && len(store) > 0 && store[0] != nil {
-			intID, ok := toInt64(row[f.Name])
+		if f.RefTable != "" && store != nil {
+			v := row[f.Name]
+			// Already a string (reference_id) — no resolution needed
+			if _, isStr := v.(string); isStr {
+				continue
+			}
+			intID, ok := toInt64(v)
 			if ok && intID > 0 {
-				refID, err := store[0].GetRefIDByIntID(f.RefTable, int(intID))
+				refID, err := store.GetRefIDByIntID(f.RefTable, int(intID))
 				if err == nil {
 					row[f.Name] = refID
+				} else {
+					slog.Warn("stripFields: FK resolution failed",
+						"resource", res.Name, "field", f.Name, "ref_table", f.RefTable,
+						"int_id", intID, "error", err)
 				}
 			}
 		}

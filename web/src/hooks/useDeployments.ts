@@ -9,10 +9,10 @@ export const deploymentKeys = {
   detail: (id: string) => [...deploymentKeys.details(), id] as const,
 };
 
-export function useDeployments() {
+export function useDeployments(params?: Record<string, string>) {
   return useQuery({
-    queryKey: deploymentKeys.lists(),
-    queryFn: deploymentsApi.list,
+    queryKey: [...deploymentKeys.lists(), params ?? {}],
+    queryFn: () => deploymentsApi.list(params),
   });
 }
 

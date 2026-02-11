@@ -2,8 +2,9 @@ import { api } from './client';
 import type { Deployment, CreateDeploymentRequest } from './types';
 
 export const deploymentsApi = {
-  list: async () => {
-    const response = await api.get<Deployment[]>('/deployments');
+  list: async (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    const response = await api.get<Deployment[]>(`/deployments${qs}`);
     return response.data;
   },
 

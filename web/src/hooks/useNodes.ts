@@ -17,10 +17,10 @@ const nodeHooks = createResourceHooks<Node, CreateNodeRequest, UpdateNodeRequest
 export const nodeKeys = nodeHooks.keys;
 
 // Override useList with smart polling
-export function useNodes() {
+export function useNodes(params?: Record<string, string>) {
   return useQuery({
-    queryKey: nodeKeys.lists(),
-    queryFn: nodesApi.list,
+    queryKey: [...nodeKeys.lists(), params ?? {}],
+    queryFn: () => nodesApi.list(params),
     refetchInterval: (query) => {
       const nodes = query.state.data || [];
       const hasOffline = nodes.some((n) => n.attributes.status === 'offline');

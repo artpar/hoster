@@ -35,8 +35,8 @@ export interface ResourceApi<
   CreateRequest,
   UpdateRequest = Partial<CreateRequest>
 > {
-  /** List all resources */
-  list: () => Promise<Resource[]>;
+  /** List all resources, with optional query params (e.g. { scope: 'mine' }) */
+  list: (params?: Record<string, string>) => Promise<Resource[]>;
   /** Get a single resource by ID */
   get: (id: string) => Promise<Resource>;
   /** Create a new resource */
@@ -81,8 +81,9 @@ export function createResourceApi<
   const basePath = `/${resourceName}`;
 
   const baseApi: ResourceApi<Resource, CreateRequest, UpdateRequest> = {
-    list: async () => {
-      const response = await api.get<Resource[]>(basePath);
+    list: async (params?: Record<string, string>) => {
+      const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+      const response = await api.get<Resource[]>(`${basePath}${qs}`);
       return response.data;
     },
 

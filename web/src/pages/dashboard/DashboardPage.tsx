@@ -10,7 +10,6 @@ import {
 import { useTemplates } from '@/hooks/useTemplates';
 import { useDeployments } from '@/hooks/useDeployments';
 import { useNodes } from '@/hooks/useNodes';
-import { useUser } from '@/stores/authStore';
 import { LoadingPage } from '@/components/common/LoadingSpinner';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -19,18 +18,13 @@ import { pages } from '@/docs/registry';
 const pageDocs = pages.dashboard;
 
 export function DashboardPage() {
-  const user = useUser();
-  const userId = user?.id ?? null;
-  const { data: templates, isLoading: templatesLoading } = useTemplates();
+  const { data: templates, isLoading: templatesLoading } = useTemplates({ scope: 'mine' });
   const { data: deployments, isLoading: deploymentsLoading } = useDeployments();
   const { data: nodes, isLoading: nodesLoading } = useNodes();
 
   const isLoading = templatesLoading || deploymentsLoading || nodesLoading;
 
-  const myTemplates = useMemo(() => {
-    if (!templates) return [];
-    return templates.filter((t) => t.attributes.creator_id === userId);
-  }, [templates, userId]);
+  const myTemplates = templates ?? [];
 
   const stats = useMemo(() => {
     const allDeployments = deployments ?? [];
@@ -41,9 +35,9 @@ export function DashboardPage() {
 
     const templateIds = new Set(myTemplates.map((t) => t.id));
     const monthlyRevenue = allDeployments
-      .filter((d) => d.attributes.status === 'running' && templateIds.has(d.attributes.template_id))
+      .filter((d) => d.attributes.status === 'running' && templateIds.has(String(d.attributes.template_id)))
       .reduce((sum, d) => {
-        const tmpl = myTemplates.find((t) => t.id === d.attributes.template_id);
+        const tmpl = myTemplates.find((t) => t.id === String(d.attributes.template_id));
         return sum + (tmpl?.attributes.price_monthly_cents ?? 0);
       }, 0);
 
@@ -152,7 +146,7 @@ export function DashboardPage() {
             ) : (
               <div className="space-y-3">
                 {recentDeployments.map((d) => {
-                  const tmpl = templates?.find((t) => t.id === d.attributes.template_id);
+                  const tmpl = myTemplates.find((t) => t.id === String(d.attributes.template_id));
                   return (
                     <Link
                       key={d.id}
@@ -232,9 +226,9 @@ export function DashboardPage() {
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {myTemplates.map((t) => {
-                  const depCount = deployments?.filter((d) => d.attributes.template_id === t.id).length ?? 0;
+                  const depCount = deployments?.filter((d) => String(d.attributes.template_id) === t.id).length ?? 0;
                   const activeCount = deployments?.filter(
-                    (d) => d.attributes.template_id === t.id && d.attributes.status === 'running'
+                    (d) => String(d.attributes.template_id) === t.id && d.attributes.status === 'running'
                   ).length ?? 0;
                   const activeRevenue = activeCount * (t.attributes.price_monthly_cents ?? 0);
                   return (

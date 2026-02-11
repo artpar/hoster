@@ -97,12 +97,17 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 			return
 		}
 
-		// Check ownership
-		if ownerID, ok := toInt64(tmpl["creator_id"]); ok {
-			if int(ownerID) != authCtx.UserID {
-				writeError(w, http.StatusForbidden, "not authorized")
-				return
-			}
+		// Check ownership — fail closed
+		ownerID, ok := toInt64(tmpl["creator_id"])
+		if !ok {
+			cfg.Logger.Warn("ownership check failed: unparseable creator_id",
+				"resource", "templates", "value", tmpl["creator_id"])
+			writeError(w, http.StatusForbidden, "access denied")
+			return
+		}
+		if int(ownerID) != authCtx.UserID {
+			writeError(w, http.StatusForbidden, "not authorized")
+			return
 		}
 
 		row, err := cfg.Store.Update(ctx, "templates", id, map[string]any{"published": 1})
@@ -135,12 +140,17 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 			return
 		}
 
-		// Check ownership
-		if ownerID, ok := toInt64(existing["customer_id"]); ok {
-			if int(ownerID) != authCtx.UserID {
-				writeError(w, http.StatusForbidden, "not authorized")
-				return
-			}
+		// Check ownership — fail closed
+		ownerID, ok := toInt64(existing["customer_id"])
+		if !ok {
+			cfg.Logger.Warn("ownership check failed: unparseable customer_id",
+				"resource", "deployments", "value", existing["customer_id"])
+			writeError(w, http.StatusForbidden, "access denied")
+			return
+		}
+		if int(ownerID) != authCtx.UserID {
+			writeError(w, http.StatusForbidden, "not authorized")
+			return
 		}
 
 		status, _ := existing["status"].(string)
@@ -194,11 +204,16 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 			return
 		}
 
-		if ownerID, ok := toInt64(existing["customer_id"]); ok {
-			if int(ownerID) != authCtx.UserID {
-				writeError(w, http.StatusForbidden, "not authorized")
-				return
-			}
+		ownerID, ok := toInt64(existing["customer_id"])
+		if !ok {
+			cfg.Logger.Warn("ownership check failed: unparseable customer_id",
+				"resource", "deployments", "value", existing["customer_id"])
+			writeError(w, http.StatusForbidden, "access denied")
+			return
+		}
+		if int(ownerID) != authCtx.UserID {
+			writeError(w, http.StatusForbidden, "not authorized")
+			return
 		}
 
 		row, cmd, err := cfg.Store.Transition(ctx, "deployments", id, "stopping")

@@ -23,7 +23,7 @@ export function SSHKeysPage() {
   const nodesByKeyId = new Map<string, string[]>();
   if (nodes) {
     for (const node of nodes) {
-      const keyId = node.attributes.ssh_key_id;
+      const keyId = String(node.attributes.ssh_key_id ?? '');
       if (keyId) {
         const existing = nodesByKeyId.get(keyId) || [];
         existing.push(node.attributes.name);

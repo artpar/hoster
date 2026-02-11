@@ -37,16 +37,17 @@ interface AuthState {
 // /mod/auth/me returns: { user: { id, email, name, plan_id, ... } }
 
 function parseUser(userData: Record<string, unknown>): User {
+  const limits = userData.plan_limits as Record<string, unknown> | undefined;
   return {
-    id: (userData.id as string) || '',
-    email: (userData.email as string) || '',
-    name: (userData.name as string) || (userData.email as string) || '',
-    plan_id: (userData.plan_id as string) || 'free',
-    plan_limits: (userData.plan_limits as PlanLimits) || {
-      max_deployments: 1,
-      max_cpu_cores: 1,
-      max_memory_mb: 1024,
-      max_disk_gb: 5,
+    id: String(userData.id ?? ''),
+    email: String(userData.email ?? ''),
+    name: String(userData.name ?? userData.email ?? ''),
+    plan_id: String(userData.plan_id ?? 'free'),
+    plan_limits: {
+      max_deployments: Number(limits?.max_deployments ?? 1),
+      max_cpu_cores: Number(limits?.max_cpu_cores ?? 1),
+      max_memory_mb: Number(limits?.max_memory_mb ?? 1024),
+      max_disk_gb: Number(limits?.max_disk_gb ?? 5),
     },
   };
 }

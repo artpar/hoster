@@ -6,7 +6,7 @@ import {
   Filter,
 } from 'lucide-react';
 import { useTemplates } from '@/hooks/useTemplates';
-import { useIsAuthenticated, useUser } from '@/stores/authStore';
+import { useIsAuthenticated } from '@/stores/authStore';
 import { LoadingPage } from '@/components/common/LoadingSpinner';
 import { EmptyState } from '@/components/common/EmptyState';
 import { TemplateCard } from '@/components/templates/TemplateCard';
@@ -22,17 +22,15 @@ type StatusFilter = 'all' | 'draft' | 'published' | 'deprecated';
 
 export function AppTemplatesPage() {
   const isAuthenticated = useIsAuthenticated();
-  const user = useUser();
-  const userId = user?.id ?? null;
-  const { data: templates, isLoading, error } = useTemplates();
+  const { data: templates, isLoading, error } = useTemplates({ scope: 'mine' });
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
-  // Filter templates created by this user
+  // Apply local search/status filters to backend-scoped results
   const myTemplates = useMemo(() => {
     if (!templates) return [];
-    let result = templates.filter((t) => t.attributes.creator_id === userId);
+    let result = templates;
 
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
@@ -52,7 +50,7 @@ export function AppTemplatesPage() {
     }
 
     return result;
-  }, [templates, userId, searchQuery, statusFilter]);
+  }, [templates, searchQuery, statusFilter]);
 
   const handleCreateSuccess = (templateId: string) => {
     console.log('Template created:', templateId);

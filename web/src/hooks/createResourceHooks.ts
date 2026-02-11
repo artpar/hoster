@@ -36,8 +36,8 @@ export interface ResourceHooks<
 > {
   /** Query keys for cache management */
   keys: ResourceQueryKeys;
-  /** Hook to list all resources */
-  useList: () => UseQueryResult<Resource[], Error>;
+  /** Hook to list all resources, with optional query params */
+  useList: (params?: Record<string, string>) => UseQueryResult<Resource[], Error>;
   /** Hook to get a single resource by ID */
   useGet: (id: string) => UseQueryResult<Resource, Error>;
   /** Hook to create a new resource */
@@ -100,10 +100,10 @@ export function createResourceHooks<
   return {
     keys,
 
-    useList: () => {
+    useList: (params?: Record<string, string>) => {
       return useQuery({
-        queryKey: keys.lists(),
-        queryFn: api.list,
+        queryKey: [...keys.lists(), params ?? {}],
+        queryFn: () => api.list(params),
       });
     },
 

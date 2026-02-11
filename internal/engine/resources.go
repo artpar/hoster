@@ -121,7 +121,7 @@ func NodeResource() Resource {
 			StringField("ssh_host").WithRequired(),
 			IntField("ssh_port").WithDefault(22),
 			StringField("ssh_user").WithRequired(),
-			IntField("ssh_key_id").WithNullable(),
+			RefField("ssh_key_id", "ssh_keys").WithNullable(),
 			StringField("docker_socket").WithDefault("/var/run/docker.sock"),
 			StringField("status").WithDefault("offline"),
 			JSONField("capabilities"),
