@@ -82,6 +82,9 @@ type BillingConfig struct {
 
 	// BatchSize is the maximum number of events to report in a single batch.
 	BatchSize int `mapstructure:"batch_size"`
+
+	// StripeKey is the Stripe secret key for creating checkout sessions.
+	StripeKey string `mapstructure:"stripe_key"`
 }
 
 // NodesConfig holds worker nodes configuration.
@@ -160,6 +163,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("billing.api_key", "")
 	v.SetDefault("billing.report_interval", "60s")
 	v.SetDefault("billing.batch_size", 100)
+	v.SetDefault("billing.stripe_key", "")
 
 	// Node defaults (Creator Worker Nodes)
 	v.SetDefault("nodes.encryption_key", "")                // Must be set via environment

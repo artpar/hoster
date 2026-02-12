@@ -117,6 +117,7 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		SharedSecret:  cfg.Auth.SharedSecret,
 		EncryptionKey: encryptionKey,
 		Version:       Version,
+		StripeKey:     cfg.Billing.StripeKey,
 	})
 
 	// Create HTTP server

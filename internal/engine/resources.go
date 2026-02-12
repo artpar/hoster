@@ -15,6 +15,7 @@ func Schema() []Resource {
 		SSHKeyResource(),
 		CloudCredentialResource(),
 		CloudProvisionResource(),
+		InvoiceResource(),
 	}
 }
 
@@ -216,6 +217,40 @@ func CloudProvisionResource() Resource {
 				"ready":       "ProvisionReady",
 				"destroying":  "DestroyInstance",
 			},
+		},
+	}
+}
+
+func InvoiceResource() Resource {
+	return Resource{
+		Name:      "invoices",
+		Owner:     "user_id",
+		RefPrefix: "inv_",
+		Fields: []Field{
+			RefField("user_id", "users").WithInternal(),
+			TimestampField("period_start").WithRequired(),
+			TimestampField("period_end").WithRequired(),
+			JSONField("items"),
+			IntField("subtotal_cents").WithDefault(0),
+			IntField("tax_cents").WithDefault(0),
+			IntField("total_cents").WithDefault(0),
+			StringField("currency").WithDefault("USD"),
+			StringField("status").WithDefault("draft"),
+			StringField("stripe_session_id").WithNullable(),
+			StringField("stripe_payment_url").WithNullable(),
+			TimestampField("paid_at"),
+		},
+		StateMachine: &StateMachine{
+			Field:   "status",
+			Initial: "draft",
+			Transitions: map[string][]string{
+				"draft":   {"pending"},
+				"pending": {"paid", "failed"},
+				"failed":  {"pending"},
+			},
+		},
+		Actions: []CustomAction{
+			{Name: "pay", Method: "POST"},
 		},
 	}
 }

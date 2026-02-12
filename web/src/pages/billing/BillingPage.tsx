@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Activity, DollarSign, Layers } from 'lucide-react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Activity, DollarSign, Layers, FileText, CreditCard, CheckCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 import { useDeployments } from '@/hooks/useDeployments';
 import { useTemplates } from '@/hooks/useTemplates';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { LoadingPage } from '@/components/common/LoadingSpinner';
 import { useUser } from '@/stores/authStore';
+import { api } from '@/api/client';
 
 interface UsageEvent {
   type: string;
@@ -14,12 +16,48 @@ interface UsageEvent {
   attributes: Record<string, unknown>;
 }
 
+interface Invoice {
+  type: string;
+  id: string;
+  attributes: {
+    period_start: string;
+    period_end: string;
+    items: string;
+    subtotal_cents: number;
+    tax_cents: number;
+    total_cents: number;
+    currency: string;
+    status: string;
+    stripe_session_id: string | null;
+    stripe_payment_url: string | null;
+    paid_at: string | null;
+    created_at: string;
+  };
+}
+
 export function BillingPage() {
   const user = useUser();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: deployments, isLoading: deploymentsLoading } = useDeployments();
   const { data: templates, isLoading: templatesLoading } = useTemplates();
   const [usageEvents, setUsageEvents] = useState<UsageEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [paying, setPaying] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const fetchInvoices = useCallback(() => {
+    api.get<Invoice[]>('/invoices')
+      .then((data) => {
+        const list = Array.isArray(data.data) ? data.data : data.data ? [data.data] : [];
+        setInvoices(list);
+        setInvoicesLoading(false);
+      })
+      .catch(() => setInvoicesLoading(false));
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -36,6 +74,43 @@ export function BillingPage() {
       })
       .catch(() => setEventsLoading(false));
   }, [user]);
+
+  useEffect(() => {
+    fetchInvoices();
+  }, [fetchInvoices]);
+
+  // Handle payment verification on return from Stripe
+  useEffect(() => {
+    const payment = searchParams.get('payment');
+    const sessionId = searchParams.get('session_id');
+
+    if (payment === 'success' && sessionId) {
+      const token = JSON.parse(localStorage.getItem('hoster-auth') || '{}')?.state?.token;
+      if (token) {
+        fetch(`/api/v1/billing/verify-payment?session_id=${sessionId}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.data?.paid) {
+              setSuccessMessage('Payment successful! Invoice has been marked as paid.');
+            } else {
+              setSuccessMessage('Payment is being processed. It may take a moment to update.');
+            }
+            fetchInvoices();
+          })
+          .catch(() => {
+            setSuccessMessage('Payment received. Verifying status...');
+            fetchInvoices();
+          });
+      }
+      // Clean URL params
+      setSearchParams({});
+    } else if (payment === 'cancelled') {
+      setError('Payment was cancelled.');
+      setSearchParams({});
+    }
+  }, [searchParams, setSearchParams, fetchInvoices]);
 
   const isLoading = deploymentsLoading || templatesLoading || eventsLoading;
 
@@ -62,6 +137,61 @@ export function BillingPage() {
     };
   }, [deployments, templates]);
 
+  const handleGenerateInvoice = async () => {
+    setGenerating(true);
+    setError(null);
+    try {
+      const token = JSON.parse(localStorage.getItem('hoster-auth') || '{}')?.state?.token;
+      const resp = await fetch('/api/v1/billing/generate-invoice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.error?.detail || err.errors?.[0]?.detail || `Failed (${resp.status})`);
+      }
+      fetchInvoices();
+      setSuccessMessage('Invoice generated successfully.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate invoice');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handlePayInvoice = async (invoiceId: string) => {
+    setPaying(invoiceId);
+    setError(null);
+    try {
+      const token = JSON.parse(localStorage.getItem('hoster-auth') || '{}')?.state?.token;
+      const resp = await fetch(`/api/v1/invoices/${invoiceId}/pay`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          success_url: `${window.location.origin}/billing?payment=success`,
+          cancel_url: `${window.location.origin}/billing?payment=cancelled`,
+        }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.error?.detail || err.errors?.[0]?.detail || `Failed (${resp.status})`);
+      }
+      const data = await resp.json();
+      if (data.data?.checkout_url) {
+        window.location.href = data.data.checkout_url;
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create checkout');
+      setPaying(null);
+    }
+  };
+
   if (isLoading) return <LoadingPage />;
 
   return (
@@ -69,9 +199,24 @@ export function BillingPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Billing & Usage</h1>
         <p className="text-muted-foreground">
-          Your running deployments, costs, and usage activity.
+          Your running deployments, costs, invoices, and usage activity.
         </p>
       </div>
+
+      {successMessage && (
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+          <CheckCircle className="h-4 w-4" />
+          {successMessage}
+          <button onClick={() => setSuccessMessage(null)} className="ml-auto text-green-600 hover:text-green-800">&times;</button>
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          {error}
+          <button onClick={() => setError(null)} className="ml-2 text-red-600 hover:text-red-800">&times;</button>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
@@ -114,6 +259,88 @@ export function BillingPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Invoices */}
+      <Card className="mb-6">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-lg">Invoices</CardTitle>
+          {monthlyCost > 0 && (
+            <Button
+              size="sm"
+              onClick={handleGenerateInvoice}
+              disabled={generating}
+            >
+              <FileText className="mr-1 h-4 w-4" />
+              {generating ? 'Generating...' : 'Generate Invoice'}
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent>
+          {invoicesLoading ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">Loading invoices...</p>
+          ) : invoices.length === 0 ? (
+            <div className="py-8 text-center">
+              <FileText className="mx-auto h-8 w-8 text-muted-foreground/50" />
+              <p className="mt-2 text-sm text-muted-foreground">No invoices yet</p>
+              {monthlyCost > 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Click &quot;Generate Invoice&quot; to create one for the current billing period.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {invoices.map((invoice) => {
+                const attrs = invoice.attributes;
+                const items = parseItems(attrs.items);
+                return (
+                  <div
+                    key={invoice.id}
+                    className="flex items-center justify-between rounded-md border p-4"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium">
+                          Invoice {invoice.id.slice(0, 12)}...
+                        </p>
+                        <InvoiceStatusBadge status={attrs.status} />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {formatDate(attrs.period_start)} — {formatDate(attrs.period_end)}
+                      </p>
+                      {items.length > 0 && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {items.map((i) => i.deployment_name).join(', ')}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg font-semibold">
+                        ${(attrs.total_cents / 100).toFixed(2)}
+                      </span>
+                      {(attrs.status === 'draft' || attrs.status === 'failed') && (
+                        <Button
+                          size="sm"
+                          onClick={() => handlePayInvoice(invoice.id)}
+                          disabled={paying === invoice.id}
+                        >
+                          <CreditCard className="mr-1 h-4 w-4" />
+                          {paying === invoice.id ? 'Processing...' : 'Pay Now'}
+                        </Button>
+                      )}
+                      {attrs.status === 'paid' && attrs.paid_at && (
+                        <span className="text-xs text-green-600">
+                          Paid {formatDate(attrs.paid_at)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Active Deployments with Costs */}
       <Card className="mb-6">
@@ -222,6 +449,45 @@ export function BillingPage() {
       </Card>
     </div>
   );
+}
+
+function InvoiceStatusBadge({ status }: { status: string }) {
+  const colors: Record<string, string> = {
+    draft: 'bg-gray-100 text-gray-700',
+    pending: 'bg-yellow-100 text-yellow-800',
+    paid: 'bg-green-100 text-green-800',
+    failed: 'bg-red-100 text-red-800',
+  };
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${colors[status] || 'bg-gray-100 text-gray-700'}`}>
+      {status}
+    </span>
+  );
+}
+
+interface InvoiceLineItem {
+  deployment_id: string;
+  deployment_name: string;
+  template_name: string;
+  monthly_cents: number;
+  description: string;
+}
+
+function parseItems(itemsStr: string): InvoiceLineItem[] {
+  try {
+    return JSON.parse(itemsStr || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function formatDate(dateStr: string): string {
+  if (!dateStr) return '';
+  try {
+    return new Date(dateStr).toLocaleDateString();
+  } catch {
+    return dateStr;
+  }
 }
 
 function formatEventType(type: string): string {

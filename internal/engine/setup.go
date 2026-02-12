@@ -33,6 +33,7 @@ type SetupConfig struct {
 	SharedSecret  string
 	EncryptionKey []byte
 	Version       string
+	StripeKey     string
 }
 
 // Setup creates the complete HTTP handler using the engine.
@@ -102,6 +103,10 @@ func Setup(cfg SetupConfig) http.Handler {
 		Logger:         cfg.Logger,
 		ActionHandlers: buildActionHandlers(cfg),
 	})
+
+	// Billing endpoints (collection-level, not per-entity)
+	router.HandleFunc("/api/v1/billing/generate-invoice", generateInvoiceHandler(cfg)).Methods("POST")
+	router.HandleFunc("/api/v1/billing/verify-payment", verifyPaymentHandler(cfg)).Methods("GET")
 
 	// Serve embedded Web UI for all other paths (SPA pattern)
 	router.PathPrefix("/").Handler(spaHandler())
@@ -316,6 +321,9 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 			},
 		}
 	})
+
+	// Invoice: pay (create Stripe Checkout session)
+	handlers["invoices:pay"] = invoicePayHandler(cfg)
 
 	// Deployment: monitoring/events
 	handlers["deployments:monitoring/events"] = monitoringHandler(cfg, "deployment-events", func(ctx context.Context, cfg SetupConfig, depl map[string]any, r *http.Request) map[string]any {
