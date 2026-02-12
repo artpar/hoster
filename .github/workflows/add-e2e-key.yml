@@ -1,0 +1,32 @@
+name: Add E2E SSH Key
+on:
+  workflow_dispatch:
+    inputs:
+      public_key:
+        description: 'SSH public key to add to the server'
+        required: true
+        type: string
+
+jobs:
+  add-key:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H emptychair.dev >> ~/.ssh/known_hosts 2>/dev/null
+        env:
+          SSH_AUTH_SOCK: /dev/null
+
+      - name: Add public key to server
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_HOST }} "\
+            echo '${{ inputs.public_key }}' >> ~/.ssh/authorized_keys && \
+            echo 'Key added successfully'"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
