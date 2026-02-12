@@ -89,7 +89,7 @@ See `env.example` for all available configuration options. Key variables:
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `HOSTER_SERVER_PORT` | API server port | `8080` |
-| `HOSTER_BILLING_ENABLED` | Enable billing | `true` |
+| `HOSTER_BILLING_APIGATE_URL` | APIGate billing URL | `http://localhost:8082` |
 | `HOSTER_APP_PROXY_ENABLED` | Enable app proxy | `true` |
 | `HOSTER_APP_PROXY_BASE_DOMAIN` | Base domain for apps | `apps.example.com` |
 

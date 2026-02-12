@@ -96,6 +96,19 @@ func runSchemaMigrations(db *sqlx.DB, resources []Resource, logger *slog.Logger)
 		}
 	}
 
+	// Add columns that CREATE TABLE IF NOT EXISTS won't add to existing tables
+	alterStatements := []string{
+		`ALTER TABLE nodes ADD COLUMN public INTEGER DEFAULT 0`,
+		`ALTER TABLE ssh_keys RENAME COLUMN private_key_encrypted TO private_key`,
+		`ALTER TABLE cloud_credentials RENAME COLUMN credentials_encrypted TO credentials`,
+	}
+	for _, sql := range alterStatements {
+		if _, err := db.Exec(sql); err != nil {
+			// Ignore "duplicate column" errors — column may already exist
+			logger.Debug("alter table (may already exist)", "sql", sql, "error", err)
+		}
+	}
+
 	// Ensure ancillary tables exist (not schema-driven entities)
 	ancillaryTables := []string{
 		`CREATE TABLE IF NOT EXISTS usage_events (

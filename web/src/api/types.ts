@@ -224,6 +224,7 @@ export interface NodeAttributes {
   ssh_key_id?: string;
   docker_socket: string;
   status: NodeStatus;
+  public: boolean;
   capabilities: string[];
   capacity: NodeCapacity;
   location?: string;
@@ -245,6 +246,7 @@ export interface CreateNodeRequest {
   ssh_user: string;
   ssh_key_id?: string;
   docker_socket?: string;
+  public?: boolean;
   capabilities?: string[];
   location?: string;
   base_domain?: string;
@@ -257,6 +259,7 @@ export interface UpdateNodeRequest {
   ssh_user?: string;
   ssh_key_id?: string;
   docker_socket?: string;
+  public?: boolean;
   capabilities?: string[];
   location?: string;
   base_domain?: string;

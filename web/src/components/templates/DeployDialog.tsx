@@ -43,14 +43,13 @@ export function DeployDialog({
   const [envVars, setEnvVars] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  const onlineNodes = (nodes ?? []).filter((n) => n.attributes.status === 'online');
   const nodeOptions = [
-    { value: '', label: 'Auto (scheduler picks best node)' },
-    ...(nodes ?? [])
-      .filter((n) => n.attributes.status === 'online')
-      .map((n) => ({
-        value: n.id,
-        label: `${n.attributes.name} (${n.attributes.ssh_host})`,
-      })),
+    { value: '', label: 'Select a node...' },
+    ...onlineNodes.map((n) => ({
+      value: n.id,
+      label: `${n.attributes.name} (${n.attributes.ssh_host})`,
+    })),
   ];
 
   const handleDeploy = async () => {
@@ -152,9 +151,13 @@ export function DeployDialog({
           </div>
 
           {/* Node Selection */}
-          {nodeOptions.length > 1 && (
-            <div className="grid gap-2">
-              <Label htmlFor="node">Deploy To</Label>
+          <div className="grid gap-2">
+            <Label htmlFor="node">Deploy To</Label>
+            {onlineNodes.length === 0 ? (
+              <div className="rounded-md bg-yellow-50 border border-yellow-200 p-3 text-sm text-yellow-800">
+                No online nodes available. A node owner must add a public node before you can deploy.
+              </div>
+            ) : (
               <Select
                 id="node"
                 value={selectedNodeId}
@@ -162,11 +165,11 @@ export function DeployDialog({
                 options={nodeOptions}
                 disabled={isPending}
               />
-              <p className="text-xs text-muted-foreground">
-                Choose a specific node or let the scheduler decide
-              </p>
-            </div>
-          )}
+            )}
+            <p className="text-xs text-muted-foreground">
+              Select a node to deploy your application on
+            </p>
+          </div>
 
           {/* Custom Domain (Optional) */}
           <div className="grid gap-2">
@@ -230,7 +233,7 @@ export function DeployDialog({
           </Button>
           <Button
             onClick={handleDeploy}
-            disabled={isPending}
+            disabled={isPending || !selectedNodeId}
           >
             <Rocket className="mr-2 h-4 w-4" />
             {startDeployment.isPending ? 'Starting...' : createDeployment.isPending ? 'Creating...' : 'Deploy'}

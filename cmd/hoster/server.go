@@ -126,35 +126,26 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		WriteTimeout: cfg.Server.WriteTimeout,
 	}
 
-	// Create billing reporter (F009: Billing Integration)
-	// Billing reporter still uses its own store interface — it reads usage_events table directly.
-	var billingReporter *billing.Reporter
-	if cfg.Billing.Enabled {
-		var billingClient billing.Client
-		apiGateURL := cfg.Billing.APIGateURL
-		apiKey := cfg.Billing.APIKey
-
-		if apiGateURL != "" {
-			billingClient = billing.NewAPIGateClient(billing.Config{
-				BaseURL:    apiGateURL,
-				ServiceKey: apiKey,
-			}, logger)
-			logger.Info("billing enabled", "apigate_url", apiGateURL)
-		} else {
-			billingClient = billing.NewNoopClient(logger)
-			logger.Warn("billing enabled but no APIGate URL configured, using no-op client")
-		}
-
-		billingReporter = billing.NewReporter(billing.ReporterConfig{
-			Store:     store,
-			Client:    billingClient,
-			Interval:  cfg.Billing.ReportInterval,
-			BatchSize: cfg.Billing.BatchSize,
-			Logger:    logger,
-		})
+	// Create billing reporter — always enabled
+	var billingClient billing.Client
+	if cfg.Billing.APIGateURL != "" {
+		billingClient = billing.NewAPIGateClient(billing.Config{
+			BaseURL:    cfg.Billing.APIGateURL,
+			ServiceKey: cfg.Billing.APIKey,
+		}, logger)
+		logger.Info("billing enabled", "apigate_url", cfg.Billing.APIGateURL)
 	} else {
-		logger.Info("billing disabled")
+		billingClient = billing.NewNoopClient(logger)
+		logger.Warn("billing: no APIGate URL configured, using no-op client")
 	}
+
+	billingReporter := billing.NewReporter(billing.ReporterConfig{
+		Store:     store,
+		Client:    billingClient,
+		Interval:  cfg.Billing.ReportInterval,
+		BatchSize: cfg.Billing.BatchSize,
+		Logger:    logger,
+	})
 
 	// Create App Proxy server (specs/domain/proxy.md)
 	var proxyHTTPServer *http.Server
@@ -211,10 +202,8 @@ func (s *Server) Start(ctx context.Context) error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	// Start billing reporter in background (F009: Billing Integration)
-	if s.billingReporter != nil {
-		go s.billingReporter.Start(ctx)
-	}
+	// Start billing reporter in background
+	go s.billingReporter.Start(ctx)
 
 	// Start health checker in background
 	if s.healthChecker != nil {
@@ -291,9 +280,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 
 	// Stop billing reporter
-	if s.billingReporter != nil {
-		s.billingReporter.Stop()
-	}
+	s.billingReporter.Stop()
 
 	// Stop health checker
 	if s.healthChecker != nil {

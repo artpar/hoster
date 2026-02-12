@@ -198,7 +198,7 @@ func (p *Provisioner) run() {
 func (p *Provisioner) runCycle() {
 	// Query for active provisions
 	rows, err := p.store.RawQuery(p.ctx,
-		`SELECT cp.*, cc.credentials_encrypted, cc.provider as cred_provider
+		`SELECT cp.*, cc.credentials, cc.provider as cred_provider
 		 FROM cloud_provisions cp
 		 JOIN cloud_credentials cc ON cc.id = cp.credential_id
 		 WHERE cp.status IN ('pending', 'creating', 'configuring', 'destroying')
@@ -232,7 +232,7 @@ func (p *Provisioner) stepCreate(ctx context.Context, row map[string]any) {
 	providerType := strVal(row["provider"])
 
 	// Decrypt credentials
-	credEncrypted := row["credentials_encrypted"]
+	credEncrypted := row["credentials"]
 	var credBytes []byte
 	switch v := credEncrypted.(type) {
 	case []byte:
@@ -323,7 +323,7 @@ func (p *Provisioner) stepDestroy(ctx context.Context, row map[string]any) {
 	}
 
 	// Decrypt credentials
-	credEncrypted := row["credentials_encrypted"]
+	credEncrypted := row["credentials"]
 	var credBytes []byte
 	switch v := credEncrypted.(type) {
 	case []byte:

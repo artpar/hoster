@@ -10,7 +10,7 @@ import { ProvisionCard } from './ProvisionCard';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 export function NodesTab() {
-  const { data: nodes, isLoading: nodesLoading } = useNodes();
+  const { data: nodes, isLoading: nodesLoading } = useNodes({ scope: 'mine' });
   const { data: provisions, isLoading: provisionsLoading } = useCloudProvisions();
 
   const deleteNode = useDeleteNode();

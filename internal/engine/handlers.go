@@ -26,57 +26,30 @@ func RegisterHandlers(bus *Bus) {
 // Deployment Handlers
 // =============================================================================
 
-// scheduleDeployment picks the best node for a deployment and transitions to starting.
+// scheduleDeployment validates the deployer's selected node and transitions to starting.
 func scheduleDeployment(ctx context.Context, deps *Deps, data map[string]any) error {
 	store := deps.Store
 	logger := deps.Logger
 	nodePool := getNodePool(deps)
 
 	refID, _ := data["reference_id"].(string)
-	customerID := toInt(data["customer_id"])
 
-	// Get template for resource requirements
-	templateID := toInt(data["template_id"])
-	tmpl, err := store.GetByID(ctx, "templates", templateID)
+	// The deployer must have selected a node at deploy time
+	selectedNodeRef, _ := data["node_id"].(string)
+	if selectedNodeRef == "" {
+		return failDeployment(ctx, store, refID, "no node selected — please select a node when deploying")
+	}
+
+	// Look up the selected node and verify it's online
+	selectedNode, err := store.Get(ctx, "nodes", selectedNodeRef)
 	if err != nil {
-		return fmt.Errorf("get template: %w", err)
+		return failDeployment(ctx, store, refID, fmt.Sprintf("selected node %s not found", selectedNodeRef))
 	}
 
-	// Get online nodes for the deployment's creator (template creator)
-	creatorID := toInt(tmpl["creator_id"])
-	nodes, err := store.List(ctx, "nodes", []Filter{
-		{Field: "creator_id", Value: creatorID},
-		{Field: "status", Value: "online"},
-	}, Page{Limit: 1000})
-	if err != nil {
-		return fmt.Errorf("list nodes: %w", err)
+	nodeStatus, _ := selectedNode["status"].(string)
+	if nodeStatus != "online" {
+		return failDeployment(ctx, store, refID, fmt.Sprintf("selected node %s is %s, not online", selectedNodeRef, nodeStatus))
 	}
-
-	if len(nodes) == 0 {
-		// No nodes — fail the deployment
-		store.Update(ctx, "deployments", refID, map[string]any{
-			"status":        "failed",
-			"error_message": "no online nodes available",
-		})
-		return fmt.Errorf("no online nodes for creator %d", creatorID)
-	}
-
-	// Pick first available node (simple scheduling — pick the first online node)
-	// If deployment already has a preferred node, try to use it
-	preferredNodeID, _ := data["node_id"].(string)
-	var selectedNode map[string]any
-	for _, n := range nodes {
-		nodeRef, _ := n["reference_id"].(string)
-		if preferredNodeID != "" && nodeRef == preferredNodeID {
-			selectedNode = n
-			break
-		}
-	}
-	if selectedNode == nil {
-		selectedNode = nodes[0]
-	}
-
-	selectedNodeRef, _ := selectedNode["reference_id"].(string)
 
 	// Allocate proxy port if needed
 	proxyPort := toInt(data["proxy_port"])
@@ -137,7 +110,6 @@ func scheduleDeployment(ctx context.Context, deps *Deps, data map[string]any) er
 		}
 	}
 
-	_ = customerID
 	return nil
 }
 

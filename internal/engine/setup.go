@@ -5,12 +5,16 @@ import (
 	"crypto/rand"
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"math/big"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/artpar/hoster/internal/core/crypto"
 	"github.com/gorilla/mux"
 )
 
@@ -34,6 +38,11 @@ func Setup(cfg SetupConfig) http.Handler {
 		cfg.Logger = slog.Default()
 	}
 
+	// Wire encryption key to store for encrypted fields
+	if len(cfg.EncryptionKey) > 0 {
+		cfg.Store.SetEncryptionKey(cfg.EncryptionKey)
+	}
+
 	router := mux.NewRouter()
 
 	// Middleware
@@ -44,6 +53,20 @@ func Setup(cfg SetupConfig) http.Handler {
 	// Health endpoints
 	router.HandleFunc("/health", healthHandler).Methods("GET")
 	router.HandleFunc("/ready", readyHandler).Methods("GET")
+
+	// Wire SSH key BeforeCreate: compute fingerprint from private key
+	if sshRes := cfg.Store.Resource("ssh_keys"); sshRes != nil {
+		sshRes.BeforeCreate = func(ctx context.Context, authCtx AuthContext, data map[string]any) error {
+			if pk, ok := data["private_key"].(string); ok && pk != "" {
+				fp, err := crypto.GetSSHPublicKeyFingerprint([]byte(pk))
+				if err != nil {
+					return fmt.Errorf("invalid SSH private key: %w", err)
+				}
+				data["fingerprint"] = fp
+			}
+			return nil
+		}
+	}
 
 	// Wire deployment BeforeCreate: resolve template_version from template
 	if deplRes := cfg.Store.Resource("deployments"); deplRes != nil {
@@ -235,7 +258,140 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 		})
 	}
 
+	// Deployment: monitoring/health
+	handlers["deployments:monitoring/health"] = monitoringHandler(cfg, "deployment-health", func(ctx context.Context, cfg SetupConfig, depl map[string]any, r *http.Request) map[string]any {
+		refID, _ := depl["reference_id"].(string)
+		now := time.Now().UTC().Format(time.RFC3339)
+		return map[string]any{
+			"data": map[string]any{
+				"type": "deployment-health",
+				"id":   refID,
+				"attributes": map[string]any{
+					"status":     "unknown",
+					"containers": []any{},
+					"checked_at": now,
+				},
+			},
+		}
+	})
+
+	// Deployment: monitoring/stats
+	handlers["deployments:monitoring/stats"] = monitoringHandler(cfg, "deployment-stats", func(ctx context.Context, cfg SetupConfig, depl map[string]any, r *http.Request) map[string]any {
+		refID, _ := depl["reference_id"].(string)
+		now := time.Now().UTC().Format(time.RFC3339)
+		return map[string]any{
+			"data": map[string]any{
+				"type": "deployment-stats",
+				"id":   refID,
+				"attributes": map[string]any{
+					"containers":   []any{},
+					"collected_at": now,
+				},
+			},
+		}
+	})
+
+	// Deployment: monitoring/logs
+	handlers["deployments:monitoring/logs"] = monitoringHandler(cfg, "deployment-logs", func(ctx context.Context, cfg SetupConfig, depl map[string]any, r *http.Request) map[string]any {
+		refID, _ := depl["reference_id"].(string)
+		return map[string]any{
+			"data": map[string]any{
+				"type": "deployment-logs",
+				"id":   refID,
+				"attributes": map[string]any{
+					"logs": []any{},
+				},
+			},
+		}
+	})
+
+	// Deployment: monitoring/events
+	handlers["deployments:monitoring/events"] = monitoringHandler(cfg, "deployment-events", func(ctx context.Context, cfg SetupConfig, depl map[string]any, r *http.Request) map[string]any {
+		refID, _ := depl["reference_id"].(string)
+
+		// Query persisted container_events
+		limit := 50
+		if v := r.URL.Query().Get("limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 1000 {
+				limit = n
+			}
+		}
+
+		query := "SELECT id, deployment_id, type, container_name, message, details, timestamp FROM container_events WHERE deployment_id = ? ORDER BY timestamp DESC LIMIT ?"
+		args := []any{refID, limit}
+
+		if eventType := r.URL.Query().Get("type"); eventType != "" {
+			query = "SELECT id, deployment_id, type, container_name, message, details, timestamp FROM container_events WHERE deployment_id = ? AND type = ? ORDER BY timestamp DESC LIMIT ?"
+			args = []any{refID, eventType, limit}
+		}
+
+		rows, err := cfg.Store.RawQuery(ctx, query, args...)
+		if err != nil {
+			cfg.Logger.Warn("failed to query container events", "deployment", refID, "error", err)
+			rows = nil
+		}
+
+		events := make([]map[string]any, 0, len(rows))
+		for _, row := range rows {
+			events = append(events, map[string]any{
+				"id":        strVal(row["id"]),
+				"type":      strVal(row["type"]),
+				"container": strVal(row["container_name"]),
+				"message":   strVal(row["message"]),
+				"timestamp": strVal(row["timestamp"]),
+			})
+		}
+
+		return map[string]any{
+			"data": map[string]any{
+				"type": "deployment-events",
+				"id":   refID,
+				"attributes": map[string]any{
+					"events": events,
+				},
+			},
+		}
+	})
+
 	return handlers
+}
+
+// monitoringHandler creates a handler that verifies auth/ownership then delegates to a builder function.
+type monitoringBuilderFunc func(ctx context.Context, cfg SetupConfig, depl map[string]any, r *http.Request) map[string]any
+
+func monitoringHandler(cfg SetupConfig, _ string, builder monitoringBuilderFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		authCtx := getAuthContext(r)
+		id := mux.Vars(r)["id"]
+
+		if !authCtx.Authenticated {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+
+		depl, err := cfg.Store.Get(ctx, "deployments", id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "deployment not found")
+			return
+		}
+
+		// Check ownership — fail closed
+		ownerID, ok := toInt64(depl["customer_id"])
+		if !ok {
+			cfg.Logger.Warn("ownership check failed: unparseable customer_id",
+				"resource", "deployments", "value", depl["customer_id"])
+			writeError(w, http.StatusForbidden, "access denied")
+			return
+		}
+		if int(ownerID) != authCtx.UserID {
+			writeError(w, http.StatusForbidden, "not authorized")
+			return
+		}
+
+		result := builder(ctx, cfg, depl, r)
+		writeJSON(w, http.StatusOK, result)
+	}
 }
 
 // =============================================================================

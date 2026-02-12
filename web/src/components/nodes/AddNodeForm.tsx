@@ -31,6 +31,7 @@ export function AddNodeForm() {
   const [dockerSocket, setDockerSocket] = useState('/var/run/docker.sock');
   const [location, setLocation] = useState('');
   const [baseDomain, setBaseDomain] = useState('');
+  const [isPublic, setIsPublic] = useState(false);
   const [capabilities, setCapabilities] = useState<string[]>(['standard']);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,6 +83,7 @@ export function AddNodeForm() {
         ssh_user: sshUser.trim(),
         ssh_key_id: sshKeyId || undefined,
         docker_socket: dockerSocket.trim() || undefined,
+        public: isPublic,
         capabilities,
         location: location.trim() || undefined,
         base_domain: baseDomain.trim() || undefined,
@@ -230,6 +232,24 @@ export function AddNodeForm() {
             <p className="text-xs text-muted-foreground">
               Deployments on this node will get subdomains under this base domain (e.g., myapp.apps.example.com)
             </p>
+          </div>
+
+          {/* Public Node */}
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="public"
+              checked={isPublic}
+              onChange={(e) => setIsPublic(e.target.checked)}
+              disabled={createNode.isPending}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            <div>
+              <Label htmlFor="public">Make publicly available</Label>
+              <p className="text-xs text-muted-foreground">
+                Allow other users to deploy their applications on this node
+              </p>
+            </div>
           </div>
 
           {/* Capabilities */}

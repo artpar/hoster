@@ -69,11 +69,8 @@ type AuthConfig struct {
 }
 
 // BillingConfig holds billing/metering configuration.
-// Following F009: Billing Integration
+// Billing is always enabled — usage events are always recorded and reported.
 type BillingConfig struct {
-	// Enabled determines if usage metering is enabled.
-	Enabled bool `mapstructure:"enabled"`
-
 	// APIGateURL is the base URL of the APIGate billing API.
 	APIGateURL string `mapstructure:"apigate_url"`
 
@@ -158,8 +155,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("domain.config_dir", "")
 	v.SetDefault("auth.shared_secret", "")     // No secret validation by default
 
-	// Billing defaults (F009: Billing Integration)
-	v.SetDefault("billing.enabled", false)            // Disabled by default for development
+	// Billing defaults — always enabled
 	v.SetDefault("billing.apigate_url", "http://localhost:8080")
 	v.SetDefault("billing.api_key", "")
 	v.SetDefault("billing.report_interval", "60s")

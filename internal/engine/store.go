@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/artpar/hoster/internal/core/crypto"
 	"github.com/artpar/hoster/internal/core/domain"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -25,9 +26,10 @@ var (
 
 // Store provides generic CRUD operations for all resources defined in the schema.
 type Store struct {
-	db       *sqlx.DB
-	schema   map[string]*Resource
-	ordered  []Resource // ordered list for migrations
+	db            *sqlx.DB
+	schema        map[string]*Resource
+	ordered       []Resource // ordered list for migrations
+	encryptionKey []byte
 }
 
 // NewStore creates a new generic store, runs migrations, and prepares for queries.
@@ -45,6 +47,11 @@ func NewStore(db *sqlx.DB, resources []Resource) (*Store, error) {
 		ordered: ordered,
 	}
 	return s, nil
+}
+
+// SetEncryptionKey sets the encryption key used for fields marked WithEncrypted().
+func (s *Store) SetEncryptionKey(key []byte) {
+	s.encryptionKey = key
 }
 
 // DB returns the underlying sqlx.DB for use by legacy code during migration.
@@ -158,6 +165,28 @@ func (s *Store) Create(ctx context.Context, resource string, data map[string]any
 	}
 	cols = append(cols, "created_at", "updated_at")
 	placeholders = append(placeholders, ":created_at", ":updated_at")
+
+	// Encrypt fields marked WithEncrypted()
+	for _, f := range res.Fields {
+		if f.Encrypted {
+			if v, ok := data[f.Name]; ok && v != nil && len(s.encryptionKey) > 0 {
+				var plaintext []byte
+				switch val := v.(type) {
+				case string:
+					plaintext = []byte(val)
+				case []byte:
+					plaintext = val
+				}
+				if len(plaintext) > 0 {
+					encrypted, err := crypto.Encrypt(plaintext, s.encryptionKey)
+					if err != nil {
+						return nil, fmt.Errorf("encrypt %s: %w", f.Name, err)
+					}
+					data[f.Name] = encrypted
+				}
+			}
+		}
+	}
 
 	// JSON-encode JSON fields
 	for _, f := range res.Fields {
@@ -601,7 +630,7 @@ func mapToSSHKey(row map[string]any) *domain.SSHKey {
 		Fingerprint: strVal(row["fingerprint"]),
 	}
 	// PrivateKeyEncrypted can be []byte or string
-	switch v := row["private_key_encrypted"].(type) {
+	switch v := row["private_key"].(type) {
 	case []byte:
 		k.PrivateKeyEncrypted = v
 	case string:

@@ -106,15 +106,20 @@ func DeploymentResource() Resource {
 		Actions: []CustomAction{
 			{Name: "start", Method: "POST"},
 			{Name: "stop", Method: "POST"},
+			{Name: "monitoring/health", Method: "GET"},
+			{Name: "monitoring/stats", Method: "GET"},
+			{Name: "monitoring/logs", Method: "GET"},
+			{Name: "monitoring/events", Method: "GET"},
 		},
 	}
 }
 
 func NodeResource() Resource {
 	return Resource{
-		Name:      "nodes",
-		Owner:     "creator_id",
-		RefPrefix: "node_",
+		Name:       "nodes",
+		Owner:      "creator_id",
+		RefPrefix:  "node_",
+		PublicRead: true,
 		Fields: []Field{
 			StringField("name").WithRequired().WithMinLen(3).WithMaxLen(100),
 			RefField("creator_id", "users").WithInternal(),
@@ -124,13 +129,14 @@ func NodeResource() Resource {
 			RefField("ssh_key_id", "ssh_keys").WithNullable(),
 			StringField("docker_socket").WithDefault("/var/run/docker.sock"),
 			StringField("status").WithDefault("offline"),
+			BoolField("public").WithDefault(false),
 			JSONField("capabilities"),
-			FloatField("capacity_cpu_cores"),
-			IntField("capacity_memory_mb"),
-			IntField("capacity_disk_mb"),
-			FloatField("capacity_cpu_used"),
-			IntField("capacity_memory_used_mb"),
-			IntField("capacity_disk_used_mb"),
+			FloatField("capacity_cpu_cores").WithDefault(0),
+			IntField("capacity_memory_mb").WithDefault(0),
+			IntField("capacity_disk_mb").WithDefault(0),
+			FloatField("capacity_cpu_used").WithDefault(0),
+			IntField("capacity_memory_used_mb").WithDefault(0),
+			IntField("capacity_disk_used_mb").WithDefault(0),
 			StringField("location").WithNullable(),
 			TimestampField("last_health_check"),
 			StringField("error_message").WithNullable(),
@@ -138,6 +144,7 @@ func NodeResource() Resource {
 			SoftRefField("provision_id", "cloud_provisions"),
 			StringField("base_domain").WithNullable(),
 		},
+		Visibility: nodeVisibility,
 	}
 }
 
@@ -149,8 +156,8 @@ func SSHKeyResource() Resource {
 		Fields: []Field{
 			RefField("creator_id", "users").WithInternal(),
 			StringField("name").WithRequired(),
-			BoolField("private_key_encrypted").WithWriteOnly().WithEncrypted(), // stored as BLOB, write-only
-			StringField("fingerprint"),
+			TextField("private_key").WithWriteOnly().WithEncrypted(),
+			StringField("fingerprint").WithNullable(),
 		},
 	}
 }
@@ -164,7 +171,7 @@ func CloudCredentialResource() Resource {
 			RefField("creator_id", "users").WithInternal(),
 			StringField("name").WithRequired().WithMinLen(3).WithMaxLen(100),
 			StringField("provider").WithRequired(),
-			BoolField("credentials_encrypted").WithWriteOnly().WithEncrypted(), // stored as BLOB, write-only
+			TextField("credentials").WithWriteOnly().WithEncrypted(),
 			StringField("default_region").WithNullable(),
 		},
 	}
@@ -246,6 +253,38 @@ func templateVisibility(ctx context.Context, authCtx AuthContext, row map[string
 			return v == authCtx.UserID
 		case int64:
 			return int(v) == authCtx.UserID
+		}
+	}
+	return false
+}
+
+// nodeVisibility allows public nodes to be seen by anyone,
+// but private nodes only by their creator.
+func nodeVisibility(ctx context.Context, authCtx AuthContext, row map[string]any) bool {
+	// Owner always sees their own nodes
+	if authCtx.Authenticated {
+		if ownerID, ok := row["creator_id"]; ok {
+			switch v := ownerID.(type) {
+			case int:
+				if v == authCtx.UserID {
+					return true
+				}
+			case int64:
+				if int(v) == authCtx.UserID {
+					return true
+				}
+			}
+		}
+	}
+	// Others only see public nodes
+	if pub, ok := row["public"]; ok {
+		switch v := pub.(type) {
+		case bool:
+			return v
+		case int64:
+			return v != 0
+		case int:
+			return v != 0
 		}
 	}
 	return false

@@ -101,7 +101,15 @@ export function NodeCard({
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [showActions]);
-  const capacity = attrs.capacity;
+  // API returns flat capacity_* fields; build capacity object with safe defaults
+  const capacity = attrs.capacity ?? {
+    cpu_cores: (attrs as any).capacity_cpu_cores ?? 0,
+    memory_mb: (attrs as any).capacity_memory_mb ?? 0,
+    disk_mb: (attrs as any).capacity_disk_mb ?? 0,
+    cpu_used: (attrs as any).capacity_cpu_used ?? 0,
+    memory_used_mb: (attrs as any).capacity_memory_used_mb ?? 0,
+    disk_used_mb: (attrs as any).capacity_disk_used_mb ?? 0,
+  };
 
   const isCloudNode = attrs.provider_type && attrs.provider_type !== '' && attrs.provider_type !== 'manual';
   const originLabel = providerLabels[attrs.provider_type || ''] || 'Manual';
@@ -118,6 +126,9 @@ export function NodeCard({
             <Server className="h-5 w-5 text-muted-foreground" />
             <CardTitle className="text-lg">{attrs.name}</CardTitle>
             <Badge variant="outline" className="text-xs">{originLabel}</Badge>
+            {attrs.public && (
+              <Badge variant="secondary" className="text-xs">Public</Badge>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <span
@@ -212,7 +223,7 @@ export function NodeCard({
 
         {/* Capabilities */}
         <div className="flex flex-wrap gap-1">
-          {attrs.capabilities.map((cap) => (
+          {(attrs.capabilities ?? []).map((cap) => (
             <Badge key={cap} variant="secondary" className="text-xs">
               {cap}
             </Badge>
