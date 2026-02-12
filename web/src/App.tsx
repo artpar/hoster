@@ -15,6 +15,7 @@ import { CloudServersTab, CredentialsTab } from '@/components/nodes';
 import { ProvisionNodeForm } from '@/components/cloud';
 import { AddCredentialForm } from '@/components/cloud';
 import { SSHKeysPage } from '@/pages/ssh-keys/SSHKeysPage';
+import { BillingPage } from '@/pages/billing/BillingPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
 export default function App() {
@@ -87,6 +88,16 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        {/* Billing - Requires Auth */}
+        <Route
+          path="billing"
+          element={
+            <ProtectedRoute>
+              <BillingPage />
+            </ProtectedRoute>
+          }
+        />
+
         {/* App Templates - Requires Auth */}
         <Route
           path="templates"

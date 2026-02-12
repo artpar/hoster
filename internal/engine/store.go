@@ -774,8 +774,12 @@ func (s *Store) GetUnreportedEvents(ctx context.Context, limit int) ([]domain.Me
 		limit = 100
 	}
 	rows, err := s.db.QueryxContext(ctx,
-		`SELECT id, reference_id, user_id, event_type, resource_id, resource_type, quantity, metadata, timestamp, reported_at, created_at
-		 FROM usage_events WHERE reported_at IS NULL ORDER BY timestamp ASC LIMIT ?`, limit)
+		`SELECT ue.id, ue.reference_id, ue.user_id, u.reference_id AS user_ref_id,
+		        ue.event_type, ue.resource_id, ue.resource_type, ue.quantity,
+		        ue.metadata, ue.timestamp, ue.reported_at, ue.created_at
+		 FROM usage_events ue
+		 LEFT JOIN users u ON ue.user_id = u.id
+		 WHERE ue.reported_at IS NULL ORDER BY ue.timestamp ASC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -789,6 +793,7 @@ func (s *Store) GetUnreportedEvents(ctx context.Context, limit int) ([]domain.Me
 		}
 		ev := domain.MeterEvent{
 			ReferenceID:  strVal(row["reference_id"]),
+			UserRefID:    strVal(row["user_ref_id"]),
 			EventType:    domain.EventType(strVal(row["event_type"])),
 			ResourceID:   strVal(row["resource_id"]),
 			ResourceType: strVal(row["resource_type"]),

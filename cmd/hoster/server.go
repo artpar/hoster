@@ -116,6 +116,7 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		ConfigDir:     cfg.Domain.ConfigDir,
 		SharedSecret:  cfg.Auth.SharedSecret,
 		EncryptionKey: encryptionKey,
+		Version:       Version,
 	})
 
 	// Create HTTP server

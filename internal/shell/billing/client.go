@@ -125,11 +125,16 @@ func (c *APIGateClient) MeterUsageBatch(ctx context.Context, events []domain.Met
 	// Convert to JSON:API format
 	resources := make([]jsonAPIResource, len(events))
 	for i, e := range events {
+		// Use the user's UUID reference_id for APIGate, fall back to integer
+		userID := e.UserRefID
+		if userID == "" {
+			userID = fmt.Sprintf("%d", e.UserID)
+		}
 		resources[i] = jsonAPIResource{
 			Type: "usage_events",
 			Attributes: meterEventAttributes{
 				ID:           e.ReferenceID,
-				UserID:       fmt.Sprintf("%d", e.UserID),
+				UserID:       userID,
 				EventType:    string(e.EventType),
 				ResourceID:   e.ResourceID,
 				ResourceType: e.ResourceType,

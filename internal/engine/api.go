@@ -246,6 +246,10 @@ func createHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 			return
 		}
 
+		if res.AfterCreate != nil {
+			res.AfterCreate(ctx, authCtx, row)
+		}
+
 		stripFields(res, row, cfg.Store)
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"data": rowToJSONAPI(res.Name, row),

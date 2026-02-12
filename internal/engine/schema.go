@@ -107,6 +107,9 @@ type BeforeCreateFunc func(ctx context.Context, authCtx AuthContext, data map[st
 // BeforeDeleteFunc is called before deleting a row. It can return an error to prevent deletion.
 type BeforeDeleteFunc func(ctx context.Context, authCtx AuthContext, row map[string]interface{}) error
 
+// AfterCreateFunc is called after a row is successfully created.
+type AfterCreateFunc func(ctx context.Context, authCtx AuthContext, row map[string]interface{})
+
 // Resource defines a complete entity.
 type Resource struct {
 	Name         string // table name, e.g., "templates"
@@ -119,6 +122,7 @@ type Resource struct {
 	// Authorization hooks
 	Visibility   VisibilityFunc
 	BeforeCreate BeforeCreateFunc
+	AfterCreate  AfterCreateFunc
 	BeforeDelete BeforeDeleteFunc
 
 	// If true, list without auth returns all rows (e.g., published templates)

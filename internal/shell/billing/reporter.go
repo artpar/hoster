@@ -3,7 +3,9 @@ package billing
 
 import (
 	"context"
+	"crypto/rand"
 	"log/slog"
+	"math/big"
 	"time"
 
 	"github.com/artpar/hoster/internal/core/domain"
@@ -174,7 +176,8 @@ func randomSuffix() string {
 	const letters = "abcdefghijklmnopqrstuvwxyz0123456789"
 	b := make([]byte, 8)
 	for i := range b {
-		b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
+		idx, _ := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
+		b[i] = letters[idx.Int64()]
 	}
 	return string(b)
 }

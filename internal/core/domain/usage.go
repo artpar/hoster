@@ -40,6 +40,9 @@ type MeterEvent struct {
 	// UserID is the internal integer FK to users table.
 	UserID int `json:"-"`
 
+	// UserRefID is the user's reference_id (UUID) for APIGate.
+	UserRefID string `json:"-"`
+
 	// EventType is the type of usage event.
 	EventType EventType `json:"event_type"`
 

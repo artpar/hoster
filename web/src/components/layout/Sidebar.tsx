@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Store, Layers, Server, KeyRound, LayoutDashboard, Package } from 'lucide-react';
+import { Store, Layers, Server, KeyRound, LayoutDashboard, Package, CreditCard } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 interface NavItem {
@@ -15,6 +15,7 @@ const navItems: NavItem[] = [
   { to: '/templates', icon: Package, label: 'App Templates' },
   { to: '/nodes', icon: Server, label: 'My Nodes' },
   { to: '/ssh-keys', icon: KeyRound, label: 'SSH Keys' },
+  { to: '/billing', icon: CreditCard, label: 'Billing' },
 ];
 
 interface SidebarProps {

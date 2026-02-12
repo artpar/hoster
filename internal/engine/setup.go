@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/artpar/hoster/internal/core/crypto"
+	"github.com/artpar/hoster/internal/core/domain"
+	"github.com/artpar/hoster/internal/shell/billing"
 	"github.com/gorilla/mux"
 )
 
@@ -30,6 +32,7 @@ type SetupConfig struct {
 	ConfigDir     string
 	SharedSecret  string
 	EncryptionKey []byte
+	Version       string
 }
 
 // Setup creates the complete HTTP handler using the engine.
@@ -51,7 +54,7 @@ func Setup(cfg SetupConfig) http.Handler {
 	router.Use(AuthMiddleware(cfg.Store, cfg.SharedSecret, cfg.Logger))
 
 	// Health endpoints
-	router.HandleFunc("/health", healthHandler).Methods("GET")
+	router.HandleFunc("/health", healthHandler(cfg.Version)).Methods("GET")
 	router.HandleFunc("/ready", readyHandler).Methods("GET")
 
 	// Wire SSH key BeforeCreate: compute fingerprint from private key
@@ -69,6 +72,7 @@ func Setup(cfg SetupConfig) http.Handler {
 	}
 
 	// Wire deployment BeforeCreate: resolve template_version from template
+	// Wire deployment AfterCreate: record billing event
 	if deplRes := cfg.Store.Resource("deployments"); deplRes != nil {
 		store := cfg.Store
 		deplRes.BeforeCreate = func(ctx context.Context, authCtx AuthContext, data map[string]any) error {
@@ -82,6 +86,12 @@ func Setup(cfg SetupConfig) http.Handler {
 				}
 			}
 			return nil
+		}
+		deplRes.AfterCreate = func(ctx context.Context, authCtx AuthContext, row map[string]any) {
+			refID, _ := row["reference_id"].(string)
+			if refID != "" && authCtx.UserID > 0 {
+				billing.RecordEvent(ctx, store, authCtx.UserID, domain.EventDeploymentCreated, refID, "deployment", nil)
+			}
 		}
 	}
 
@@ -428,9 +438,11 @@ func recoveryMiddleware(logger *slog.Logger) mux.MiddlewareFunc {
 // Health
 // =============================================================================
 
-func healthHandler(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
+func healthHandler(version string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "version": version})
+	}
 }
 
 func readyHandler(w http.ResponseWriter, _ *http.Request) {

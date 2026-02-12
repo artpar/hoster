@@ -8,6 +8,7 @@ import (
 
 	"github.com/artpar/hoster/internal/core/domain"
 	"github.com/artpar/hoster/internal/core/proxy"
+	"github.com/artpar/hoster/internal/shell/billing"
 	"github.com/artpar/hoster/internal/shell/docker"
 )
 
@@ -176,6 +177,8 @@ func startDeployment(ctx context.Context, deps *Deps, data map[string]any) error
 	_, _, err = store.Transition(ctx, "deployments", refID, "running")
 	if err != nil {
 		logger.Error("failed to transition to running", "deployment", refID, "error", err)
+	} else {
+		recordBillingEvent(ctx, store, data, domain.EventDeploymentStarted)
 	}
 
 	logger.Info("deployment started", "deployment", refID, "containers", len(containers))
@@ -215,6 +218,8 @@ func stopDeployment(ctx context.Context, deps *Deps, data map[string]any) error 
 	_, _, err := store.Transition(ctx, "deployments", refID, "stopped")
 	if err != nil {
 		logger.Error("failed to transition to stopped", "deployment", refID, "error", err)
+	} else {
+		recordBillingEvent(ctx, store, data, domain.EventDeploymentStopped)
 	}
 
 	logger.Info("deployment stopped", "deployment", refID)
@@ -248,6 +253,8 @@ func deleteDeployment(ctx context.Context, deps *Deps, data map[string]any) erro
 	_, _, err := store.Transition(ctx, "deployments", refID, "deleted")
 	if err != nil {
 		logger.Error("failed to transition to deleted", "deployment", refID, "error", err)
+	} else {
+		recordBillingEvent(ctx, store, data, domain.EventDeploymentDeleted)
 	}
 
 	logger.Info("deployment deleted", "deployment", refID)
@@ -302,6 +309,15 @@ func getUsedProxyPorts(ctx context.Context, store *Store, nodeID string) ([]int,
 		}
 	}
 	return ports, nil
+}
+
+func recordBillingEvent(ctx context.Context, store *Store, data map[string]any, eventType domain.EventType) {
+	refID, _ := data["reference_id"].(string)
+	customerID := toInt(data["customer_id"])
+	if customerID == 0 || refID == "" {
+		return
+	}
+	billing.RecordEvent(ctx, store, customerID, eventType, refID, "deployment", nil)
 }
 
 func toInt(v any) int {
