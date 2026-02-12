@@ -25,13 +25,10 @@ export function BillingPage() {
     if (!token) return;
     const headers = { 'Authorization': `Bearer ${token}` };
 
-    // Fetch both Hoster billing events and APIGate request metering
-    Promise.all([
-      fetch('/api/v1/billing/events', { headers }).then((r) => r.json()).catch(() => ({ data: [] })),
-      fetch(`/api/v1/meter?user_id=${user.id}&page[size]=50`, { headers }).then((r) => r.json()).catch(() => ({ data: [] })),
-    ])
-      .then(([billingData, meterData]: [UsageData, UsageData]) => {
-        setUsage([...(billingData.data || []), ...(meterData.data || [])]);
+    fetch(`/api/v1/meter?user_id=${user.id}&page[size]=50`, { headers })
+      .then((r) => r.json())
+      .then((data: UsageData) => {
+        setUsage(data.data || []);
         setIsLoading(false);
       })
       .catch(() => setIsLoading(false));

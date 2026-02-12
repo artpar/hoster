@@ -96,11 +96,13 @@ export function DeployDialog({
         config_overrides: configOverrides,
         node_id: selectedNodeId || undefined,
       });
-      // Auto-start the deployment after creation
-      try {
-        await startDeployment.mutateAsync(deployment.id);
-      } catch {
-        // Start failed but deployment was created - navigate anyway
+      // Auto-start only if a node was selected
+      if (selectedNodeId) {
+        try {
+          await startDeployment.mutateAsync(deployment.id);
+        } catch {
+          // Start failed but deployment was created - navigate anyway
+        }
       }
       onOpenChange(false);
       onSuccess(deployment.id);
@@ -233,7 +235,7 @@ export function DeployDialog({
           </Button>
           <Button
             onClick={handleDeploy}
-            disabled={isPending || !selectedNodeId}
+            disabled={isPending}
           >
             <Rocket className="mr-2 h-4 w-4" />
             {startDeployment.isPending ? 'Starting...' : createDeployment.isPending ? 'Creating...' : 'Deploy'}

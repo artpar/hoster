@@ -156,7 +156,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("auth.shared_secret", "")     // No secret validation by default
 
 	// Billing defaults — always enabled
-	v.SetDefault("billing.apigate_url", "http://localhost:8080")
+	v.SetDefault("billing.apigate_url", "http://localhost:8082")
 	v.SetDefault("billing.api_key", "")
 	v.SetDefault("billing.report_interval", "60s")
 	v.SetDefault("billing.batch_size", 100)
