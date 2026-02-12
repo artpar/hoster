@@ -191,14 +191,54 @@ func (p *NodePool) HasClient(nodeID string) bool {
 }
 
 // PingNode checks if a node is reachable and Docker is running.
-// This creates a temporary client if needed and doesn't cache it.
+// Unlike GetClient, this does NOT check node status — it's used by the health
+// checker to bring offline nodes online.
 func (p *NodePool) PingNode(ctx context.Context, nodeID string) error {
-	client, err := p.GetClient(ctx, nodeID)
-	if err != nil {
-		return fmt.Errorf("get client: %w", err)
+	// If we already have a cached client, just ping it
+	p.mu.RLock()
+	client, exists := p.clients[nodeID]
+	p.mu.RUnlock()
+	if exists {
+		return client.Ping()
 	}
 
-	return client.Ping()
+	// No cached client — look up node and connect regardless of status
+	node, err := p.store.GetNode(ctx, nodeID)
+	if err != nil {
+		return fmt.Errorf("get node: %w", err)
+	}
+
+	if node.SSHKeyID == 0 {
+		return fmt.Errorf("node %s has no SSH key configured", nodeID)
+	}
+
+	sshKey, err := p.store.GetSSHKey(ctx, node.SSHKeyRefID)
+	if err != nil {
+		return fmt.Errorf("get SSH key: %w", err)
+	}
+
+	privateKey, err := crypto.DecryptSSHKey(sshKey.PrivateKeyEncrypted, p.encryptionKey)
+	if err != nil {
+		return fmt.Errorf("decrypt SSH key: %w", err)
+	}
+
+	// Create client and try to ping
+	newClient, err := NewSSHDockerClient(node, privateKey, p.config)
+	if err != nil {
+		return fmt.Errorf("create SSH client: %w", err)
+	}
+
+	if err := newClient.Ping(); err != nil {
+		newClient.Close()
+		return err
+	}
+
+	// Ping succeeded — cache the client for future use
+	p.mu.Lock()
+	p.clients[nodeID] = newClient
+	p.mu.Unlock()
+
+	return nil
 }
 
 // RefreshClient forces recreation of a client for the given node.

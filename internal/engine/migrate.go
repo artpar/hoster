@@ -101,11 +101,13 @@ func runSchemaMigrations(db *sqlx.DB, resources []Resource, logger *slog.Logger)
 	// that the engine now requires.
 	var alterStatements []string
 
-	// Ensure every engine-managed table has created_at and updated_at
+	// Ensure every engine-managed table has created_at and updated_at.
+	// SQLite ALTER TABLE ADD COLUMN requires constant defaults, so use empty string.
+	// The engine's Create() always sets these explicitly.
 	for _, res := range resources {
 		alterStatements = append(alterStatements,
-			fmt.Sprintf(`ALTER TABLE %s ADD COLUMN created_at DATETIME NOT NULL DEFAULT (datetime('now'))`, res.Name),
-			fmt.Sprintf(`ALTER TABLE %s ADD COLUMN updated_at DATETIME NOT NULL DEFAULT (datetime('now'))`, res.Name),
+			fmt.Sprintf(`ALTER TABLE %s ADD COLUMN created_at TEXT DEFAULT ''`, res.Name),
+			fmt.Sprintf(`ALTER TABLE %s ADD COLUMN updated_at TEXT DEFAULT ''`, res.Name),
 		)
 	}
 
