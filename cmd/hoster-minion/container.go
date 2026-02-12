@@ -360,7 +360,7 @@ func listContainersCmd() error {
 			ID:        c.ID,
 			Name:      name,
 			Image:     c.Image,
-			Status:    c.Status,
+			Status:    c.State,
 			State:     c.State,
 			CreatedAt: time.Unix(c.Created, 0),
 			Labels:    c.Labels,

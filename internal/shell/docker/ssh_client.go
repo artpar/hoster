@@ -20,12 +20,13 @@ import (
 // SSHDockerClient implements the Client interface by executing minion commands via SSH.
 // The minion binary must be deployed to the remote node.
 type SSHDockerClient struct {
-	node       *domain.Node
-	sshClient  *ssh.Client
-	signer     ssh.Signer
-	minionPath string        // Path to minion binary on remote node
-	timeout    time.Duration // Command timeout
-	mu         sync.Mutex    // Protects sshClient
+	node           *domain.Node
+	sshClient      *ssh.Client
+	signer         ssh.Signer
+	minionPath     string        // Path to minion binary on remote node
+	timeout        time.Duration // Command timeout
+	mu             sync.Mutex    // Protects sshClient
+	minionEnsured  sync.Once     // Ensures minion is deployed once per client
 }
 
 // SSHClientConfig configures the SSH Docker client.
@@ -300,6 +301,14 @@ func (c *SSHDockerClient) execMinion(ctx context.Context, command string, args [
 	if err := c.connect(ctx); err != nil {
 		return nil, err
 	}
+
+	// Auto-deploy/update minion binary on first command
+	c.minionEnsured.Do(func() {
+		if err := c.AutoEnsureMinion(ctx); err != nil {
+			// Log but don't fail — minion may already work
+			_ = err
+		}
+	})
 
 	c.mu.Lock()
 	session, err := c.sshClient.NewSession()

@@ -1,7 +1,7 @@
 # Hoster - Modern Deployment Marketplace
 # Build, test, and run commands
 
-VERSION ?= 1.0.0
+VERSION ?= 1.2.0
 
 .PHONY: all build build-minion test test-unit test-integration test-e2e test-e2e-short test-all coverage run clean help
 .PHONY: local-e2e-up local-e2e-down local-e2e-logs local-e2e-setup local-e2e-test
