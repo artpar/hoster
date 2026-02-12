@@ -85,6 +85,9 @@ type BillingConfig struct {
 
 	// StripeKey is the Stripe secret key for creating checkout sessions.
 	StripeKey string `mapstructure:"stripe_key"`
+
+	// InvoiceInterval is how often to check and generate invoices.
+	InvoiceInterval time.Duration `mapstructure:"invoice_interval"`
 }
 
 // NodesConfig holds worker nodes configuration.
@@ -164,6 +167,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("billing.report_interval", "60s")
 	v.SetDefault("billing.batch_size", 100)
 	v.SetDefault("billing.stripe_key", "")
+	v.SetDefault("billing.invoice_interval", "24h")
 
 	// Node defaults (Creator Worker Nodes)
 	v.SetDefault("nodes.encryption_key", "")                // Must be set via environment

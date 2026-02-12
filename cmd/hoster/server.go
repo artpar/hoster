@@ -37,11 +37,12 @@ type Server struct {
 	proxyServer     *http.Server
 	store           *engine.Store
 	nodePool        *docker.NodePool
-	billingReporter *billing.Reporter
-	healthChecker   *engine.HealthChecker
-	provisioner     *engine.Provisioner
-	dnsVerifier     *engine.DNSVerifier
-	logger          *slog.Logger
+	billingReporter  *billing.Reporter
+	invoiceGenerator *engine.InvoiceGenerator
+	healthChecker    *engine.HealthChecker
+	provisioner      *engine.Provisioner
+	dnsVerifier      *engine.DNSVerifier
+	logger           *slog.Logger
 }
 
 // NewServer creates a new server with the given config.
@@ -95,6 +96,9 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 
 	// Create DNS verifier worker for custom domain verification
 	dnsVerifier := engine.NewDNSVerifier(store, cfg.Domain.BaseDomain, 0, logger)
+
+	// Create invoice generator worker
+	invoiceGenerator := engine.NewInvoiceGenerator(store, cfg.Billing.InvoiceInterval, logger)
 
 	// Create command bus and register handlers
 	bus := engine.NewBus(store, logger)
@@ -185,16 +189,17 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 	}
 
 	return &Server{
-		config:          cfg,
-		httpServer:      httpServer,
-		proxyServer:     proxyHTTPServer,
-		store:           store,
-		nodePool:        nodePool,
-		billingReporter: billingReporter,
-		healthChecker:   healthChecker,
-		provisioner:     provisioner,
-		dnsVerifier:     dnsVerifier,
-		logger:          logger,
+		config:           cfg,
+		httpServer:       httpServer,
+		proxyServer:      proxyHTTPServer,
+		store:            store,
+		nodePool:         nodePool,
+		billingReporter:  billingReporter,
+		invoiceGenerator: invoiceGenerator,
+		healthChecker:    healthChecker,
+		provisioner:      provisioner,
+		dnsVerifier:      dnsVerifier,
+		logger:           logger,
 	}, nil
 }
 
@@ -221,6 +226,9 @@ func (s *Server) Start(ctx context.Context) error {
 	if s.dnsVerifier != nil {
 		s.dnsVerifier.Start()
 	}
+
+	// Start invoice generator worker
+	s.invoiceGenerator.Start()
 
 	// Start App Proxy server in goroutine
 	errCh := make(chan error, 2)
@@ -298,6 +306,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.dnsVerifier != nil {
 		s.dnsVerifier.Stop()
 	}
+
+	// Stop invoice generator
+	s.invoiceGenerator.Stop()
 
 	// Close node pool connections
 	if s.nodePool != nil {

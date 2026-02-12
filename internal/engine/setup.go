@@ -104,8 +104,7 @@ func Setup(cfg SetupConfig) http.Handler {
 		ActionHandlers: buildActionHandlers(cfg),
 	})
 
-	// Billing endpoints (collection-level, not per-entity)
-	router.HandleFunc("/api/v1/billing/generate-invoice", generateInvoiceHandler(cfg)).Methods("POST")
+	// Billing endpoints
 	router.HandleFunc("/api/v1/billing/verify-payment", verifyPaymentHandler(cfg)).Methods("GET")
 
 	// Serve embedded Web UI for all other paths (SPA pattern)

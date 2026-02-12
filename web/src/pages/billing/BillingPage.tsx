@@ -44,7 +44,6 @@ export function BillingPage() {
   const [eventsLoading, setEventsLoading] = useState(true);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
   const [paying, setPaying] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -136,31 +135,6 @@ export function BillingPage() {
       deploymentCosts: costs,
     };
   }, [deployments, templates]);
-
-  const handleGenerateInvoice = async () => {
-    setGenerating(true);
-    setError(null);
-    try {
-      const token = JSON.parse(localStorage.getItem('hoster-auth') || '{}')?.state?.token;
-      const resp = await fetch('/api/v1/billing/generate-invoice', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-      if (!resp.ok) {
-        const err = await resp.json();
-        throw new Error(err.error?.detail || err.errors?.[0]?.detail || `Failed (${resp.status})`);
-      }
-      fetchInvoices();
-      setSuccessMessage('Invoice generated successfully.');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate invoice');
-    } finally {
-      setGenerating(false);
-    }
-  };
 
   const handlePayInvoice = async (invoiceId: string) => {
     setPaying(invoiceId);
@@ -262,18 +236,8 @@ export function BillingPage() {
 
       {/* Invoices */}
       <Card className="mb-6">
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader>
           <CardTitle className="text-lg">Invoices</CardTitle>
-          {monthlyCost > 0 && (
-            <Button
-              size="sm"
-              onClick={handleGenerateInvoice}
-              disabled={generating}
-            >
-              <FileText className="mr-1 h-4 w-4" />
-              {generating ? 'Generating...' : 'Generate Invoice'}
-            </Button>
-          )}
         </CardHeader>
         <CardContent>
           {invoicesLoading ? (
@@ -282,11 +246,6 @@ export function BillingPage() {
             <div className="py-8 text-center">
               <FileText className="mx-auto h-8 w-8 text-muted-foreground/50" />
               <p className="mt-2 text-sm text-muted-foreground">No invoices yet</p>
-              {monthlyCost > 0 && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Click &quot;Generate Invoice&quot; to create one for the current billing period.
-                </p>
-              )}
             </div>
           ) : (
             <div className="space-y-2">

@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -435,5 +437,214 @@ func (v *DNSVerifier) checkDomains() {
 	for _, depl := range deployments {
 		_ = depl // DNS verification logic would go here
 		// For now, auto domains work without verification
+	}
+}
+
+// =============================================================================
+// Invoice Generator
+// =============================================================================
+
+// InvoiceGenerator periodically creates/updates invoices for users with running deployments.
+type InvoiceGenerator struct {
+	store    *Store
+	interval time.Duration
+	logger   *slog.Logger
+	ctx      context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
+}
+
+func NewInvoiceGenerator(store *Store, interval time.Duration, logger *slog.Logger) *InvoiceGenerator {
+	if interval == 0 {
+		interval = 24 * time.Hour
+	}
+	return &InvoiceGenerator{
+		store:    store,
+		interval: interval,
+		logger:   logger.With("component", "invoice_generator"),
+	}
+}
+
+func (ig *InvoiceGenerator) Start() {
+	ig.ctx, ig.cancel = context.WithCancel(context.Background())
+	ig.wg.Add(1)
+	go ig.run()
+	ig.logger.Info("invoice generator started", "interval", ig.interval)
+}
+
+func (ig *InvoiceGenerator) Stop() {
+	if ig.cancel != nil {
+		ig.cancel()
+	}
+	ig.wg.Wait()
+}
+
+func (ig *InvoiceGenerator) run() {
+	defer ig.wg.Done()
+	ig.generateAll()
+
+	ticker := time.NewTicker(ig.interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ig.ctx.Done():
+			return
+		case <-ticker.C:
+			ig.generateAll()
+		}
+	}
+}
+
+// timeToYearMonth extracts "YYYY-MM" from a DB value that may be string or time.Time.
+func timeToYearMonth(v any) string {
+	switch t := v.(type) {
+	case time.Time:
+		return t.UTC().Format("2006-01")
+	case string:
+		if len(t) >= 7 {
+			return t[:7]
+		}
+	case []byte:
+		if len(t) >= 7 {
+			return string(t[:7])
+		}
+	}
+	return ""
+}
+
+func (ig *InvoiceGenerator) generateAll() {
+	now := time.Now().UTC()
+	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := periodStart.AddDate(0, 1, 0).Add(-time.Second)
+	periodStartStr := periodStart.Format(time.RFC3339)
+	currentYM := periodStart.Format("2006-01") // "2026-02"
+
+	// Get all running deployments
+	deployments, err := ig.store.List(ig.ctx, "deployments", []Filter{
+		{Field: "status", Value: "running"},
+	}, Page{Limit: 1000})
+	if err != nil {
+		ig.logger.Error("failed to list deployments", "error", err)
+		return
+	}
+
+	if len(deployments) == 0 {
+		return
+	}
+
+	// Group running deployments by owner (customer_id)
+	type lineItem struct {
+		DeploymentID   string `json:"deployment_id"`
+		DeploymentName string `json:"deployment_name"`
+		TemplateName   string `json:"template_name"`
+		MonthlyCents   int    `json:"monthly_cents"`
+		Description    string `json:"description"`
+	}
+
+	type userBill struct {
+		items      []lineItem
+		totalCents int
+	}
+
+	bills := map[int]*userBill{}
+
+	for _, d := range deployments {
+		ownerID, _ := toInt64(d["customer_id"])
+		if ownerID == 0 {
+			continue
+		}
+
+		var priceCents int
+		var templateName string
+		if tmplID, ok := toInt64(d["template_id"]); ok && tmplID > 0 {
+			tmpl, err := ig.store.GetByID(ig.ctx, "templates", int(tmplID))
+			if err == nil {
+				if p, ok := toInt64(tmpl["price_monthly_cents"]); ok {
+					priceCents = int(p)
+				}
+				templateName = strVal(tmpl["name"])
+			}
+		}
+
+		uid := int(ownerID)
+		if bills[uid] == nil {
+			bills[uid] = &userBill{}
+		}
+
+		deplName := strVal(d["name"])
+		bills[uid].items = append(bills[uid].items, lineItem{
+			DeploymentID:   strVal(d["reference_id"]),
+			DeploymentName: deplName,
+			TemplateName:   templateName,
+			MonthlyCents:   priceCents,
+			Description:    fmt.Sprintf("%s (%s) — %s", deplName, templateName, periodStart.Format("Jan 2006")),
+		})
+		bills[uid].totalCents += priceCents
+	}
+
+	// Get existing invoices for this period (match by year-month to avoid format issues)
+	allInvoices, err := ig.store.List(ig.ctx, "invoices", nil, Page{Limit: 1000})
+	if err != nil {
+		ig.logger.Error("failed to list invoices", "error", err)
+		return
+	}
+
+	existingByUser := map[int]map[string]any{}
+	for _, inv := range allInvoices {
+		if timeToYearMonth(inv["period_start"]) == currentYM {
+			ownerID, _ := toInt64(inv["user_id"])
+			uid := int(ownerID)
+			// Prefer paid/pending over draft (don't overwrite settled invoices)
+			if prev, exists := existingByUser[uid]; exists {
+				prevStatus, _ := prev["status"].(string)
+				if prevStatus == "paid" || prevStatus == "pending" {
+					continue
+				}
+			}
+			existingByUser[uid] = inv
+		}
+	}
+
+	// Create or update invoices per user
+	for userID, bill := range bills {
+		if bill.totalCents == 0 {
+			continue
+		}
+
+		itemsJSON, _ := json.Marshal(bill.items)
+		existing := existingByUser[userID]
+
+		if existing != nil {
+			status, _ := existing["status"].(string)
+			if status == "paid" || status == "pending" {
+				continue // already paid or in payment flow
+			}
+			// Update draft with latest costs
+			refID := strVal(existing["reference_id"])
+			ig.store.Update(ig.ctx, "invoices", refID, map[string]any{
+				"items":          string(itemsJSON),
+				"subtotal_cents": bill.totalCents,
+				"total_cents":    bill.totalCents,
+			})
+			ig.logger.Debug("updated invoice", "invoice", refID, "user_id", userID, "total_cents", bill.totalCents)
+		} else {
+			// Create new invoice
+			row, err := ig.store.Create(ig.ctx, "invoices", map[string]any{
+				"user_id":        userID,
+				"period_start":   periodStartStr,
+				"period_end":     periodEnd.Format(time.RFC3339),
+				"items":          string(itemsJSON),
+				"subtotal_cents": bill.totalCents,
+				"tax_cents":      0,
+				"total_cents":    bill.totalCents,
+				"currency":       "USD",
+			})
+			if err != nil {
+				ig.logger.Error("failed to create invoice", "error", err, "user_id", userID)
+				continue
+			}
+			ig.logger.Info("created invoice", "invoice", strVal(row["reference_id"]), "user_id", userID, "total_cents", bill.totalCents)
+		}
 	}
 }
