@@ -96,15 +96,29 @@ func runSchemaMigrations(db *sqlx.DB, resources []Resource, logger *slog.Logger)
 		}
 	}
 
-	// Add columns that CREATE TABLE IF NOT EXISTS won't add to existing tables
-	alterStatements := []string{
+	// Add columns that CREATE TABLE IF NOT EXISTS won't add to existing tables.
+	// Older production databases may be missing standard columns (created_at, updated_at)
+	// that the engine now requires.
+	var alterStatements []string
+
+	// Ensure every engine-managed table has created_at and updated_at
+	for _, res := range resources {
+		alterStatements = append(alterStatements,
+			fmt.Sprintf(`ALTER TABLE %s ADD COLUMN created_at DATETIME NOT NULL DEFAULT (datetime('now'))`, res.Name),
+			fmt.Sprintf(`ALTER TABLE %s ADD COLUMN updated_at DATETIME NOT NULL DEFAULT (datetime('now'))`, res.Name),
+		)
+	}
+
+	// Entity-specific migrations
+	alterStatements = append(alterStatements,
 		`ALTER TABLE nodes ADD COLUMN public INTEGER DEFAULT 0`,
 		`ALTER TABLE ssh_keys RENAME COLUMN private_key_encrypted TO private_key`,
 		`ALTER TABLE cloud_credentials RENAME COLUMN credentials_encrypted TO credentials`,
-	}
+	)
+
 	for _, sql := range alterStatements {
 		if _, err := db.Exec(sql); err != nil {
-			// Ignore "duplicate column" errors — column may already exist
+			// Ignore "duplicate column" / "no such column" errors — column may already exist
 			logger.Debug("alter table (may already exist)", "sql", sql, "error", err)
 		}
 	}
