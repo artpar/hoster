@@ -36,14 +36,22 @@
   - [x] Old packages deleted: `shell/api/`, `shell/store/`, `shell/workers/`, `shell/scheduler/`
   - [x] ~13,700 lines deleted, ~3,400 lines added (net reduction ~10,300 lines)
 
+- [x] **Billing & Payments (February 2026)** — Usage-based billing with Stripe Checkout
+  - [x] Usage event recording via APIGate metering (`internal/shell/billing/`)
+  - [x] Background billing reporter batches events to APIGate
+  - [x] Invoice entity with state machine: draft → pending → paid/failed (`internal/engine/resources.go`)
+  - [x] Scheduled invoice generation — `InvoiceGenerator` worker auto-creates monthly invoices
+  - [x] Stripe Checkout integration via REST API (no SDK) (`internal/engine/billing_handlers.go`)
+  - [x] Payment verification on return from Stripe
+  - [x] Billing page: costs, invoices, deployments, usage history (`web/src/pages/billing/BillingPage.tsx`)
+  - [x] E2E verified: deploy app → invoice auto-generated → pay via Stripe → invoice marked paid
+
 ## IN PROGRESS
 
 - [ ] Fix CI npm/rollup issues - see specs/SESSION-HANDOFF.md
-- [ ] Create release with engine rewrite
-- [ ] Deploy to production
-- [ ] Production E2E testing
+- [ ] Production E2E testing of billing flow
 
-## MVP STATUS: COMPLETE + ENGINE REWRITE
+## MVP STATUS: COMPLETE + ENGINE REWRITE + BILLING
 
 The core deployment loop is fully functional via the generic engine:
 1. Creator creates template with docker-compose (generic CRUD)
@@ -86,6 +94,6 @@ The core deployment loop is fully functional via the generic engine:
 
 ## What's Next
 
-- Deploy engine rewrite to production
-- Add monitoring endpoints to engine (events, stats, logs)
-- Frontend integration with engine API
+- Production E2E testing of full billing flow (Stripe live mode)
+- Stripe webhook integration for async payment confirmation
+- Plan upgrade flow (Free → Pro via Stripe Checkout)
