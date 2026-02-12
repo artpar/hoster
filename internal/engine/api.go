@@ -373,12 +373,16 @@ func deleteHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 			if targets, ok := res.StateMachine.Transitions[currentState]; ok {
 				for _, t := range targets {
 					if t == "deleting" {
-						_, _, err := cfg.Store.Transition(ctx, res.Name, id, "deleting")
+						row, cmd, err := cfg.Store.Transition(ctx, res.Name, id, "deleting")
 						if err != nil {
 							cfg.Logger.Warn("failed to transition to deleting, falling through to direct delete",
 								"resource", res.Name, "id", id, "error", err)
+						} else if cmd != "" && cfg.Bus != nil {
+							if err := cfg.Bus.Dispatch(ctx, cmd, row); err != nil {
+								cfg.Logger.Error("command dispatch failed during delete",
+									"resource", res.Name, "command", cmd, "error", err)
+							}
 						}
-						// After the handler runs, also delete the DB record
 						break
 					}
 				}
