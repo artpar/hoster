@@ -95,7 +95,7 @@ type meterEventAttributes struct {
 	ResourceType string            `json:"resource_type"`
 	Quantity     int64             `json:"quantity"`
 	Metadata     map[string]string `json:"metadata,omitempty"`
-	Timestamp    time.Time         `json:"timestamp"`
+	Timestamp    string            `json:"timestamp,omitempty"`
 }
 
 // jsonAPIResponse is the JSON:API format response from the metering API.
@@ -140,7 +140,7 @@ func (c *APIGateClient) MeterUsageBatch(ctx context.Context, events []domain.Met
 				ResourceType: e.ResourceType,
 				Quantity:     e.Quantity,
 				Metadata:     e.Metadata,
-				Timestamp:    e.Timestamp,
+				Timestamp:    e.Timestamp.UTC().Format(time.RFC3339),
 			},
 		}
 	}

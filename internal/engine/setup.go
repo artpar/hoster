@@ -95,6 +95,9 @@ func Setup(cfg SetupConfig) http.Handler {
 		}
 	}
 
+	// Billing events endpoint (reads from Hoster's local usage_events table)
+	router.HandleFunc("/api/v1/billing/events", billingEventsHandler(cfg.Store)).Methods("GET")
+
 	// Register generic CRUD + state machine routes for all resources
 	RegisterRoutes(router, APIConfig{
 		Store:          cfg.Store,
@@ -451,6 +454,40 @@ func readyHandler(w http.ResponseWriter, _ *http.Request) {
 		"status": "ready",
 		"checks": map[string]string{"database": "ok"},
 	})
+}
+
+func billingEventsHandler(store *Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		authCtx := getAuthContext(r)
+		if !authCtx.Authenticated {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+
+		events, err := store.GetUserBillingEvents(r.Context(), authCtx.UserID, 50)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to fetch billing events")
+			return
+		}
+
+		// Convert to JSON:API format
+		data := make([]map[string]any, len(events))
+		for i, ev := range events {
+			data[i] = map[string]any{
+				"type": "billing_events",
+				"id":   strVal(ev["reference_id"]),
+				"attributes": map[string]any{
+					"event_type":    strVal(ev["event_type"]),
+					"resource_id":   strVal(ev["resource_id"]),
+					"resource_type": strVal(ev["resource_type"]),
+					"quantity":      ev["quantity"],
+					"timestamp":     strVal(ev["timestamp"]),
+				},
+			}
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	}
 }
 
 // =============================================================================

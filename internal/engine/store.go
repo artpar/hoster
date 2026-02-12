@@ -821,6 +821,30 @@ func (s *Store) GetUnreportedEvents(ctx context.Context, limit int) ([]domain.Me
 	return events, rows.Err()
 }
 
+// GetUserBillingEvents retrieves billing events for a specific user.
+func (s *Store) GetUserBillingEvents(ctx context.Context, userID int, limit int) ([]map[string]any, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.QueryxContext(ctx,
+		`SELECT reference_id, event_type, resource_id, resource_type, quantity, metadata, timestamp
+		 FROM usage_events WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []map[string]any
+	for rows.Next() {
+		row := make(map[string]any)
+		if err := rows.MapScan(row); err != nil {
+			return nil, err
+		}
+		results = append(results, row)
+	}
+	return results, rows.Err()
+}
+
 // MarkEventsReported marks usage events as reported to APIGate.
 func (s *Store) MarkEventsReported(ctx context.Context, ids []string, reportedAt time.Time) error {
 	if len(ids) == 0 {
