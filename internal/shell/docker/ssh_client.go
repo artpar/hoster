@@ -228,12 +228,23 @@ func (c *SSHDockerClient) deployMinion(ctx context.Context, binary []byte) error
 	return nil
 }
 
-// AutoEnsureMinion detects the remote node's architecture and deploys the correct
+// AutoEnsureMinion detects the remote node's OS and architecture and deploys the correct
 // minion binary if it's missing or outdated. This is a convenience method that
 // combines architecture detection, binary selection, and deployment.
 func (c *SSHDockerClient) AutoEnsureMinion(ctx context.Context) error {
 	if err := c.connect(ctx); err != nil {
 		return err
+	}
+
+	// Detect remote OS via uname -s
+	goos, err := c.detectOS(ctx)
+	if err != nil {
+		return fmt.Errorf("detect remote OS: %w", err)
+	}
+
+	// Only auto-deploy on Linux — macOS/other nodes need manual minion install
+	if goos != "linux" {
+		return nil
 	}
 
 	// Detect remote architecture via uname -m
@@ -250,6 +261,39 @@ func (c *SSHDockerClient) AutoEnsureMinion(ctx context.Context) error {
 
 	// Deploy if missing or outdated
 	return c.EnsureMinion(ctx, binary, MinionVersion)
+}
+
+// detectOS runs `uname -s` on the remote node and returns the OS name in lowercase.
+func (c *SSHDockerClient) detectOS(ctx context.Context) (string, error) {
+	c.mu.Lock()
+	session, err := c.sshClient.NewSession()
+	c.mu.Unlock()
+	if err != nil {
+		return "", err
+	}
+	defer session.Close()
+
+	var stdout bytes.Buffer
+	session.Stdout = &stdout
+
+	done := make(chan error, 1)
+	go func() {
+		done <- session.Run("uname -s")
+	}()
+
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case <-time.After(5 * time.Second):
+		return "", fmt.Errorf("timeout detecting OS")
+	case err := <-done:
+		if err != nil {
+			return "", fmt.Errorf("uname -s: %w", err)
+		}
+	}
+
+	os := strings.TrimSpace(strings.ToLower(stdout.String()))
+	return os, nil
 }
 
 // detectArch runs `uname -m` on the remote node and maps the result to a Go architecture string.
@@ -285,7 +329,7 @@ func (c *SSHDockerClient) detectArch(ctx context.Context) (string, error) {
 	switch arch {
 	case "x86_64":
 		return "amd64", nil
-	case "aarch64":
+	case "aarch64", "arm64":
 		return "arm64", nil
 	default:
 		return "", fmt.Errorf("unsupported architecture: %s", arch)
@@ -318,10 +362,13 @@ func (c *SSHDockerClient) execMinion(ctx context.Context, command string, args [
 	}
 	defer session.Close()
 
-	// Build command
+	// Build command with DOCKER_HOST if node has a custom docker socket
 	cmdParts := []string{c.minionPath, command}
 	cmdParts = append(cmdParts, args...)
 	cmdStr := strings.Join(cmdParts, " ")
+	if c.node.DockerSocket != "" && c.node.DockerSocket != "/var/run/docker.sock" {
+		cmdStr = fmt.Sprintf("DOCKER_HOST=unix://%s %s", c.node.DockerSocket, cmdStr)
+	}
 
 	// Set up stdin if input is provided
 	var stdin io.Reader

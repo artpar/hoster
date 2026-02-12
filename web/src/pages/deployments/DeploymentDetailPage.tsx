@@ -104,7 +104,7 @@ export function DeploymentDetailPage() {
     navigate('/deployments');
   };
 
-  const canStart = ['pending', 'stopped', 'failed'].includes(deployment.attributes.status);
+  const canStart = ['pending', 'scheduled', 'stopped', 'failed'].includes(deployment.attributes.status);
   const canStop = ['running', 'starting'].includes(deployment.attributes.status);
 
   const formatBytes = (bytes: number) => {

@@ -21,7 +21,7 @@ export default defineConfig({
         changeOrigin: true,
       },
       // Auth endpoints served by APIGate module handler
-      '/mod/auth': {
+      '/mod': {
         target: 'http://localhost:8082',
         changeOrigin: true,
       },

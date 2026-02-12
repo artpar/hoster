@@ -159,5 +159,14 @@ func runSchemaMigrations(db *sqlx.DB, resources []Resource, logger *slog.Logger)
 		}
 	}
 
+	// Fix old container_events schema: rename container_name → container
+	if _, err := db.Exec(`ALTER TABLE container_events RENAME COLUMN container_name TO container`); err != nil {
+		// Ignore error — column may already be named correctly
+	}
+	// Add reference_id column if missing (old schema didn't have it)
+	if _, err := db.Exec(`ALTER TABLE container_events ADD COLUMN reference_id TEXT`); err != nil {
+		// Ignore error — column may already exist
+	}
+
 	return nil
 }

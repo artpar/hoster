@@ -86,7 +86,7 @@ export function CreateTemplateDialog({
         description: description.trim(),
         version,
         compose_spec: composeSpec,
-        price_cents: Math.round(price * 100), // Convert dollars to cents
+        price_monthly_cents: Math.round(price * 100),
       });
       onOpenChange(false);
       onSuccess(template.id);

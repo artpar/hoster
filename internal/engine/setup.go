@@ -193,6 +193,8 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 		switch status {
 		case "pending":
 			targetState = "scheduled"
+		case "scheduled":
+			targetState = "starting"
 		case "stopped", "failed":
 			targetState = "starting"
 		default:

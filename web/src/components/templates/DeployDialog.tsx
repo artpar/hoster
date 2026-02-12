@@ -69,6 +69,12 @@ export function DeployDialog({
       return;
     }
 
+    // Validate node selection — node is required for deployment
+    if (!selectedNodeId) {
+      setError('Please select a node to deploy on');
+      return;
+    }
+
     // Parse env vars if provided
     let configOverrides: Record<string, string> | undefined;
     if (envVars.trim()) {
@@ -94,15 +100,13 @@ export function DeployDialog({
         template_id: template.id,
         custom_domain: customDomain || undefined,
         config_overrides: configOverrides,
-        node_id: selectedNodeId || undefined,
+        node_id: selectedNodeId,
       });
-      // Auto-start only if a node was selected
-      if (selectedNodeId) {
-        try {
-          await startDeployment.mutateAsync(deployment.id);
-        } catch {
-          // Start failed but deployment was created - navigate anyway
-        }
+      // Always auto-start — node is required
+      try {
+        await startDeployment.mutateAsync(deployment.id);
+      } catch {
+        // Start failed but deployment was created - navigate anyway
       }
       onOpenChange(false);
       onSuccess(deployment.id);
@@ -235,7 +239,7 @@ export function DeployDialog({
           </Button>
           <Button
             onClick={handleDeploy}
-            disabled={isPending}
+            disabled={isPending || onlineNodes.length === 0}
           >
             <Rocket className="mr-2 h-4 w-4" />
             {startDeployment.isPending ? 'Starting...' : createDeployment.isPending ? 'Creating...' : 'Deploy'}

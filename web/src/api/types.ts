@@ -190,7 +190,7 @@ export interface CreateTemplateRequest {
   description: string;
   version: string;
   compose_spec: string;
-  price_cents: number;
+  price_monthly_cents: number;
   icon_url?: string;
   documentation_url?: string;
 }

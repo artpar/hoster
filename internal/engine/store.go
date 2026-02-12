@@ -609,14 +609,15 @@ func mapToNode(row map[string]any) *domain.Node {
 		sshPort = 22
 	}
 	n := &domain.Node{
-		ID:          int(intID),
-		ReferenceID: strVal(row["reference_id"]),
-		Name:        strVal(row["name"]),
-		SSHHost:     strVal(row["ssh_host"]),
-		SSHPort:     int(sshPort),
-		SSHUser:     strVal(row["ssh_user"]),
-		SSHKeyID:    int(sshKeyID),
-		Status:      domain.NodeStatus(strVal(row["status"])),
+		ID:           int(intID),
+		ReferenceID:  strVal(row["reference_id"]),
+		Name:         strVal(row["name"]),
+		SSHHost:      strVal(row["ssh_host"]),
+		SSHPort:      int(sshPort),
+		SSHUser:      strVal(row["ssh_user"]),
+		SSHKeyID:     int(sshKeyID),
+		DockerSocket: strVal(row["docker_socket"]),
+		Status:       domain.NodeStatus(strVal(row["status"])),
 	}
 	return n
 }
