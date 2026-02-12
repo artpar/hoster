@@ -143,9 +143,10 @@ func runSchemaMigrations(db *sqlx.DB, resources []Resource, logger *slog.Logger)
 		`CREATE INDEX IF NOT EXISTS idx_usage_events_unreported ON usage_events(reported_at) WHERE reported_at IS NULL`,
 		`CREATE TABLE IF NOT EXISTS container_events (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			deployment_id TEXT NOT NULL,
+			reference_id TEXT UNIQUE NOT NULL,
+			deployment_id INTEGER NOT NULL,
 			type TEXT NOT NULL,
-			container_name TEXT NOT NULL DEFAULT '',
+			container TEXT NOT NULL DEFAULT '',
 			message TEXT NOT NULL DEFAULT '',
 			details TEXT,
 			timestamp TEXT NOT NULL DEFAULT (datetime('now'))

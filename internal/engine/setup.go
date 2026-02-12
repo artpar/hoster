@@ -308,6 +308,7 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 	// Deployment: monitoring/events
 	handlers["deployments:monitoring/events"] = monitoringHandler(cfg, "deployment-events", func(ctx context.Context, cfg SetupConfig, depl map[string]any, r *http.Request) map[string]any {
 		refID, _ := depl["reference_id"].(string)
+		deplID, _ := toInt64(depl["id"])
 
 		// Query persisted container_events
 		limit := 50
@@ -317,12 +318,12 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 			}
 		}
 
-		query := "SELECT id, deployment_id, type, container_name, message, details, timestamp FROM container_events WHERE deployment_id = ? ORDER BY timestamp DESC LIMIT ?"
-		args := []any{refID, limit}
+		query := "SELECT id, type, container, message, timestamp FROM container_events WHERE deployment_id = ? ORDER BY timestamp DESC LIMIT ?"
+		args := []any{deplID, limit}
 
 		if eventType := r.URL.Query().Get("type"); eventType != "" {
-			query = "SELECT id, deployment_id, type, container_name, message, details, timestamp FROM container_events WHERE deployment_id = ? AND type = ? ORDER BY timestamp DESC LIMIT ?"
-			args = []any{refID, eventType, limit}
+			query = "SELECT id, type, container, message, timestamp FROM container_events WHERE deployment_id = ? AND type = ? ORDER BY timestamp DESC LIMIT ?"
+			args = []any{deplID, eventType, limit}
 		}
 
 		rows, err := cfg.Store.RawQuery(ctx, query, args...)
@@ -336,7 +337,7 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 			events = append(events, map[string]any{
 				"id":        strVal(row["id"]),
 				"type":      strVal(row["type"]),
-				"container": strVal(row["container_name"]),
+				"container": strVal(row["container"]),
 				"message":   strVal(row["message"]),
 				"timestamp": strVal(row["timestamp"]),
 			})
