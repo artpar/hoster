@@ -139,8 +139,8 @@ export function DashboardPage() {
               <div className="py-8 text-center">
                 <Layers className="mx-auto h-8 w-8 text-muted-foreground/50" />
                 <p className="mt-2 text-sm text-muted-foreground">No deployments yet</p>
-                <Link to="/marketplace" className="mt-1 text-sm text-primary hover:underline">
-                  Browse the marketplace
+                <Link to="/templates" className="mt-1 text-sm text-primary hover:underline">
+                  Browse templates
                 </Link>
               </div>
             ) : (

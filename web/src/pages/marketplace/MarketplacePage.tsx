@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
-import { Store, Search } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Store, Search, Plus } from 'lucide-react';
 import { useTemplates } from '@/hooks/useTemplates';
+import { useIsAuthenticated } from '@/stores/authStore';
 import { LoadingPage } from '@/components/common/LoadingSpinner';
 import { EmptyState } from '@/components/common/EmptyState';
 import { TemplateCard } from '@/components/templates/TemplateCard';
@@ -9,7 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 import { pages } from '@/docs/registry';
 
-const pageDocs = pages.marketplace;
+const pageDocs = pages.templates;
 
 const categoryMeta: Record<string, { label: string; order: number }> = {
   web:         { label: 'Web Apps',    order: 1 },
@@ -27,26 +29,37 @@ function categoryOrder(key: string): number {
   return categoryMeta[key]?.order ?? 99;
 }
 
+type ViewMode = 'browse' | 'mine';
+
 export function MarketplacePage() {
-  const { data: templates, isLoading, error } = useTemplates();
+  const isAuthenticated = useIsAuthenticated();
+  const [viewMode, setViewMode] = useState<ViewMode>('browse');
+
+  const browseQuery = useTemplates();
+  const mineQuery = useTemplates({ scope: 'mine' });
+
+  const activeQuery = viewMode === 'mine' ? mineQuery : browseQuery;
+  const { data: templates, isLoading, error } = activeQuery;
+
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
-  // Published templates only
-  const published = useMemo(() => {
+  // For browse mode: published only. For mine mode: all user's templates.
+  const baseTemplates = useMemo(() => {
     if (!templates) return [];
+    if (viewMode === 'mine') return templates;
     return templates.filter((t) => t.attributes.published === true);
-  }, [templates]);
+  }, [templates, viewMode]);
 
   // Unique categories sorted by defined order
   const categories = useMemo(() => {
-    const cats = new Set(published.map((t) => t.attributes.category).filter(Boolean) as string[]);
+    const cats = new Set(baseTemplates.map((t) => t.attributes.category).filter(Boolean) as string[]);
     return [...cats].sort((a, b) => categoryOrder(a) - categoryOrder(b));
-  }, [published]);
+  }, [baseTemplates]);
 
   // Apply search + category filter
   const filtered = useMemo(() => {
-    let result = published;
+    let result = baseTemplates;
 
     if (activeCategory) {
       result = result.filter((t) => t.attributes.category === activeCategory);
@@ -63,21 +76,7 @@ export function MarketplacePage() {
     }
 
     return result;
-  }, [published, searchQuery, activeCategory]);
-
-  // Group by category for the browse view (no search, no category filter)
-  const isBrowseView = !searchQuery.trim() && !activeCategory;
-
-  const grouped = useMemo(() => {
-    if (!isBrowseView) return [];
-    const map = new Map<string, typeof filtered>();
-    for (const t of filtered) {
-      const cat = t.attributes.category || 'other';
-      if (!map.has(cat)) map.set(cat, []);
-      map.get(cat)!.push(t);
-    }
-    return [...map.entries()].sort(([a], [b]) => categoryOrder(a) - categoryOrder(b));
-  }, [filtered, isBrowseView]);
+  }, [baseTemplates, searchQuery, activeCategory]);
 
   const clearFilters = () => {
     setSearchQuery('');
@@ -99,18 +98,58 @@ export function MarketplacePage() {
   return (
     <div>
       {/* Header */}
-      <div className="mb-2">
-        <h1 className="text-2xl font-bold">{pageDocs.title}</h1>
-        <p className="text-muted-foreground">{pageDocs.subtitle}</p>
+      <div className="mb-2 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">{pageDocs.title}</h1>
+          <p className="text-muted-foreground">{pageDocs.subtitle}</p>
+        </div>
+        {isAuthenticated && (
+          <Link
+            to="/templates/new"
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            <Plus className="h-4 w-4" />
+            Create Template
+          </Link>
+        )}
       </div>
 
-      {/* Search */}
-      <div className="mb-4">
-        <div className="relative">
+      {/* View toggle + Search row */}
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        {/* View mode toggle */}
+        {isAuthenticated && (
+          <div className="flex shrink-0 rounded-lg border border-border p-0.5">
+            <button
+              onClick={() => { setViewMode('browse'); clearFilters(); }}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                viewMode === 'browse'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              Browse All
+            </button>
+            <button
+              onClick={() => { setViewMode('mine'); clearFilters(); }}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                viewMode === 'mine'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              My Templates
+            </button>
+          </div>
+        )}
+
+        {/* Search */}
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="text"
-            placeholder="Search apps, tools, platforms..."
+            placeholder={viewMode === 'mine' ? 'Search your templates...' : 'Search apps, tools, platforms...'}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -119,33 +158,35 @@ export function MarketplacePage() {
       </div>
 
       {/* Category Pills */}
-      <div className="mb-6 flex flex-wrap items-center gap-2">
-        <button
-          onClick={() => setActiveCategory(null)}
-          className={cn(
-            'rounded-full px-3 py-1 text-sm transition-colors',
-            !activeCategory
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-          )}
-        >
-          All
-        </button>
-        {categories.map((cat) => (
+      {categories.length > 0 && (
+        <div className="mb-6 flex flex-wrap items-center gap-2">
           <button
-            key={cat}
-            onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}
+            onClick={() => setActiveCategory(null)}
             className={cn(
               'rounded-full px-3 py-1 text-sm transition-colors',
-              activeCategory === cat
+              !activeCategory
                 ? 'bg-primary text-primary-foreground'
                 : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
             )}
           >
-            {categoryLabel(cat)}
+            All
           </button>
-        ))}
-      </div>
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}
+              className={cn(
+                'rounded-full px-3 py-1 text-sm transition-colors',
+                activeCategory === cat
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+              )}
+            >
+              {categoryLabel(cat)}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Results */}
       {filtered.length === 0 ? (
@@ -160,39 +201,30 @@ export function MarketplacePage() {
           action={
             (searchQuery || activeCategory)
               ? { label: 'Clear Filters', onClick: clearFilters }
-              : undefined
+              : viewMode === 'mine'
+                ? (
+                    <Link
+                      to="/templates/new"
+                      className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                    >
+                      Create Template
+                    </Link>
+                  )
+                : undefined
           }
         />
-      ) : isBrowseView ? (
-        /* Grouped browse view */
-        <div className="space-y-8">
-          {grouped.map(([cat, items]) => (
-            <section key={cat}>
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-lg font-semibold">{categoryLabel(cat)}</h2>
-                <span className="text-sm text-muted-foreground">
-                  {items.length} template{items.length !== 1 ? 's' : ''}
-                </span>
-              </div>
-              <div className="flex flex-col gap-2">
-                {items.map((template) => (
-                  <TemplateCard key={template.id} template={template} />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
       ) : (
-        /* Flat filtered view */
         <div>
           <div className="mb-3 flex items-center justify-between">
             <span className="text-sm text-muted-foreground">
-              {filtered.length} result{filtered.length !== 1 ? 's' : ''}
+              {filtered.length} template{filtered.length !== 1 ? 's' : ''}
               {searchQuery && <> matching &ldquo;{searchQuery}&rdquo;</>}
             </span>
-            <Button variant="ghost" size="sm" onClick={clearFilters}>
-              Clear
-            </Button>
+            {(searchQuery || activeCategory) && (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
           </div>
           <div className="flex flex-col gap-2">
             {filtered.map((template) => (
@@ -201,6 +233,7 @@ export function MarketplacePage() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

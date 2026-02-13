@@ -14,6 +14,7 @@ import {
 import type { Template } from '@/api/types';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { usePublishTemplate, useDeleteTemplate } from '@/hooks/useTemplates';
+import { useAuthStore } from '@/stores/authStore';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { cn } from '@/lib/cn';
 
@@ -27,22 +28,26 @@ const categoryStyle: Record<string, { icon: typeof Box; bg: string; fg: string }
 
 const defaultStyle = { icon: Box, bg: 'bg-gray-50', fg: 'text-gray-600' };
 
-interface TemplateCardProps {
-  template: Template;
-  showActions?: boolean;
-}
-
-export function TemplateCard({ template, showActions = false }: TemplateCardProps) {
+export function TemplateCard({ template }: { template: Template }) {
+  const navigate = useNavigate();
   const publishTemplate = usePublishTemplate();
   const deleteTemplate = useDeleteTemplate();
-  const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const isOwner = !!user && template.attributes.creator_id === user.id;
 
   const handlePublish = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     await publishTemplate.mutateAsync(template.id);
+  };
+
+  const handleEditClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    navigate(`/templates/${template.id}/edit`);
   };
 
   const handleDeleteClick = (e: React.MouseEvent) => {
@@ -79,7 +84,7 @@ export function TemplateCard({ template, showActions = false }: TemplateCardProp
   return (
     <>
       <Link
-        to={`/marketplace/${template.id}`}
+        to={`/templates/${template.id}`}
         className="group flex items-center gap-4 rounded-lg border border-border bg-background px-5 py-3.5 transition-all hover:border-primary/20 hover:shadow-sm"
       >
         {/* Category icon */}
@@ -116,21 +121,21 @@ export function TemplateCard({ template, showActions = false }: TemplateCardProp
           </div>
         )}
 
-        {/* Actions (app templates page) */}
-        {showActions && (
+        {/* Owner actions */}
+        {isOwner && (
           <div className="flex shrink-0 items-center gap-1.5">
             {isDraft && (
               <button
                 onClick={handlePublish}
                 disabled={publishTemplate.isPending}
-                className="inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-1.5 text-xs text-white hover:bg-green-700 disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
                 <Send className="h-3 w-3" />
                 Publish
               </button>
             )}
             <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(`/marketplace/${template.id}`); }}
+              onClick={handleEditClick}
               className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted"
             >
               <Edit className="h-3 w-3" />
@@ -139,7 +144,7 @@ export function TemplateCard({ template, showActions = false }: TemplateCardProp
             <button
               onClick={handleDeleteClick}
               disabled={deleteTemplate.isPending}
-              className="inline-flex items-center gap-1 rounded-md border border-destructive px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-md border border-destructive/50 px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
             >
               <Trash2 className="h-3 w-3" />
               Delete

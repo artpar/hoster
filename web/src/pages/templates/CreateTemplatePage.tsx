@@ -1,24 +1,12 @@
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, Plus } from 'lucide-react';
 import { useCreateTemplate } from '@/hooks/useTemplates';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/Label';
 import { Textarea } from '@/components/ui/Textarea';
-
-interface CreateTemplateDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSuccess: (templateId: string) => void;
-}
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 
 const DEFAULT_COMPOSE = `version: "3.8"
 
@@ -31,11 +19,8 @@ services:
       - NODE_ENV=production
 `;
 
-export function CreateTemplateDialog({
-  open,
-  onOpenChange,
-  onSuccess,
-}: CreateTemplateDialogProps) {
+export function CreateTemplatePage() {
+  const navigate = useNavigate();
   const createTemplate = useCreateTemplate();
 
   const [name, setName] = useState('');
@@ -48,7 +33,6 @@ export function CreateTemplateDialog({
   const handleCreate = async () => {
     setError(null);
 
-    // Validate
     if (!name.trim()) {
       setError('Template name is required');
       return;
@@ -88,37 +72,30 @@ export function CreateTemplateDialog({
         compose_spec: composeSpec,
         price_monthly_cents: Math.round(price * 100),
       });
-      onOpenChange(false);
-      onSuccess(template.id);
-      // Reset form
-      setName('');
-      setDescription('');
-      setVersion('1.0.0');
-      setComposeSpec(DEFAULT_COMPOSE);
-      setPriceCents('0');
+      navigate(`/templates/${template.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create template');
     }
   };
 
-  const handleClose = () => {
-    if (!createTemplate.isPending) {
-      onOpenChange(false);
-    }
-  };
-
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[600px]">
-        <DialogHeader>
-          <DialogTitle>Create New Template</DialogTitle>
-          <DialogDescription>
-            Create a deployment template that others can use to launch applications.
-          </DialogDescription>
-        </DialogHeader>
+    <div className="mx-auto max-w-2xl">
+      <button
+        onClick={() => navigate('/templates')}
+        className="mb-4 flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to Templates
+      </button>
 
-        <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto">
-          {/* Template Name */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Create New Template</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Define a docker-compose spec, set a price, and publish to the marketplace.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-6">
           <div className="grid gap-2">
             <Label htmlFor="name">Template Name</Label>
             <Input
@@ -130,7 +107,6 @@ export function CreateTemplateDialog({
             />
           </div>
 
-          {/* Description */}
           <div className="grid gap-2">
             <Label htmlFor="description">Description</Label>
             <Textarea
@@ -143,7 +119,6 @@ export function CreateTemplateDialog({
             />
           </div>
 
-          {/* Version and Price */}
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
               <Label htmlFor="version">Version</Label>
@@ -173,14 +148,13 @@ export function CreateTemplateDialog({
             </div>
           </div>
 
-          {/* Docker Compose Spec */}
           <div className="grid gap-2">
             <Label htmlFor="compose">Docker Compose Specification</Label>
             <Textarea
               id="compose"
               value={composeSpec}
               onChange={(e) => setComposeSpec(e.target.value)}
-              rows={12}
+              rows={14}
               disabled={createTemplate.isPending}
               className="font-mono text-sm"
             />
@@ -189,28 +163,27 @@ export function CreateTemplateDialog({
             </p>
           </div>
 
-          {/* Error Message */}
           {error && (
             <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
               {error}
             </div>
           )}
-        </div>
 
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={handleClose}
-            disabled={createTemplate.isPending}
-          >
-            Cancel
-          </Button>
-          <Button onClick={handleCreate} disabled={createTemplate.isPending}>
-            <Plus className="mr-2 h-4 w-4" />
-            {createTemplate.isPending ? 'Creating...' : 'Create Template'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => navigate('/templates')}
+              disabled={createTemplate.isPending}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleCreate} disabled={createTemplate.isPending}>
+              <Plus className="mr-2 h-4 w-4" />
+              {createTemplate.isPending ? 'Creating...' : 'Create Template'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

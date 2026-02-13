@@ -16,7 +16,7 @@ export function LoginPage() {
     clearError();
   }, [clearError]);
 
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/marketplace';
+  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/templates';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

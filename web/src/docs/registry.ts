@@ -84,7 +84,7 @@ export const logStreams: Record<'stdout' | 'stderr', DocEntry> = {
 
 // --- PAGE DOCUMENTATION ---
 export const pages: Record<
-  'dashboard' | 'marketplace' | 'templateDetail' | 'deployments' | 'deploymentDetail' | 'nodes' | 'sshKeys' | 'appTemplates',
+  'dashboard' | 'templates' | 'templateDetail' | 'deployments' | 'deploymentDetail' | 'nodes' | 'sshKeys',
   PageDoc
 > = {
   dashboard: {
@@ -113,9 +113,9 @@ export const pages: Record<
       description: 'Deploy an app from the marketplace or create a template to get started.',
     },
   },
-  marketplace: {
-    title: 'Marketplace',
-    subtitle: 'Browse and deploy ready-to-run application stacks. Each template is a complete app you can launch with one click.',
+  templates: {
+    title: 'Templates',
+    subtitle: 'Browse and deploy ready-to-run apps, or create and manage your own.',
     sections: {
       howItWorks: {
         label: 'How It Works',
@@ -128,7 +128,7 @@ export const pages: Record<
     },
     emptyState: {
       label: 'No templates available',
-      description: 'Check back later for new templates, or go to App Templates to publish your own.',
+      description: 'Check back later for new templates, or create your own.',
     },
   },
   templateDetail: {
@@ -232,15 +232,6 @@ export const pages: Record<
     emptyState: {
       label: 'No SSH keys',
       description: 'SSH keys authenticate Hoster to your servers without passwords. Generate a key pair with ssh-keygen, add the private key here, and place the public key on your server.',
-    },
-  },
-  appTemplates: {
-    title: 'App Templates',
-    subtitle: 'Create and manage deployment templates. Define docker-compose specs, set pricing, and publish to the marketplace.',
-    sections: {},
-    emptyState: {
-      label: 'No templates yet',
-      description: 'Create your first template. Define a docker-compose spec, set a price, and publish to the marketplace.',
     },
   },
 };

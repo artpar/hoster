@@ -69,17 +69,20 @@ func runFileMigrations(db *sqlx.DB) error {
 		return fmt.Errorf("create migrator: %w", err)
 	}
 
-	// If DB was managed by old migrations (v2-v11), force to our single
-	// migration version. Schema is now engine-driven (CREATE TABLE IF NOT EXISTS).
+	// If DB was managed by old migrations (v2-v11), force to v1 so the
+	// new migration numbering takes over. Schema is now engine-driven
+	// (CREATE TABLE IF NOT EXISTS). Then fall through to m.Up() to apply
+	// any new file migrations (v2+).
 	version, dirty, err := m.Version()
-	if err == nil && !dirty && version > 1 {
+	if err == nil && !dirty && version > 2 && version < 100 {
+		// Old migrations used versions 2-11 for a different schema.
+		// Force to 1 so our new numbering (001, 002, ...) takes over.
 		if err := m.Force(1); err != nil {
 			return fmt.Errorf("force migration version: %w", err)
 		}
-		return nil
 	}
 
-	// Fresh DB or at version 1: run normally
+	// Fresh DB, at version 1, or just force-reset: run pending migrations
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("run migrations: %w", err)
 	}

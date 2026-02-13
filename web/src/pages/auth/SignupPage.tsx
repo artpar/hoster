@@ -34,7 +34,7 @@ export function SignupPage() {
 
     try {
       await signup(email, password);
-      navigate('/marketplace', { replace: true });
+      navigate('/templates', { replace: true });
     } catch {
       // Error is handled by the store
     }

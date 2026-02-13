@@ -1,13 +1,14 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { Layout } from '@/components/layout/Layout';
 import { ProtectedRoute } from '@/components/auth';
 import { LandingPage } from '@/pages/LandingPage';
 import { LoginPage, SignupPage } from '@/pages/auth';
 import { MarketplacePage } from '@/pages/marketplace/MarketplacePage';
 import { TemplateDetailPage } from '@/pages/marketplace/TemplateDetailPage';
+import { CreateTemplatePage } from '@/pages/templates/CreateTemplatePage';
+import { EditTemplatePage } from '@/pages/templates/EditTemplatePage';
 import { MyDeploymentsPage } from '@/pages/deployments/MyDeploymentsPage';
 import { DeploymentDetailPage } from '@/pages/deployments/DeploymentDetailPage';
-import { AppTemplatesPage } from '@/pages/templates/AppTemplatesPage';
 import { DashboardPage } from '@/pages/dashboard/DashboardPage';
 import { MyNodesPage } from '@/pages/nodes/MyNodesPage';
 import { NodesTab, AddNodeForm, AddSSHKeyForm } from '@/components/nodes';
@@ -17,6 +18,11 @@ import { AddCredentialForm } from '@/components/cloud';
 import { SSHKeysPage } from '@/pages/ssh-keys/SSHKeysPage';
 import { BillingPage } from '@/pages/billing/BillingPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
+
+function MarketplaceRedirect() {
+  const { id } = useParams();
+  return <Navigate to={`/templates/${id}`} replace />;
+}
 
 export default function App() {
   return (
@@ -41,9 +47,15 @@ export default function App() {
           }
         />
 
-        {/* Marketplace - Public */}
-        <Route path="marketplace" element={<MarketplacePage />} />
-        <Route path="marketplace/:id" element={<TemplateDetailPage />} />
+        {/* Templates - Public (browse all + manage own) */}
+        <Route path="templates" element={<MarketplacePage />} />
+        <Route path="templates/new" element={<ProtectedRoute><CreateTemplatePage /></ProtectedRoute>} />
+        <Route path="templates/:id/edit" element={<ProtectedRoute><EditTemplatePage /></ProtectedRoute>} />
+        <Route path="templates/:id" element={<TemplateDetailPage />} />
+
+        {/* Legacy marketplace redirects */}
+        <Route path="marketplace" element={<Navigate to="/templates" replace />} />
+        <Route path="marketplace/:id" element={<MarketplaceRedirect />} />
 
         {/* Deployments - Requires Auth */}
         <Route
@@ -94,16 +106,6 @@ export default function App() {
           element={
             <ProtectedRoute>
               <BillingPage />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* App Templates - Requires Auth */}
-        <Route
-          path="templates"
-          element={
-            <ProtectedRoute>
-              <AppTemplatesPage />
             </ProtectedRoute>
           }
         />

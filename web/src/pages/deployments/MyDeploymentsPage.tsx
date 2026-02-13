@@ -45,7 +45,7 @@ export function MyDeploymentsPage() {
           </p>
         </div>
         <Link
-          to="/marketplace"
+          to="/templates"
           className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
           <Plus className="h-4 w-4" />
@@ -60,10 +60,10 @@ export function MyDeploymentsPage() {
           description={pageDocs.emptyState.description}
           action={
             <Link
-              to="/marketplace"
+              to="/templates"
               className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
             >
-              Browse Marketplace
+              Browse Templates
             </Link>
           }
         />

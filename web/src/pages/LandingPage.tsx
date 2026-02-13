@@ -64,7 +64,7 @@ export function LandingPage() {
             <span className="text-2xl font-bold">Hoster</span>
           </div>
           <div className="flex items-center gap-4">
-            <Link to="/marketplace">
+            <Link to="/templates">
               <Button variant="ghost">Marketplace</Button>
             </Link>
             {isAuthenticated ? (
@@ -97,7 +97,7 @@ export function LandingPage() {
             connect your servers, and deploy with one click. You own the infrastructure.
           </p>
           <div className="mt-10 flex items-center justify-center gap-4">
-            <Link to="/marketplace">
+            <Link to="/templates">
               <Button size="lg" className="gap-2">
                 Browse Apps <ArrowRight className="h-4 w-4" />
               </Button>
