@@ -16,6 +16,7 @@ import (
 
 	"github.com/artpar/hoster/internal/core/crypto"
 	"github.com/artpar/hoster/internal/core/domain"
+	coreprovider "github.com/artpar/hoster/internal/core/provider"
 	"github.com/artpar/hoster/internal/shell/billing"
 	"github.com/gorilla/mux"
 )
@@ -321,6 +322,16 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 		}
 	})
 
+	// Cloud Credentials: regions catalog
+	handlers["cloud_credentials:regions"] = cloudCatalogHandler(cfg, func(provider string) any {
+		return coreprovider.StaticRegions(provider)
+	})
+
+	// Cloud Credentials: sizes catalog
+	handlers["cloud_credentials:sizes"] = cloudCatalogHandler(cfg, func(provider string) any {
+		return coreprovider.StaticSizes(provider)
+	})
+
 	// Invoice: pay (create Stripe Checkout session)
 	handlers["invoices:pay"] = invoicePayHandler(cfg)
 
@@ -374,6 +385,45 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 	})
 
 	return handlers
+}
+
+// cloudCatalogHandler creates a handler that returns static provider catalog data (regions or sizes)
+// for a given cloud credential.
+func cloudCatalogHandler(cfg SetupConfig, catalogFn func(provider string) any) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		authCtx := getAuthContext(r)
+		id := mux.Vars(r)["id"]
+
+		if !authCtx.Authenticated {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+
+		cred, err := cfg.Store.Get(ctx, "cloud_credentials", id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "credential not found")
+			return
+		}
+
+		ownerID, ok := toInt64(cred["creator_id"])
+		if !ok {
+			writeError(w, http.StatusForbidden, "access denied")
+			return
+		}
+		if int(ownerID) != authCtx.UserID {
+			writeError(w, http.StatusForbidden, "not authorized")
+			return
+		}
+
+		provider, _ := cred["provider"].(string)
+		data := catalogFn(provider)
+		if data == nil {
+			data = []any{}
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	}
 }
 
 // monitoringHandler creates a handler that verifies auth/ownership then delegates to a builder function.

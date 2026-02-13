@@ -175,6 +175,10 @@ func CloudCredentialResource() Resource {
 			TextField("credentials").WithWriteOnly().WithEncrypted(),
 			StringField("default_region").WithNullable(),
 		},
+		Actions: []CustomAction{
+			{Name: "regions", Method: "GET"},
+			{Name: "sizes", Method: "GET"},
+		},
 	}
 }
 
