@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Globe,
   Activity,
@@ -35,7 +35,9 @@ interface TemplateCardProps {
 export function TemplateCard({ template, showActions = false }: TemplateCardProps) {
   const publishTemplate = usePublishTemplate();
   const deleteTemplate = useDeleteTemplate();
+  const navigate = useNavigate();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const handlePublish = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -46,11 +48,20 @@ export function TemplateCard({ template, showActions = false }: TemplateCardProp
   const handleDeleteClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    setDeleteError(null);
     setDeleteDialogOpen(true);
   };
 
   const handleDeleteConfirm = async () => {
-    await deleteTemplate.mutateAsync(template.id);
+    try {
+      await deleteTemplate.mutateAsync(template.id);
+      setDeleteDialogOpen(false);
+    } catch (err: any) {
+      const msg = err?.response?.errors?.[0]?.detail
+        || err?.message
+        || 'Failed to delete template';
+      setDeleteError(msg);
+    }
   };
 
   const cat = template.attributes.category || '';
@@ -66,79 +77,84 @@ export function TemplateCard({ template, showActions = false }: TemplateCardProp
   const isDraft = !template.attributes.published;
 
   return (
-    <Link
-      to={`/marketplace/${template.id}`}
-      className="group flex items-center gap-4 rounded-lg border border-border bg-background px-5 py-3.5 transition-all hover:border-primary/20 hover:shadow-sm"
-    >
-      {/* Category icon */}
-      <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg', style.bg)}>
-        <Icon className={cn('h-5 w-5', style.fg)} />
-      </div>
-
-      {/* Name + description */}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <h3 className="font-medium group-hover:text-primary transition-colors">
-            {template.attributes.name}
-          </h3>
-          {isDraft && <StatusBadge status="draft" />}
-          <span className="text-xs text-muted-foreground/60">
-            v{template.attributes.version}
-          </span>
+    <>
+      <Link
+        to={`/marketplace/${template.id}`}
+        className="group flex items-center gap-4 rounded-lg border border-border bg-background px-5 py-3.5 transition-all hover:border-primary/20 hover:shadow-sm"
+      >
+        {/* Category icon */}
+        <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg', style.bg)}>
+          <Icon className={cn('h-5 w-5', style.fg)} />
         </div>
-        <p className="mt-0.5 text-sm text-muted-foreground line-clamp-1">
-          {template.attributes.description || 'No description available'}
-        </p>
-      </div>
 
-      {/* Resources */}
-      {resources && (
-        <div className="hidden shrink-0 lg:flex">
-          <div className="flex items-center gap-1 rounded-md bg-muted/60 px-2.5 py-1 text-xs text-muted-foreground">
-            {resources.memory_mb > 0 && <span>{resources.memory_mb} MB</span>}
-            {resources.memory_mb > 0 && resources.cpu_cores > 0 && (
-              <span className="text-border">&middot;</span>
-            )}
-            {resources.cpu_cores > 0 && <span>{resources.cpu_cores} CPU</span>}
+        {/* Name + description */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <h3 className="font-medium group-hover:text-primary transition-colors">
+              {template.attributes.name}
+            </h3>
+            {isDraft && <StatusBadge status="draft" />}
+            <span className="text-xs text-muted-foreground/60">
+              v{template.attributes.version}
+            </span>
           </div>
+          <p className="mt-0.5 text-sm text-muted-foreground line-clamp-1">
+            {template.attributes.description || 'No description available'}
+          </p>
         </div>
-      )}
 
-      {/* Actions (app templates page) */}
-      {showActions && (
-        <div className="flex shrink-0 items-center gap-1.5">
-          {isDraft && (
-            <button
-              onClick={handlePublish}
-              disabled={publishTemplate.isPending}
-              className="inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-1.5 text-xs text-white hover:bg-green-700 disabled:opacity-50"
-            >
-              <Send className="h-3 w-3" />
-              Publish
-            </button>
-          )}
-          <button className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted">
-            <Edit className="h-3 w-3" />
-            Edit
-          </button>
-          <button
-            onClick={handleDeleteClick}
-            disabled={deleteTemplate.isPending}
-            className="inline-flex items-center gap-1 rounded-md border border-destructive px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
-          >
-            <Trash2 className="h-3 w-3" />
-            Delete
-          </button>
-        </div>
-      )}
-
-      {/* Price */}
-      <div className="w-20 shrink-0 text-right">
-        <span className="text-sm font-semibold">{priceLabel}</span>
-        {priceCents > 0 && (
-          <span className="text-xs text-muted-foreground">/mo</span>
+        {/* Resources */}
+        {resources && (
+          <div className="hidden shrink-0 lg:flex">
+            <div className="flex items-center gap-1 rounded-md bg-muted/60 px-2.5 py-1 text-xs text-muted-foreground">
+              {resources.memory_mb > 0 && <span>{resources.memory_mb} MB</span>}
+              {resources.memory_mb > 0 && resources.cpu_cores > 0 && (
+                <span className="text-border">&middot;</span>
+              )}
+              {resources.cpu_cores > 0 && <span>{resources.cpu_cores} CPU</span>}
+            </div>
+          </div>
         )}
-      </div>
+
+        {/* Actions (app templates page) */}
+        {showActions && (
+          <div className="flex shrink-0 items-center gap-1.5">
+            {isDraft && (
+              <button
+                onClick={handlePublish}
+                disabled={publishTemplate.isPending}
+                className="inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-1.5 text-xs text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                <Send className="h-3 w-3" />
+                Publish
+              </button>
+            )}
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(`/marketplace/${template.id}`); }}
+              className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted"
+            >
+              <Edit className="h-3 w-3" />
+              Edit
+            </button>
+            <button
+              onClick={handleDeleteClick}
+              disabled={deleteTemplate.isPending}
+              className="inline-flex items-center gap-1 rounded-md border border-destructive px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
+            >
+              <Trash2 className="h-3 w-3" />
+              Delete
+            </button>
+          </div>
+        )}
+
+        {/* Price */}
+        <div className="w-20 shrink-0 text-right">
+          <span className="text-sm font-semibold">{priceLabel}</span>
+          {priceCents > 0 && (
+            <span className="text-xs text-muted-foreground">/mo</span>
+          )}
+        </div>
+      </Link>
 
       <ConfirmDialog
         open={deleteDialogOpen}
@@ -147,8 +163,13 @@ export function TemplateCard({ template, showActions = false }: TemplateCardProp
         description="Are you sure you want to delete this template? This action cannot be undone."
         confirmLabel="Delete"
         variant="destructive"
+        loading={deleteTemplate.isPending}
         onConfirm={handleDeleteConfirm}
-      />
-    </Link>
+      >
+        {deleteError && (
+          <p className="text-sm text-destructive">{deleteError}</p>
+        )}
+      </ConfirmDialog>
+    </>
   );
 }

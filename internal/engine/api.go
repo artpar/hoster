@@ -394,6 +394,10 @@ func deleteHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 		}
 
 		if err := cfg.Store.Delete(ctx, res.Name, id); err != nil {
+			if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
+				writeError(w, http.StatusConflict, "cannot delete: other resources depend on this "+res.Name)
+				return
+			}
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
