@@ -111,6 +111,8 @@ func DeploymentResource() Resource {
 			{Name: "monitoring/stats", Method: "GET"},
 			{Name: "monitoring/logs", Method: "GET"},
 			{Name: "monitoring/events", Method: "GET"},
+			{Name: "domains", Method: "GET"},
+			{Name: "domains", Method: "POST"},
 		},
 	}
 }
@@ -144,6 +146,10 @@ func NodeResource() Resource {
 			StringField("provider_type").WithDefault("manual"),
 			SoftRefField("provision_id", "cloud_provisions"),
 			StringField("base_domain").WithNullable(),
+		},
+		Actions: []CustomAction{
+			{Name: "maintenance", Method: "POST"},
+			{Name: "maintenance", Method: "DELETE"},
 		},
 		Visibility: nodeVisibility,
 	}
@@ -221,6 +227,9 @@ func CloudProvisionResource() Resource {
 				"ready":       "ProvisionReady",
 				"destroying":  "DestroyInstance",
 			},
+		},
+		Actions: []CustomAction{
+			{Name: "retry", Method: "POST"},
 		},
 	}
 }

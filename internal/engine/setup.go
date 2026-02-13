@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"math/big"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -73,11 +74,47 @@ func Setup(cfg SetupConfig) http.Handler {
 		}
 	}
 
-	// Wire deployment BeforeCreate: resolve template_version from template
+	// Wire template BeforeDelete: prevent deleting templates with active deployments
+	if tmplRes := cfg.Store.Resource("templates"); tmplRes != nil {
+		store := cfg.Store
+		tmplRes.BeforeDelete = func(ctx context.Context, authCtx AuthContext, row map[string]any) error {
+			tmplID, ok := toInt64(row["id"])
+			if !ok {
+				return fmt.Errorf("invalid template ID")
+			}
+			depls, err := store.List(ctx, "deployments", []Filter{
+				{Field: "template_id", Value: tmplID},
+			}, Page{Limit: 1, Offset: 0})
+			if err == nil && len(depls) > 0 {
+				return fmt.Errorf("cannot delete template: it has active deployments")
+			}
+			return nil
+		}
+	}
+
+	// Wire deployment BeforeCreate: plan limit check + resolve template_version from template
 	// Wire deployment AfterCreate: record billing event
 	if deplRes := cfg.Store.Resource("deployments"); deplRes != nil {
 		store := cfg.Store
 		deplRes.BeforeCreate = func(ctx context.Context, authCtx AuthContext, data map[string]any) error {
+			// Check plan limits
+			if authCtx.PlanLimits.MaxDeployments > 0 {
+				existing, err := store.List(ctx, "deployments", []Filter{
+					{Field: "customer_id", Value: authCtx.UserID},
+				}, Page{Limit: 1000, Offset: 0})
+				if err == nil {
+					// Count non-deleted deployments
+					active := 0
+					for _, d := range existing {
+						if s, _ := d["status"].(string); s != "deleted" {
+							active++
+						}
+					}
+					if active >= authCtx.PlanLimits.MaxDeployments {
+						return fmt.Errorf("plan limit reached: maximum %d deployments allowed", authCtx.PlanLimits.MaxDeployments)
+					}
+				}
+			}
 			// If template_version not set, copy from template
 			if _, ok := data["template_version"]; !ok || data["template_version"] == nil || data["template_version"] == "" {
 				if tid, ok := toInt64(data["template_id"]); ok && tid > 0 {
@@ -97,6 +134,28 @@ func Setup(cfg SetupConfig) http.Handler {
 		}
 	}
 
+	// Wire cloud provision BeforeCreate: resolve provider from credential + verify ownership
+	if provRes := cfg.Store.Resource("cloud_provisions"); provRes != nil {
+		store := cfg.Store
+		provRes.BeforeCreate = func(ctx context.Context, authCtx AuthContext, data map[string]any) error {
+			credID, ok := toInt64(data["credential_id"])
+			if !ok || credID == 0 {
+				return fmt.Errorf("credential_id is required")
+			}
+			cred, err := store.GetByID(ctx, "cloud_credentials", int(credID))
+			if err != nil {
+				return fmt.Errorf("credential not found")
+			}
+			// Verify credential belongs to authenticated user
+			credOwnerID, ok := toInt64(cred["creator_id"])
+			if !ok || int(credOwnerID) != authCtx.UserID {
+				return fmt.Errorf("access denied: credential does not belong to you")
+			}
+			data["provider"] = strVal(cred["provider"])
+			return nil
+		}
+	}
+
 	// Register generic CRUD + state machine routes for all resources
 	RegisterRoutes(router, APIConfig{
 		Store:          cfg.Store,
@@ -104,6 +163,10 @@ func Setup(cfg SetupConfig) http.Handler {
 		Logger:         cfg.Logger,
 		ActionHandlers: buildActionHandlers(cfg),
 	})
+
+	// Domain sub-resource routes (require hostname in path, can't use action pattern)
+	router.HandleFunc("/api/v1/deployments/{id}/domains/{hostname}", domainRemoveHandler(cfg)).Methods("DELETE")
+	router.HandleFunc("/api/v1/deployments/{id}/domains/{hostname}/verify", domainVerifyHandler(cfg)).Methods("POST")
 
 	// Billing endpoints
 	router.HandleFunc("/api/v1/billing/verify-payment", verifyPaymentHandler(cfg)).Methods("GET")
@@ -322,6 +385,12 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 		}
 	})
 
+	// Deployment: domains (list + add, dispatched by HTTP method)
+	handlers["deployments:domains"] = domainHandler(cfg)
+
+	// Node: maintenance (enter via POST, exit via DELETE)
+	handlers["nodes:maintenance"] = nodeMaintenanceHandler(cfg)
+
 	// Cloud Credentials: regions catalog
 	handlers["cloud_credentials:regions"] = cloudCatalogHandler(cfg, func(provider string) any {
 		return coreprovider.StaticRegions(provider)
@@ -384,6 +453,69 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 		}
 	})
 
+	// Cloud Provision: retry (transition failed → pending or failed → destroying)
+	handlers["cloud_provisions:retry"] = func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		authCtx := getAuthContext(r)
+		id := mux.Vars(r)["id"]
+
+		if !authCtx.Authenticated {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+
+		prov, err := cfg.Store.Get(ctx, "cloud_provisions", id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "provision not found")
+			return
+		}
+
+		ownerID, ok := toInt64(prov["creator_id"])
+		if !ok {
+			cfg.Logger.Warn("ownership check failed: unparseable creator_id",
+				"resource", "cloud_provisions", "value", prov["creator_id"])
+			writeError(w, http.StatusForbidden, "access denied")
+			return
+		}
+		if int(ownerID) != authCtx.UserID {
+			writeError(w, http.StatusForbidden, "not authorized")
+			return
+		}
+
+		status, _ := prov["status"].(string)
+		if status != "failed" {
+			writeError(w, http.StatusConflict, "can only retry failed provisions")
+			return
+		}
+
+		// If the instance was previously created (has provider_instance_id and completed_at),
+		// transition to destroying for cleanup; otherwise retry creation from pending.
+		targetState := "pending"
+		instanceID := strVal(prov["provider_instance_id"])
+		completedAt := strVal(prov["completed_at"])
+		if instanceID != "" && completedAt != "" {
+			targetState = "destroying"
+		}
+
+		row, cmd, err := cfg.Store.Transition(ctx, "cloud_provisions", id, targetState)
+		if err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+
+		if cmd != "" && cfg.Bus != nil {
+			if err := cfg.Bus.Dispatch(ctx, cmd, row); err != nil {
+				cfg.Logger.Error("command dispatch failed", "command", cmd, "error", err)
+			}
+		}
+
+		res := cfg.Store.Resource("cloud_provisions")
+		stripFields(res, row, cfg.Store)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"data": rowToJSONAPI("cloud_provisions", row),
+		})
+	}
+
 	return handlers
 }
 
@@ -424,6 +556,376 @@ func cloudCatalogHandler(cfg SetupConfig, catalogFn func(provider string) any) h
 
 		writeJSON(w, http.StatusOK, map[string]any{"data": data})
 	}
+}
+
+// =============================================================================
+// Node Maintenance Handler
+// =============================================================================
+
+// nodeMaintenanceHandler toggles a node in/out of maintenance mode.
+// POST = enter maintenance, DELETE = exit maintenance.
+func nodeMaintenanceHandler(cfg SetupConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		authCtx := getAuthContext(r)
+		id := mux.Vars(r)["id"]
+
+		if !authCtx.Authenticated {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+
+		node, err := cfg.Store.Get(ctx, "nodes", id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "node not found")
+			return
+		}
+
+		ownerID, ok := toInt64(node["creator_id"])
+		if !ok || int(ownerID) != authCtx.UserID {
+			writeError(w, http.StatusForbidden, "not authorized")
+			return
+		}
+
+		var newStatus string
+		if r.Method == http.MethodPost {
+			newStatus = "maintenance"
+		} else {
+			newStatus = "online"
+		}
+
+		row, err := cfg.Store.Update(ctx, "nodes", id, map[string]any{"status": newStatus})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		res := cfg.Store.Resource("nodes")
+		stripFields(res, row, cfg.Store)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"data": rowToJSONAPI("nodes", row),
+		})
+	}
+}
+
+// =============================================================================
+// Domain Management Handlers
+// =============================================================================
+
+// domainHandler handles GET (list) and POST (add) for deployment domains.
+func domainHandler(cfg SetupConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			domainListHandler(cfg).ServeHTTP(w, r)
+		} else {
+			domainAddHandler(cfg).ServeHTTP(w, r)
+		}
+	}
+}
+
+// domainListHandler returns domains for a deployment with DNS instructions.
+func domainListHandler(cfg SetupConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		authCtx := getAuthContext(r)
+		id := mux.Vars(r)["id"]
+
+		if !authCtx.Authenticated {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+
+		depl, err := cfg.Store.Get(ctx, "deployments", id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "deployment not found")
+			return
+		}
+
+		ownerID, ok := toInt64(depl["customer_id"])
+		if !ok || int(ownerID) != authCtx.UserID {
+			writeError(w, http.StatusForbidden, "not authorized")
+			return
+		}
+
+		domains := parseDomainsList(depl["domains"])
+
+		// Add auto-generated domain
+		refID, _ := depl["reference_id"].(string)
+		if cfg.BaseDomain != "" && refID != "" {
+			autoDomain := DomainInfo{
+				Hostname:           refID + ".apps." + cfg.BaseDomain,
+				Type:               "auto",
+				SSLEnabled:         true,
+				VerificationStatus: "verified",
+			}
+			domains = append([]DomainInfo{autoDomain}, domains...)
+		}
+
+		writeJSON(w, http.StatusOK, domains)
+	}
+}
+
+// domainAddHandler adds a custom domain to a deployment.
+func domainAddHandler(cfg SetupConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		authCtx := getAuthContext(r)
+		id := mux.Vars(r)["id"]
+
+		if !authCtx.Authenticated {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+
+		depl, err := cfg.Store.Get(ctx, "deployments", id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "deployment not found")
+			return
+		}
+
+		ownerID, ok := toInt64(depl["customer_id"])
+		if !ok || int(ownerID) != authCtx.UserID {
+			writeError(w, http.StatusForbidden, "not authorized")
+			return
+		}
+
+		var body struct {
+			Hostname string `json:"hostname"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Hostname == "" {
+			writeError(w, http.StatusBadRequest, "hostname is required")
+			return
+		}
+
+		domains := parseDomainsList(depl["domains"])
+
+		// Check for duplicates
+		for _, d := range domains {
+			if d.Hostname == body.Hostname {
+				writeError(w, http.StatusConflict, "domain already exists")
+				return
+			}
+		}
+
+		refID, _ := depl["reference_id"].(string)
+		newDomain := DomainInfo{
+			Hostname:           body.Hostname,
+			Type:               "custom",
+			SSLEnabled:         false,
+			VerificationStatus: "pending",
+			VerificationMethod: "cname",
+			Instructions: []DNSInstruction{
+				{
+					Type:     "CNAME",
+					Name:     body.Hostname,
+					Value:    refID + ".apps." + cfg.BaseDomain,
+					Priority: "required",
+				},
+			},
+		}
+		domains = append(domains, newDomain)
+
+		domainsJSON, _ := json.Marshal(domains)
+		if _, err := cfg.Store.Update(ctx, "deployments", id, map[string]any{"domains": string(domainsJSON)}); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update domains")
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, newDomain)
+	}
+}
+
+// domainRemoveHandler removes a custom domain from a deployment.
+func domainRemoveHandler(cfg SetupConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		authCtx := getAuthContext(r)
+		vars := mux.Vars(r)
+		id := vars["id"]
+		hostname := vars["hostname"]
+
+		if !authCtx.Authenticated {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+
+		depl, err := cfg.Store.Get(ctx, "deployments", id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "deployment not found")
+			return
+		}
+
+		ownerID, ok := toInt64(depl["customer_id"])
+		if !ok || int(ownerID) != authCtx.UserID {
+			writeError(w, http.StatusForbidden, "not authorized")
+			return
+		}
+
+		domains := parseDomainsList(depl["domains"])
+		found := false
+		filtered := make([]DomainInfo, 0, len(domains))
+		for _, d := range domains {
+			if d.Hostname == hostname {
+				found = true
+				continue
+			}
+			filtered = append(filtered, d)
+		}
+
+		if !found {
+			writeError(w, http.StatusNotFound, "domain not found")
+			return
+		}
+
+		domainsJSON, _ := json.Marshal(filtered)
+		if _, err := cfg.Store.Update(ctx, "deployments", id, map[string]any{"domains": string(domainsJSON)}); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update domains")
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// domainVerifyHandler checks DNS configuration for a custom domain.
+func domainVerifyHandler(cfg SetupConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		authCtx := getAuthContext(r)
+		vars := mux.Vars(r)
+		id := vars["id"]
+		hostname := vars["hostname"]
+
+		if !authCtx.Authenticated {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+
+		depl, err := cfg.Store.Get(ctx, "deployments", id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "deployment not found")
+			return
+		}
+
+		ownerID, ok := toInt64(depl["customer_id"])
+		if !ok || int(ownerID) != authCtx.UserID {
+			writeError(w, http.StatusForbidden, "not authorized")
+			return
+		}
+
+		refID, _ := depl["reference_id"].(string)
+		expectedTarget := refID + ".apps." + cfg.BaseDomain
+
+		domains := parseDomainsList(depl["domains"])
+		found := false
+		for i, d := range domains {
+			if d.Hostname != hostname {
+				continue
+			}
+			found = true
+
+			// Check DNS CNAME
+			verified := false
+			checkErr := ""
+			cnames, err := lookupCNAME(hostname)
+			if err != nil {
+				checkErr = err.Error()
+			} else {
+				for _, cname := range cnames {
+					if strings.TrimSuffix(cname, ".") == expectedTarget {
+						verified = true
+						break
+					}
+				}
+				if !verified {
+					checkErr = "CNAME not pointing to " + expectedTarget
+				}
+			}
+
+			if verified {
+				domains[i].VerificationStatus = "verified"
+				domains[i].SSLEnabled = true
+				now := time.Now().UTC().Format(time.RFC3339)
+				domains[i].VerifiedAt = now
+				domains[i].LastCheckError = ""
+			} else {
+				domains[i].VerificationStatus = "failed"
+				domains[i].LastCheckError = checkErr
+			}
+
+			domainsJSON, _ := json.Marshal(domains)
+			if _, err := cfg.Store.Update(ctx, "deployments", id, map[string]any{"domains": string(domainsJSON)}); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to update domains")
+				return
+			}
+
+			writeJSON(w, http.StatusOK, domains[i])
+			return
+		}
+
+		if !found {
+			writeError(w, http.StatusNotFound, "domain not found")
+		}
+	}
+}
+
+// Domain types matching the frontend
+type DomainInfo struct {
+	Hostname           string           `json:"hostname"`
+	Type               string           `json:"type"`
+	SSLEnabled         bool             `json:"ssl_enabled"`
+	VerificationStatus string           `json:"verification_status,omitempty"`
+	VerificationMethod string           `json:"verification_method,omitempty"`
+	VerifiedAt         string           `json:"verified_at,omitempty"`
+	LastCheckError     string           `json:"last_check_error,omitempty"`
+	Instructions       []DNSInstruction `json:"instructions,omitempty"`
+}
+
+type DNSInstruction struct {
+	Type     string `json:"type"`
+	Name     string `json:"name"`
+	Value    string `json:"value"`
+	Priority string `json:"priority"`
+}
+
+// parseDomainsList parses the domains JSON field from a deployment row.
+// The value may be a string (raw from DB), []byte, or already-parsed Go value
+// (after Store.Get parses JSON fields).
+func parseDomainsList(v any) []DomainInfo {
+	if v == nil {
+		return nil
+	}
+	var raw string
+	switch val := v.(type) {
+	case string:
+		raw = val
+	case []byte:
+		raw = string(val)
+	default:
+		// Already parsed by Store.Get — re-marshal to decode into typed struct
+		b, err := json.Marshal(val)
+		if err != nil {
+			return nil
+		}
+		raw = string(b)
+	}
+	if raw == "" || raw == "null" {
+		return nil
+	}
+	var domains []DomainInfo
+	if err := json.Unmarshal([]byte(raw), &domains); err != nil {
+		return nil
+	}
+	return domains
+}
+
+// lookupCNAME performs a DNS CNAME lookup.
+func lookupCNAME(hostname string) ([]string, error) {
+	cname, err := net.LookupCNAME(hostname)
+	if err != nil {
+		return nil, err
+	}
+	return []string{cname}, nil
 }
 
 // monitoringHandler creates a handler that verifies auth/ownership then delegates to a builder function.

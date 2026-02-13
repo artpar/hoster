@@ -331,6 +331,34 @@ export interface CreateCloudProvisionRequest {
   size: string;
 }
 
+// Invoice Types
+export type InvoiceStatus = 'draft' | 'pending' | 'paid' | 'failed';
+
+export interface InvoiceItem {
+  description: string;
+  quantity: number;
+  unit_price_cents: number;
+  total_cents: number;
+}
+
+export interface InvoiceAttributes {
+  user_id: string;
+  period_start: string;
+  period_end: string;
+  items?: InvoiceItem[];
+  subtotal_cents: number;
+  tax_cents: number;
+  total_cents: number;
+  currency: string;
+  status: InvoiceStatus;
+  stripe_payment_url?: string;
+  paid_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type Invoice = JsonApiResource<'invoices', InvoiceAttributes>;
+
 // Provider catalog types (returned by custom actions)
 export interface ProviderRegion {
   id: string;

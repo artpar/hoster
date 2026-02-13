@@ -86,12 +86,14 @@ func AuthMiddleware(store *Store, sharedSecret string, logger *slog.Logger) func
 				PlanID:        planID,
 			}
 
-			// Parse plan limits if present
+			// Parse plan limits from header or derive from plan ID
 			if limitsJSON := r.Header.Get(HeaderPlanLimits); limitsJSON != "" {
 				var limits PlanLimits
 				if err := json.Unmarshal([]byte(limitsJSON), &limits); err == nil {
 					ac.PlanLimits = limits
 				}
+			} else if ac.PlanID != "" {
+				ac.PlanLimits = DefaultPlanLimits(ac.PlanID)
 			}
 
 			r = r.WithContext(WithAuth(r.Context(), ac))
@@ -144,4 +146,34 @@ type PlanLimits struct {
 	MaxMemoryMB         int64    `json:"max_memory_mb"`
 	MaxDiskMB           int64    `json:"max_disk_mb"`
 	AllowedCapabilities []string `json:"allowed_capabilities"`
+}
+
+// DefaultPlanLimits returns the default limits for a plan ID when
+// the X-Plan-Limits header is not injected by APIGate.
+func DefaultPlanLimits(planID string) PlanLimits {
+	switch planID {
+	case "free":
+		return PlanLimits{
+			MaxDeployments: 1,
+			MaxCPUCores:    1,
+			MaxMemoryMB:    1024,
+			MaxDiskMB:      5120,
+		}
+	case "starter":
+		return PlanLimits{
+			MaxDeployments: 5,
+			MaxCPUCores:    4,
+			MaxMemoryMB:    4096,
+			MaxDiskMB:      20480,
+		}
+	case "pro":
+		return PlanLimits{
+			MaxDeployments: 20,
+			MaxCPUCores:    16,
+			MaxMemoryMB:    16384,
+			MaxDiskMB:      102400,
+		}
+	default:
+		return PlanLimits{}
+	}
 }
