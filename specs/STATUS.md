@@ -46,6 +46,16 @@
   - [x] Billing page: costs, invoices, deployments, usage history (`web/src/pages/billing/BillingPage.tsx`)
   - [x] E2E verified: deploy app → invoice auto-generated → pay via Stripe → invoice marked paid
 
+- [x] **Engine Rewrite Regression Fixes (v0.3.39, February 2026)** — Six regressions caught and fixed
+  - [x] **S1 Security**: Cloud provision BeforeCreate verifies credential ownership (prevents cross-user abuse)
+  - [x] **B1 Billing**: Deployment BeforeCreate enforces plan deployment limits + `DefaultPlanLimits` fallback
+  - [x] **D1 Data Integrity**: Template BeforeDelete rejects deletion when active deployments exist (409)
+  - [x] **E1 Domains**: Full domain management — list, add, remove, verify with DNS CNAME checking
+  - [x] **E2 Maintenance**: Node maintenance toggle (POST → maintenance, DELETE → online)
+  - [x] **F1 Invoices Frontend**: Invoice API client + TanStack Query hooks (`web/src/api/invoices.ts`)
+  - [x] Cloud provision retry action handler (failed → pending/destroying)
+  - [x] All regressions E2E verified through Chrome DevTools on local prod setup
+
 ## IN PROGRESS
 
 - [ ] Fix CI npm/rollup issues - see specs/SESSION-HANDOFF.md
@@ -72,13 +82,13 @@ The core deployment loop is fully functional via the generic engine:
 | Schema | `resources.go` | ~300 | Entity definitions as data |
 | Store | `store.go` | ~800 | Generic CRUD + state machine |
 | API | `api.go` | ~530 | Generic JSON:API REST handlers |
-| Setup | `setup.go` | ~270 | Router, middleware, custom actions |
+| Setup | `setup.go` | ~650 | Router, middleware, custom actions, domain/node handlers |
 | Handlers | `handlers.go` | ~350 | Deployment lifecycle commands |
 | Commands | `commands.go` | ~100 | Command bus dispatch |
 | Workers | `workers.go` | ~600 | Health, DNS, provisioner |
-| Auth | `auth_bridge.go` | ~120 | APIGate header extraction |
+| Auth | `auth_bridge.go` | ~180 | APIGate header extraction + default plan limits |
 | Migrate | `migrate.go` | ~120 | File + schema migrations |
-| **Total** | | **~3,400** | |
+| **Total** | | **~4,000** | |
 
 **What was deleted (~13,700 lines):**
 - `shell/store/sqlite.go` (2,640 lines) — per-entity store methods
