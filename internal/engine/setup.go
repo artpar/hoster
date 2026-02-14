@@ -60,7 +60,7 @@ func Setup(cfg SetupConfig) http.Handler {
 	router.HandleFunc("/health", healthHandler(cfg.Version)).Methods("GET")
 	router.HandleFunc("/ready", readyHandler).Methods("GET")
 
-	// Wire SSH key BeforeCreate: compute fingerprint from private key
+	// Wire SSH key BeforeCreate: compute fingerprint + public_key from private key
 	if sshRes := cfg.Store.Resource("ssh_keys"); sshRes != nil {
 		sshRes.BeforeCreate = func(ctx context.Context, authCtx AuthContext, data map[string]any) error {
 			if pk, ok := data["private_key"].(string); ok && pk != "" {
@@ -69,6 +69,13 @@ func Setup(cfg SetupConfig) http.Handler {
 					return fmt.Errorf("invalid SSH private key: %w", err)
 				}
 				data["fingerprint"] = fp
+
+				if _, hasPub := data["public_key"]; !hasPub {
+					pubKey, err := crypto.GetSSHPublicKey([]byte(pk))
+					if err == nil {
+						data["public_key"] = pubKey
+					}
+				}
 			}
 			return nil
 		}
@@ -134,7 +141,7 @@ func Setup(cfg SetupConfig) http.Handler {
 		}
 	}
 
-	// Wire cloud provision BeforeCreate: resolve provider from credential + verify ownership
+	// Wire cloud provision BeforeCreate: resolve provider from credential + verify ownership + auto-generate SSH key
 	if provRes := cfg.Store.Resource("cloud_provisions"); provRes != nil {
 		store := cfg.Store
 		provRes.BeforeCreate = func(ctx context.Context, authCtx AuthContext, data map[string]any) error {
@@ -152,6 +159,31 @@ func Setup(cfg SetupConfig) http.Handler {
 				return fmt.Errorf("access denied: credential does not belong to you")
 			}
 			data["provider"] = strVal(cred["provider"])
+
+			// Auto-generate SSH key pair for the provision
+			privateKeyPEM, publicKey, err := crypto.GenerateSSHKeyPair()
+			if err != nil {
+				return fmt.Errorf("generate SSH key pair: %w", err)
+			}
+
+			fingerprint, err := crypto.GetSSHPublicKeyFingerprint(privateKeyPEM)
+			if err != nil {
+				return fmt.Errorf("compute SSH key fingerprint: %w", err)
+			}
+
+			instanceName := strVal(data["instance_name"])
+			sshKeyRow, err := store.Create(ctx, "ssh_keys", map[string]any{
+				"creator_id":  authCtx.UserID,
+				"name":        "cloud-" + instanceName,
+				"private_key": string(privateKeyPEM),
+				"public_key":  publicKey,
+				"fingerprint": fingerprint,
+			})
+			if err != nil {
+				return fmt.Errorf("create SSH key: %w", err)
+			}
+
+			data["ssh_key_id"] = strVal(sshKeyRow["reference_id"])
 			return nil
 		}
 	}
@@ -276,11 +308,16 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 			return
 		}
 
-		// Dispatch command
+		// Dispatch command in background so the HTTP response returns immediately.
+		// Long-running commands (like StartDeployment) would otherwise block the
+		// response and risk context cancellation when the client disconnects.
 		if cmd != "" && cfg.Bus != nil {
-			if err := cfg.Bus.Dispatch(ctx, cmd, row); err != nil {
-				cfg.Logger.Error("command dispatch failed", "command", cmd, "error", err)
-			}
+			go func() {
+				bgCtx := context.Background()
+				if err := cfg.Bus.Dispatch(bgCtx, cmd, row); err != nil {
+					cfg.Logger.Error("command dispatch failed", "command", cmd, "error", err)
+				}
+			}()
 		}
 
 		res := cfg.Store.Resource("deployments")
@@ -326,9 +363,12 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 		}
 
 		if cmd != "" && cfg.Bus != nil {
-			if err := cfg.Bus.Dispatch(ctx, cmd, row); err != nil {
-				cfg.Logger.Error("command dispatch failed", "command", cmd, "error", err)
-			}
+			go func() {
+				bgCtx := context.Background()
+				if err := cfg.Bus.Dispatch(bgCtx, cmd, row); err != nil {
+					cfg.Logger.Error("command dispatch failed", "command", cmd, "error", err)
+				}
+			}()
 		}
 
 		res := cfg.Store.Resource("deployments")

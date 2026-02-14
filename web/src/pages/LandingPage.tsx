@@ -68,15 +68,15 @@ export function LandingPage() {
               <Button variant="ghost">Marketplace</Button>
             </Link>
             {isAuthenticated ? (
-              <Link to="/dashboard">
+              <Link to="/home">
                 <Button>Dashboard</Button>
               </Link>
             ) : (
               <>
-                <Link to="/login">
+                <Link to="/sign-in">
                   <Button variant="ghost">Sign In</Button>
                 </Link>
-                <Link to="/signup">
+                <Link to="/sign-up">
                   <Button>Get Started</Button>
                 </Link>
               </>
@@ -102,7 +102,7 @@ export function LandingPage() {
                 Browse Apps <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
-            <Link to="/signup">
+            <Link to="/sign-up">
               <Button size="lg" variant="outline">
                 Create Account
               </Button>
@@ -158,7 +158,7 @@ export function LandingPage() {
             Sign up, connect a server, and deploy your first app. Free to start.
           </p>
           <div className="mt-8 flex items-center justify-center gap-4">
-            <Link to="/signup">
+            <Link to="/sign-up">
               <Button size="lg" variant="secondary" className="gap-2">
                 Create Free Account <ArrowRight className="h-4 w-4" />
               </Button>

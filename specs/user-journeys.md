@@ -1,5 +1,26 @@
 # Hoster User Journey Book
 
+## End-to-End User Journeys
+
+The `specs/journeys/` directory contains 8 end-to-end user journeys — complete stories from motivation through resolution, crossing multiple features and pages. Use these for validating the platform works as a coherent product.
+
+| Journey | Persona | Goal |
+|---------|---------|------|
+| [UJ1: Discovery](journeys/UJ1-discovery.md) | Visitor | Understand the platform and decide whether to commit |
+| [UJ2: First Deployment](journeys/UJ2-first-deployment.md) | New Customer | Go from zero to a running app |
+| [UJ3: Day-2 Operations](journeys/UJ3-day2-operations.md) | Returning Customer | Monitor health, review logs, manage lifecycle |
+| [UJ4: Infrastructure Scaling](journeys/UJ4-infrastructure-scaling.md) | Operator | Add cloud capacity via provisioning |
+| [UJ5: Creator Monetization](journeys/UJ5-creator-monetization.md) | Creator | Package and publish a template |
+| [UJ6: Billing Cycle](journeys/UJ6-billing-cycle.md) | Customer | Review costs and pay invoices |
+| [UJ7: Session Recovery](journeys/UJ7-session-recovery.md) | Customer | Re-authenticate after session expiry |
+| [UJ8: Teardown & Cleanup](journeys/UJ8-teardown-cleanup.md) | Customer | Stop, delete a deployment, verify no charges |
+
+---
+
+## Feature-Level Acceptance Checklists (J1-J20)
+
+The sections below are per-feature acceptance checklists useful for targeted testing. They are composable steps within the journeys above — not journeys themselves.
+
 ## Personas
 
 ### Visitor

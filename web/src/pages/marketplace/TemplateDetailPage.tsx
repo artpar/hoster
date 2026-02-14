@@ -71,7 +71,7 @@ export function TemplateDetailPage() {
           inServices = true;
           continue;
         }
-        if (inServices && line.match(/^  [a-zA-Z0-9_-]+:$/)) {
+        if (inServices && line.match(/^\s+[a-zA-Z0-9_.-]+:\s*$/)) {
           services.push(line.trim().replace(':', ''));
         }
         if (inServices && line.match(/^[a-zA-Z]/) && !line.startsWith(' ')) {
@@ -212,7 +212,7 @@ export function TemplateDetailPage() {
         title="Authentication Required"
         description="You need to sign in to deploy templates. Your session may have expired. Please sign in to continue."
         buttonLabel="Sign In"
-        onConfirm={() => { window.location.href = '/login'; }}
+        onConfirm={() => { window.location.href = '/sign-in'; }}
       />
     </div>
   );

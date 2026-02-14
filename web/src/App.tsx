@@ -31,15 +31,15 @@ export default function App() {
       <Route path="/" element={<LandingPage />} />
 
       {/* Auth pages - no layout */}
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/signup" element={<SignupPage />} />
+      <Route path="/sign-in" element={<LoginPage />} />
+      <Route path="/sign-up" element={<SignupPage />} />
 
       {/* Main app routes with layout */}
       <Route element={<Layout />}>
 
         {/* Dashboard - Requires Auth */}
         <Route
-          path="dashboard"
+          path="home"
           element={
             <ProtectedRoute>
               <DashboardPage />

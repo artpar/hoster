@@ -99,14 +99,14 @@ export function DeployDialog({
         name: name.toLowerCase(),
         template_id: template.id,
         custom_domain: customDomain || undefined,
-        config_overrides: configOverrides,
+        environment_variables: configOverrides,
         node_id: selectedNodeId,
       });
       // Always auto-start — node is required
       try {
         await startDeployment.mutateAsync(deployment.id);
-      } catch {
-        // Start failed but deployment was created - navigate anyway
+      } catch (startErr) {
+        console.warn('Auto-start failed:', startErr);
       }
       onOpenChange(false);
       onSuccess(deployment.id);

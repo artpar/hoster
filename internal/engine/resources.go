@@ -164,6 +164,7 @@ func SSHKeyResource() Resource {
 			RefField("creator_id", "users").WithInternal(),
 			StringField("name").WithRequired(),
 			TextField("private_key").WithWriteOnly().WithEncrypted(),
+			TextField("public_key").WithNullable(),
 			StringField("fingerprint").WithNullable(),
 		},
 	}

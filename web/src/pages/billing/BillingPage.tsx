@@ -22,7 +22,7 @@ interface Invoice {
   attributes: {
     period_start: string;
     period_end: string;
-    items: string;
+    items: unknown;
     subtotal_cents: number;
     tax_cents: number;
     total_cents: number;
@@ -55,20 +55,19 @@ export function BillingPage() {
         setInvoices(list);
         setInvoicesLoading(false);
       })
-      .catch(() => setInvoicesLoading(false));
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Failed to load invoices');
+        setInvoicesLoading(false);
+      });
   }, []);
 
   useEffect(() => {
     if (!user) return;
-    const token = JSON.parse(localStorage.getItem('hoster-auth') || '{}')?.state?.token;
-    if (!token) { setEventsLoading(false); return; }
 
-    fetch(`/api/v1/meter?user_id=${user.id}&page[size]=50`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    })
-      .then((r) => r.json())
+    api.get<UsageEvent[]>(`/meter?user_id=${user.id}&page[size]=50`)
       .then((data) => {
-        setUsageEvents(data.data || []);
+        const list = Array.isArray(data.data) ? data.data : data.data ? [data.data] : [];
+        setUsageEvents(list);
         setEventsLoading(false);
       })
       .catch(() => setEventsLoading(false));
@@ -84,25 +83,20 @@ export function BillingPage() {
     const sessionId = searchParams.get('session_id');
 
     if (payment === 'success' && sessionId) {
-      const token = JSON.parse(localStorage.getItem('hoster-auth') || '{}')?.state?.token;
-      if (token) {
-        fetch(`/api/v1/billing/verify-payment?session_id=${sessionId}`, {
-          headers: { 'Authorization': `Bearer ${token}` },
+      api.get<{ paid: boolean }>(`/billing/verify-payment?session_id=${sessionId}`)
+        .then((data) => {
+          const result = data.data as { paid?: boolean } | null;
+          if (result?.paid) {
+            setSuccessMessage('Payment successful! Invoice has been marked as paid.');
+          } else {
+            setSuccessMessage('Payment is being processed. It may take a moment to update.');
+          }
+          fetchInvoices();
         })
-          .then((r) => r.json())
-          .then((data) => {
-            if (data.data?.paid) {
-              setSuccessMessage('Payment successful! Invoice has been marked as paid.');
-            } else {
-              setSuccessMessage('Payment is being processed. It may take a moment to update.');
-            }
-            fetchInvoices();
-          })
-          .catch(() => {
-            setSuccessMessage('Payment received. Verifying status...');
-            fetchInvoices();
-          });
-      }
+        .catch(() => {
+          setSuccessMessage('Payment received. Verifying status...');
+          fetchInvoices();
+        });
       // Clean URL params
       setSearchParams({});
     } else if (payment === 'cancelled') {
@@ -140,25 +134,13 @@ export function BillingPage() {
     setPaying(invoiceId);
     setError(null);
     try {
-      const token = JSON.parse(localStorage.getItem('hoster-auth') || '{}')?.state?.token;
-      const resp = await fetch(`/api/v1/invoices/${invoiceId}/pay`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          success_url: `${window.location.origin}/billing?payment=success`,
-          cancel_url: `${window.location.origin}/billing?payment=cancelled`,
-        }),
+      const data = await api.post<{ checkout_url?: string }>(`/invoices/${invoiceId}/pay`, {
+        success_url: `${window.location.origin}/billing?payment=success`,
+        cancel_url: `${window.location.origin}/billing?payment=cancelled`,
       });
-      if (!resp.ok) {
-        const err = await resp.json();
-        throw new Error(err.error?.detail || err.errors?.[0]?.detail || `Failed (${resp.status})`);
-      }
-      const data = await resp.json();
-      if (data.data?.checkout_url) {
-        window.location.href = data.data.checkout_url;
+      const result = data.data as { checkout_url?: string } | null;
+      if (result?.checkout_url) {
+        window.location.href = result.checkout_url;
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create checkout');
@@ -432,12 +414,12 @@ interface InvoiceLineItem {
   description: string;
 }
 
-function parseItems(itemsStr: string): InvoiceLineItem[] {
-  try {
-    return JSON.parse(itemsStr || '[]');
-  } catch {
-    return [];
+function parseItems(items: unknown): InvoiceLineItem[] {
+  if (Array.isArray(items)) return items;
+  if (typeof items === 'string') {
+    try { return JSON.parse(items || '[]'); } catch { return []; }
   }
+  return [];
 }
 
 function formatDate(dateStr: string): string {

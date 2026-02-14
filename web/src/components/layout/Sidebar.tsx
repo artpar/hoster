@@ -9,7 +9,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/home', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/templates', icon: Store, label: 'Templates' },
   { to: '/deployments', icon: Layers, label: 'My Deployments' },
   { to: '/nodes', icon: Server, label: 'My Nodes' },

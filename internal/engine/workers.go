@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"sync"
 	"time"
 
@@ -259,11 +260,28 @@ func (p *Provisioner) stepCreate(ctx context.Context, row map[string]any) {
 	region := strVal(row["region"])
 	size := strVal(row["size"])
 
+	// Resolve SSH public key from the linked ssh_key
+	sshKeyRefID := strVal(row["ssh_key_id"])
+	var sshPublicKey string
+	if sshKeyRefID != "" {
+		sshKey, err := p.store.Get(ctx, "ssh_keys", sshKeyRefID)
+		if err != nil {
+			p.failProvision(ctx, refID, "lookup SSH key: "+err.Error())
+			return
+		}
+		sshPublicKey = strVal(sshKey["public_key"])
+	}
+	if sshPublicKey == "" {
+		p.failProvision(ctx, refID, "SSH public key is empty — cannot provision without an SSH key")
+		return
+	}
+
 	// Create instance
 	result, err := prov.CreateInstance(ctx, provider.ProvisionRequest{
 		InstanceName: instanceName,
 		Region:       region,
 		Size:         size,
+		SSHPublicKey: sshPublicKey,
 	})
 	if err != nil {
 		p.failProvision(ctx, refID, "create instance: "+err.Error())
@@ -295,22 +313,81 @@ func (p *Provisioner) stepConfigure(ctx context.Context, row map[string]any) {
 
 func (p *Provisioner) stepFinalize(ctx context.Context, row map[string]any) {
 	refID := strVal(row["reference_id"])
+	publicIP := strVal(row["public_ip"])
 
-	// Transition to ready
+	// Wait for SSH port to be reachable before creating the node.
+	// New cloud instances take 30-90s for SSH to accept connections after the
+	// provider API reports the instance as active. Use a short dial timeout
+	// so we don't block the provisioner cycle — we'll retry next cycle (5s).
+	// Fail after 5 minutes to avoid stuck provisions.
+	if created, ok := row["created_at"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, created); err == nil {
+			if time.Since(t) > 5*time.Minute {
+				p.failProvision(ctx, refID, "SSH not reachable after 5 minutes on "+publicIP+":22")
+				return
+			}
+		}
+	}
+
+	conn, err := net.DialTimeout("tcp", publicIP+":22", 3*time.Second)
+	if err != nil {
+		p.logger.Debug("SSH not yet reachable, will retry next cycle", "provision", refID, "ip", publicIP)
+		p.store.Update(ctx, "cloud_provisions", refID, map[string]any{
+			"current_step": "waiting_for_ssh",
+		})
+		return // Stay in configuring, retry on next 5s cycle
+	}
+	conn.Close()
+	p.logger.Info("SSH reachable", "provision", refID, "ip", publicIP)
+
+	// Resolve ssh_key_id (SoftRefField = reference_id) → integer PK for node's RefField
+	sshKeyRefID := strVal(row["ssh_key_id"])
+	var sshKeyIntID int
+	if sshKeyRefID != "" {
+		sshKey, err := p.store.Get(ctx, "ssh_keys", sshKeyRefID)
+		if err != nil {
+			p.failProvision(ctx, refID, "lookup SSH key for node: "+err.Error())
+			return
+		}
+		if id, ok := toInt64(sshKey["id"]); ok {
+			sshKeyIntID = int(id)
+		}
+	}
+
+	creatorID, _ := toInt64(row["creator_id"])
+	instanceName := strVal(row["instance_name"])
+	providerType := strVal(row["provider"])
+
+	// Create node entry from the completed provision
+	nodeRow, err := p.store.Create(ctx, "nodes", map[string]any{
+		"name":          instanceName,
+		"ssh_host":      publicIP,
+		"ssh_port":      22,
+		"ssh_user":      "root",
+		"ssh_key_id":    sshKeyIntID,
+		"creator_id":    int(creatorID),
+		"provider_type": providerType,
+		"provision_id":  refID,
+		"status":        "online",
+		"docker_socket": "/var/run/docker.sock",
+	})
+	if err != nil {
+		p.failProvision(ctx, refID, "create node: "+err.Error())
+		return
+	}
+
+	nodeRefID := strVal(nodeRow["reference_id"])
+
+	// Transition provision to ready
 	now := time.Now().UTC().Format(time.RFC3339)
 	p.store.Update(ctx, "cloud_provisions", refID, map[string]any{
 		"current_step": "ready",
 		"completed_at": now,
+		"node_id":      nodeRefID,
 	})
 	p.store.Transition(ctx, "cloud_provisions", refID, "ready")
 
-	// Trigger health check on the new node if it was linked
-	nodeID := strVal(row["node_id"])
-	if nodeID != "" && p.healthChecker != nil {
-		p.healthChecker.CheckNode(ctx, nodeID)
-	}
-
-	p.logger.Info("provision ready", "provision", refID)
+	p.logger.Info("provision ready", "provision", refID, "node", nodeRefID)
 }
 
 func (p *Provisioner) stepDestroy(ctx context.Context, row map[string]any) {

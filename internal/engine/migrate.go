@@ -118,6 +118,7 @@ func runSchemaMigrations(db *sqlx.DB, resources []Resource, logger *slog.Logger)
 	alterStatements = append(alterStatements,
 		`ALTER TABLE nodes ADD COLUMN public INTEGER DEFAULT 0`,
 		`ALTER TABLE ssh_keys RENAME COLUMN private_key_encrypted TO private_key`,
+		`ALTER TABLE ssh_keys ADD COLUMN public_key TEXT`,
 		`ALTER TABLE cloud_credentials RENAME COLUMN credentials_encrypted TO credentials`,
 	)
 

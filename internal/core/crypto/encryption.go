@@ -8,10 +8,13 @@ package crypto
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 
 	"golang.org/x/crypto/ssh"
@@ -198,6 +201,30 @@ func GetSSHPublicKeyFingerprint(privateKey []byte) (string, error) {
 	// Calculate SHA256 fingerprint
 	hash := sha256.Sum256(pubKey.Marshal())
 	return "SHA256:" + base64.StdEncoding.EncodeToString(hash[:]), nil
+}
+
+// GenerateSSHKeyPair generates a new Ed25519 SSH key pair.
+// Returns the private key in PEM format and the public key in OpenSSH authorized_keys format.
+func GenerateSSHKeyPair() (privateKeyPEM []byte, publicKey string, err error) {
+	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, "", fmt.Errorf("generate ed25519 key: %w", err)
+	}
+
+	sshPrivKey, err := ssh.MarshalPrivateKey(privKey, "")
+	if err != nil {
+		return nil, "", fmt.Errorf("marshal private key: %w", err)
+	}
+
+	pemBytes := pem.EncodeToMemory(sshPrivKey)
+
+	sshPubKey, err := ssh.NewPublicKey(pubKey)
+	if err != nil {
+		return nil, "", fmt.Errorf("create public key: %w", err)
+	}
+
+	authorizedKey := string(ssh.MarshalAuthorizedKey(sshPubKey))
+	return pemBytes, authorizedKey, nil
 }
 
 // GetSSHPublicKey returns the OpenSSH authorized_keys format public key

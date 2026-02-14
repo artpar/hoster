@@ -86,7 +86,7 @@ export function ProvisionNodeForm() {
         </Link>
         <CardTitle>Create Cloud Server</CardTitle>
         <CardDescription>
-          Create a new server instance on a cloud provider. It will be automatically configured and registered as a node.
+          Create a new server instance on a cloud provider. An SSH key will be generated automatically and the server will be registered as a node once provisioning completes.
         </CardDescription>
       </CardHeader>
 

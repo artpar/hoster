@@ -90,7 +90,7 @@ export function LoginPage() {
 
             <p className="text-sm text-center text-gray-600">
               Don't have an account?{' '}
-              <Link to="/signup" className="text-blue-600 hover:text-blue-500 font-medium">
+              <Link to="/sign-up" className="text-blue-600 hover:text-blue-500 font-medium">
                 Sign up
               </Link>
             </p>

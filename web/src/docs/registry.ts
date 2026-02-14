@@ -84,10 +84,10 @@ export const logStreams: Record<'stdout' | 'stderr', DocEntry> = {
 
 // --- PAGE DOCUMENTATION ---
 export const pages: Record<
-  'dashboard' | 'templates' | 'templateDetail' | 'deployments' | 'deploymentDetail' | 'nodes' | 'sshKeys',
+  'home' | 'templates' | 'templateDetail' | 'deployments' | 'deploymentDetail' | 'nodes' | 'sshKeys',
   PageDoc
 > = {
-  dashboard: {
+  home: {
     title: 'Dashboard',
     subtitle: 'Overview of your deployments, templates, and infrastructure at a glance.',
     sections: {

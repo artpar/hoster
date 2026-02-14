@@ -59,6 +59,9 @@ export async function apiClient<T>(
         }],
       };
     }
+    if (response.status === 401) {
+      useAuthStore.getState().clearAuth();
+    }
     throw new ApiError(errorData, response.status);
   }
 

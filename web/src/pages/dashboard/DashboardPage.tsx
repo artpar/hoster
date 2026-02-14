@@ -15,7 +15,7 @@ import { StatusBadge } from '@/components/common/StatusBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { pages } from '@/docs/registry';
 
-const pageDocs = pages.dashboard;
+const pageDocs = pages.home;
 
 export function DashboardPage() {
   const { data: templates, isLoading: templatesLoading } = useTemplates({ scope: 'mine' });

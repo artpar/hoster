@@ -56,7 +56,7 @@ export function Header({ onMenuToggle }: HeaderProps) {
               </Button>
             </div>
           ) : (
-            <Link to="/login">
+            <Link to="/sign-in">
               <Button variant="ghost" size="sm">Sign In</Button>
             </Link>
           )}
