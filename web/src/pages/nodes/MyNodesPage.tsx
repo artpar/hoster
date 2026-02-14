@@ -23,7 +23,7 @@ function isTabActive(tab: typeof tabs[number], pathname: string): boolean {
 
 export function MyNodesPage() {
   const location = useLocation();
-  const { data: nodes } = useNodes();
+  const { data: nodes } = useNodes({ scope: 'mine' });
   const { data: provisions } = useCloudProvisions();
   const { data: credentials } = useCloudCredentials();
   const [guideOpen, setGuideOpen] = useState(false);
