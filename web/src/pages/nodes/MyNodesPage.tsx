@@ -12,7 +12,7 @@ const pageDocs = pages.nodes;
 
 const tabs = [
   { to: '/nodes', label: 'Nodes', matchPrefixes: ['/nodes/new', '/nodes/new-key'] },
-  { to: '/nodes/cloud', label: 'Cloud Servers', matchPrefixes: ['/nodes/cloud'] },
+  { to: '/nodes/cloud', label: 'Provisioning', matchPrefixes: ['/nodes/cloud'] },
   { to: '/nodes/credentials', label: 'Credentials', matchPrefixes: ['/nodes/credentials'] },
 ] as const;
 
@@ -34,7 +34,7 @@ export function MyNodesPage() {
 
   const counts: Record<string, number> = {
     '/nodes': nodes?.length || 0,
-    '/nodes/cloud': activeProvisions.length,
+    '/nodes/cloud': activeProvisions.length > 0 ? activeProvisions.length : (provisions?.length || 0),
     '/nodes/credentials': credentials?.length || 0,
   };
 

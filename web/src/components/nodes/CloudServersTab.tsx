@@ -1,11 +1,19 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Cloud } from 'lucide-react';
+import { Plus, Cloud, Server, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCloudProvisions, useDeleteCloudProvision, useRetryProvision } from '@/hooks/useCloudProvisions';
 import { EmptyState } from '@/components/common/EmptyState';
 import { ProvisionCard } from './ProvisionCard';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { Badge } from '@/components/ui/Badge';
+import { provisionStatusBadge } from '@/components/cloud';
+
+const providerLabels: Record<string, string> = {
+  aws: 'AWS',
+  digitalocean: 'DigitalOcean',
+  hetzner: 'Hetzner',
+};
 
 export function CloudServersTab() {
   const { data: provisions, isLoading } = useCloudProvisions();
@@ -15,8 +23,18 @@ export function CloudServersTab() {
   const [destroyDialog, setDestroyDialog] = useState<{ open: boolean; id: string; name: string }>({ open: false, id: '', name: '' });
 
   const activeProvisions = provisions?.filter(
-    (p) => p.attributes.status !== 'ready' && p.attributes.status !== 'destroyed'
+    (p) => !['ready', 'destroyed'].includes(p.attributes.status)
   ) || [];
+
+  const completedProvisions = provisions?.filter(
+    (p) => p.attributes.status === 'ready'
+  ) || [];
+
+  const destroyedProvisions = provisions?.filter(
+    (p) => p.attributes.status === 'destroyed'
+  ) || [];
+
+  const hasAny = (provisions?.length || 0) > 0;
 
   return (
     <>
@@ -27,7 +45,7 @@ export function CloudServersTab() {
           className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
         >
           <Plus className="h-4 w-4" />
-          Create Cloud Server
+          Provision Cloud Server
         </Link>
       </div>
 
@@ -36,35 +54,108 @@ export function CloudServersTab() {
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
-      ) : activeProvisions.length === 0 ? (
+      ) : !hasAny ? (
         <EmptyState
           icon={Cloud}
-          title="No cloud servers"
-          description="Create a cloud server instance on AWS, DigitalOcean, or Hetzner. It will be automatically configured and registered as a node."
+          title="No provisioning history"
+          description="Provision a cloud server on AWS, DigitalOcean, or Hetzner. It will be automatically configured and added to your Nodes."
           action={
             <Link
               to="/nodes/cloud/new"
               className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
             >
               <Plus className="h-4 w-4" />
-              Create Cloud Server
+              Provision Cloud Server
             </Link>
           }
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {activeProvisions.map((provision) => (
-            <ProvisionCard
-              key={provision.id}
-              provision={provision}
-              onRetry={(id) => retryProvision.mutate(id)}
-              onDestroy={(id) => {
-                const prov = activeProvisions.find((p) => p.id === id);
-                setDestroyDialog({ open: true, id, name: prov?.attributes.instance_name || '' });
-              }}
-              isRetrying={retryProvision.isPending}
-            />
-          ))}
+        <div className="space-y-6">
+          {/* Active provisions */}
+          {activeProvisions.length > 0 && (
+            <div>
+              <h3 className="mb-3 text-sm font-medium text-muted-foreground uppercase tracking-wider">In Progress</h3>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {activeProvisions.map((provision) => (
+                  <ProvisionCard
+                    key={provision.id}
+                    provision={provision}
+                    onRetry={(id) => retryProvision.mutate(id)}
+                    onDestroy={(id) => {
+                      const prov = activeProvisions.find((p) => p.id === id);
+                      setDestroyDialog({ open: true, id, name: prov?.attributes.instance_name || '' });
+                    }}
+                    isRetrying={retryProvision.isPending}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Completed provisions — became nodes */}
+          {completedProvisions.length > 0 && (
+            <div>
+              <h3 className="mb-3 text-sm font-medium text-muted-foreground uppercase tracking-wider">Completed</h3>
+              <div className="space-y-2">
+                {completedProvisions.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between rounded-lg border px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <Server className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <span className="font-medium">{p.attributes.instance_name}</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                            {providerLabels[p.attributes.provider] || p.attributes.provider}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">{p.attributes.region}</span>
+                          {p.attributes.public_ip && (
+                            <span className="text-xs font-mono text-muted-foreground">{p.attributes.public_ip}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {provisionStatusBadge(p.attributes.status)}
+                      {p.attributes.node_id && (
+                        <Link
+                          to="/nodes"
+                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                        >
+                          View Node <ExternalLink className="h-3 w-3" />
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Destroyed provisions */}
+          {destroyedProvisions.length > 0 && (
+            <div>
+              <h3 className="mb-3 text-sm font-medium text-muted-foreground uppercase tracking-wider">Destroyed</h3>
+              <div className="space-y-2">
+                {destroyedProvisions.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between rounded-lg border border-dashed px-4 py-3 opacity-60">
+                    <div className="flex items-center gap-3">
+                      <Cloud className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <span className="font-medium">{p.attributes.instance_name}</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                            {providerLabels[p.attributes.provider] || p.attributes.provider}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">{p.attributes.region}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {provisionStatusBadge(p.attributes.status)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
