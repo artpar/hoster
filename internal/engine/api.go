@@ -131,9 +131,9 @@ func listHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 			rows = visible
 		}
 
-		// Strip write-only and internal fields from responses
+		// Strip write-only, owner-only, and internal fields from responses
 		for _, row := range rows {
-			stripFields(res, row, cfg.Store)
+			stripFields(res, row, cfg.Store, authCtx)
 		}
 
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -184,7 +184,7 @@ func getHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 			}
 		}
 
-		stripFields(res, row, cfg.Store)
+		stripFields(res, row, cfg.Store, authCtx)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": rowToJSONAPI(res.Name, row),
 		})
@@ -250,7 +250,7 @@ func createHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 			res.AfterCreate(ctx, authCtx, row)
 		}
 
-		stripFields(res, row, cfg.Store)
+		stripFields(res, row, cfg.Store, authCtx)
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"data": rowToJSONAPI(res.Name, row),
 		})
@@ -319,7 +319,7 @@ func updateHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 			return
 		}
 
-		stripFields(res, row, cfg.Store)
+		stripFields(res, row, cfg.Store, authCtx)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": rowToJSONAPI(res.Name, row),
 		})
@@ -465,7 +465,7 @@ func transitionHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 			}
 		}
 
-		stripFields(res, row, cfg.Store)
+		stripFields(res, row, cfg.Store, authCtx)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": rowToJSONAPI(res.Name, row),
 		})
@@ -539,12 +539,25 @@ func resolveRefFields(res *Resource, data map[string]any, store *Store) error {
 	return nil
 }
 
-// stripFields removes write-only fields and resolves ref field integer IDs
-// to reference_ids for API responses.
-func stripFields(res *Resource, row map[string]any, store *Store) {
+// stripFields removes write-only fields, owner-only fields for non-owners,
+// and resolves ref field integer IDs to reference_ids for API responses.
+func stripFields(res *Resource, row map[string]any, store *Store, authCtx AuthContext) {
+	// Determine if the current user is the owner of this resource
+	isOwner := false
+	if res.Owner != "" && authCtx.Authenticated {
+		if ownerID, ok := toInt64(row[res.Owner]); ok {
+			isOwner = int(ownerID) == authCtx.UserID
+		}
+	}
+
 	for _, f := range res.Fields {
 		if f.WriteOnly {
 			delete(row, f.Name)
+			continue
+		}
+		if f.OwnerOnly && !isOwner {
+			delete(row, f.Name)
+			continue
 		}
 		// Resolve FK integer IDs to reference_ids
 		if f.RefTable != "" && store != nil {

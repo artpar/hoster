@@ -43,6 +43,7 @@ type Field struct {
 	WriteOnly    bool // If true, never included in GET responses (e.g., private_key)
 	Encrypted    bool // If true, value is encrypted at rest
 	Internal     bool // If true, not settable via API (e.g., creator_id set from auth)
+	OwnerOnly    bool // If true, only visible to the resource owner (stripped for non-owners)
 }
 
 // GuardFunc checks whether a state transition is allowed given the current row.
@@ -232,6 +233,9 @@ func (f Field) WithEncrypted() Field { f.Encrypted = true; return f }
 
 // WithInternal marks the field as internal (set by system, not API).
 func (f Field) WithInternal() Field { f.Internal = true; return f }
+
+// WithOwnerOnly marks the field as visible only to the resource owner.
+func (f Field) WithOwnerOnly() Field { f.OwnerOnly = true; return f }
 
 // =============================================================================
 // Guard helpers

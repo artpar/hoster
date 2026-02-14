@@ -250,7 +250,7 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 		}
 
 		res := cfg.Store.Resource("templates")
-		stripFields(res, row, cfg.Store)
+		stripFields(res, row, cfg.Store, authCtx)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": rowToJSONAPI("templates", row),
 		})
@@ -321,7 +321,7 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 		}
 
 		res := cfg.Store.Resource("deployments")
-		stripFields(res, row, cfg.Store)
+		stripFields(res, row, cfg.Store, authCtx)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": rowToJSONAPI("deployments", row),
 		})
@@ -372,7 +372,7 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 		}
 
 		res := cfg.Store.Resource("deployments")
-		stripFields(res, row, cfg.Store)
+		stripFields(res, row, cfg.Store, authCtx)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": rowToJSONAPI("deployments", row),
 		})
@@ -550,7 +550,7 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 		}
 
 		res := cfg.Store.Resource("cloud_provisions")
-		stripFields(res, row, cfg.Store)
+		stripFields(res, row, cfg.Store, authCtx)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": rowToJSONAPI("cloud_provisions", row),
 		})
@@ -641,7 +641,7 @@ func nodeMaintenanceHandler(cfg SetupConfig) http.HandlerFunc {
 		}
 
 		res := cfg.Store.Resource("nodes")
-		stripFields(res, row, cfg.Store)
+		stripFields(res, row, cfg.Store, authCtx)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": rowToJSONAPI("nodes", row),
 		})
