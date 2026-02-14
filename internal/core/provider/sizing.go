@@ -134,3 +134,13 @@ func StaticSizes(provider string) []InstanceSize {
 		return nil
 	}
 }
+
+// LookupSize returns the InstanceSize for a given provider and size ID, or nil if not found.
+func LookupSize(provider, sizeID string) *InstanceSize {
+	for _, s := range StaticSizes(provider) {
+		if s.ID == sizeID {
+			return &s
+		}
+	}
+	return nil
+}

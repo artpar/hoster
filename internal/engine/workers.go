@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/artpar/hoster/internal/core/crypto"
+	coreprovider "github.com/artpar/hoster/internal/core/provider"
 	"github.com/artpar/hoster/internal/shell/docker"
 	"github.com/artpar/hoster/internal/shell/provider"
 )
@@ -357,9 +358,10 @@ func (p *Provisioner) stepFinalize(ctx context.Context, row map[string]any) {
 	creatorID, _ := toInt64(row["creator_id"])
 	instanceName := strVal(row["instance_name"])
 	providerType := strVal(row["provider"])
+	sizeID := strVal(row["size"])
 
 	// Create node entry from the completed provision
-	nodeRow, err := p.store.Create(ctx, "nodes", map[string]any{
+	nodeData := map[string]any{
 		"name":          instanceName,
 		"ssh_host":      publicIP,
 		"ssh_port":      22,
@@ -370,7 +372,17 @@ func (p *Provisioner) stepFinalize(ctx context.Context, row map[string]any) {
 		"provision_id":  refID,
 		"status":        "online",
 		"docker_socket": "/var/run/docker.sock",
-	})
+	}
+
+	// Populate capacity from the static size catalog
+	if spec := coreprovider.LookupSize(providerType, sizeID); spec != nil {
+		nodeData["capacity_cpu_cores"] = spec.CPUCores
+		nodeData["capacity_memory_mb"] = spec.MemoryMB
+		nodeData["capacity_disk_mb"] = spec.DiskGB * 1024
+		nodeData["location"] = strVal(row["region"])
+	}
+
+	nodeRow, err := p.store.Create(ctx, "nodes", nodeData)
 	if err != nil {
 		p.failProvision(ctx, refID, "create node: "+err.Error())
 		return
