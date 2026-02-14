@@ -160,7 +160,7 @@ func startDeployment(ctx context.Context, deps *Deps, data map[string]any) error
 	}
 
 	// Start via orchestrator
-	orchestrator := docker.NewOrchestrator(client, logger, configDir, nil)
+	orchestrator := docker.NewOrchestrator(client, logger, configDir, store)
 	containers, err := orchestrator.StartDeployment(ctx, depl, composeSpec, configFiles)
 	if err != nil {
 		return failDeployment(ctx, store, refID, fmt.Sprintf("failed to start containers: %v", err))

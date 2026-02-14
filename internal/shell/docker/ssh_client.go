@@ -385,7 +385,12 @@ func (c *SSHDockerClient) execMinion(ctx context.Context, command string, args [
 	var stdout bytes.Buffer
 	session.Stdout = &stdout
 
-	// Run command with timeout
+	// Run command with timeout — use context deadline if set, else default
+	cmdTimeout := c.timeout
+	if deadline, ok := ctx.Deadline(); ok {
+		cmdTimeout = time.Until(deadline)
+	}
+
 	done := make(chan error, 1)
 	go func() {
 		done <- session.Run(cmdStr)
@@ -394,8 +399,8 @@ func (c *SSHDockerClient) execMinion(ctx context.Context, command string, args [
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case <-time.After(c.timeout):
-		return nil, fmt.Errorf("command timeout after %v", c.timeout)
+	case <-time.After(cmdTimeout):
+		return nil, fmt.Errorf("command timeout after %v", cmdTimeout)
 	case err := <-done:
 		// Parse response even if there was an exit error - minion writes JSON errors
 		resp, parseErr := minion.ParseResponse(stdout.Bytes())
@@ -762,7 +767,9 @@ func (c *SSHDockerClient) RemoveVolume(volumeName string, force bool) error {
 
 // PullImage pulls an image from a registry.
 func (c *SSHDockerClient) PullImage(imageName string, opts PullOptions) error {
-	ctx := context.Background()
+	// Image pulls can take minutes for large images — use a 10-minute timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
 
 	args := []string{imageName}
 	if opts.Platform != "" {

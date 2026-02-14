@@ -114,10 +114,15 @@ func (o *Orchestrator) StartDeployment(ctx context.Context, deployment *domain.D
 		}
 		exists, _ := o.docker.ImageExists(svc.Image)
 		if !exists {
+			o.recordEvent(ctx, deployment.ID, deployment.ReferenceID, domain.EventImagePulling, svc.Image)
 			o.logger.Info("pulling image", "image", svc.Image)
 			if err := o.docker.PullImage(svc.Image, PullOptions{}); err != nil {
-				o.logger.Warn("failed to pull image, trying anyway", "image", svc.Image, "error", err)
+				return nil, fmt.Errorf("failed to pull image %s: %w", svc.Image, err)
 			}
+			o.recordEvent(ctx, deployment.ID, deployment.ReferenceID, domain.EventImagePulled, svc.Image)
+			o.logger.Info("pulled image", "image", svc.Image)
+		} else {
+			o.logger.Debug("image already exists", "image", svc.Image)
 		}
 	}
 

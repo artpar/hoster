@@ -85,6 +85,8 @@ type DeploymentLogs struct {
 type ContainerEventType string
 
 const (
+	EventImagePulling       ContainerEventType = "image_pulling"
+	EventImagePulled        ContainerEventType = "image_pulled"
 	EventContainerCreated   ContainerEventType = "container_created"
 	EventContainerStarted   ContainerEventType = "container_started"
 	EventContainerStopped   ContainerEventType = "container_stopped"

@@ -46,9 +46,10 @@ export function DeploymentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: deployment, isLoading, error, refetch } = useDeployment(id ?? '');
-  const isTransitioning = deployment && ['pending', 'scheduled', 'starting', 'stopping', 'deleting'].includes(deployment.attributes.status);
-  const { data: health, isLoading: healthLoading } = useDeploymentHealth(id ?? '');
-  const { data: stats, isLoading: statsLoading } = useDeploymentStats(id ?? '');
+  const status = deployment?.attributes?.status;
+  const isTransitioning = status && ['pending', 'scheduled', 'starting', 'stopping', 'deleting'].includes(status);
+  const { data: health, isLoading: healthLoading } = useDeploymentHealth(id ?? '', status);
+  const { data: stats, isLoading: statsLoading } = useDeploymentStats(id ?? '', status);
 
   // Logs state
   const [logsTail, setLogsTail] = useState(100);
@@ -252,6 +253,55 @@ export function DeploymentDetailPage() {
         {/* Overview Tab */}
         <TabsContent value="overview">
           <div className="grid gap-4 md:grid-cols-2">
+            {/* Startup Activity — shown during transitions when no containers exist yet */}
+            {isTransitioning && containers.length === 0 && (
+              <Card className="md:col-span-2">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <LoadingSpinner className="h-4 w-4" />
+                    Startup Progress
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {events?.events && events.events.length > 0 ? (
+                    <div className="space-y-2">
+                      {[...events.events].reverse().map((event) => {
+                        const doc = getEventDoc(event.type);
+                        return (
+                          <div
+                            key={event.id}
+                            className="flex items-center gap-3 rounded-md border p-2 text-sm"
+                          >
+                            <Badge
+                              variant={
+                                doc?.severity === 'error'
+                                  ? 'destructive'
+                                  : doc?.severity === 'success'
+                                  ? 'success'
+                                  : 'secondary'
+                              }
+                              className="shrink-0"
+                            >
+                              {doc?.label ?? event.type}
+                            </Badge>
+                            <span className="flex-1">{event.message}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(event.timestamp).toLocaleTimeString()}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <LoadingSpinner className="h-4 w-4" />
+                      Preparing deployment...
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {/* Container Health Card */}
             <Card>
               <CardHeader>
@@ -282,7 +332,7 @@ export function DeploymentDetailPage() {
                 ) : isTransitioning ? (
                   <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
                     <LoadingSpinner className="h-4 w-4" />
-                    Waiting for containers to start...
+                    Waiting for containers...
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">No containers running</p>
@@ -572,6 +622,12 @@ export function DeploymentDetailPage() {
                 </div>
               ) : events?.events && events.events.length > 0 ? (
                 <div className="space-y-2">
+                  {isTransitioning && (
+                    <div className="flex items-center gap-2 pb-2 text-sm text-muted-foreground">
+                      <LoadingSpinner className="h-4 w-4" />
+                      Watching for new events...
+                    </div>
+                  )}
                   {events.events.map((event) => {
                     const doc = getEventDoc(event.type);
                     return (
@@ -608,7 +664,7 @@ export function DeploymentDetailPage() {
               ) : isTransitioning ? (
                 <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
                   <LoadingSpinner className="h-4 w-4" />
-                  Events will appear as containers start...
+                  Waiting for startup events...
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">No events recorded</p>

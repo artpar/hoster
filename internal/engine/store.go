@@ -752,6 +752,19 @@ func mapToDeployment(data map[string]any) *domain.Deployment {
 // billing.BillingStore implementation — satisfies billing reporter interface
 // =============================================================================
 
+// CreateContainerEvent records a container lifecycle event.
+func (s *Store) CreateContainerEvent(ctx context.Context, event *domain.ContainerEvent) error {
+	if event.ReferenceID == "" {
+		event.ReferenceID = "evt_" + uuid.New().String()[:8]
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO container_events (reference_id, deployment_id, type, container, message, timestamp)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		event.ReferenceID, event.DeploymentID, string(event.Type),
+		event.Container, event.Message, event.Timestamp.Format(time.RFC3339))
+	return err
+}
+
 // CreateUsageEvent inserts a usage event for later batch reporting.
 func (s *Store) CreateUsageEvent(ctx context.Context, event *domain.MeterEvent) error {
 	var metadataJSON *string

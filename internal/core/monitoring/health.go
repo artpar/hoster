@@ -80,6 +80,10 @@ func DetermineContainerHealth(status string, healthCheck *string, restarts int) 
 // ContainerEventMessage generates a human-readable message for container events.
 func ContainerEventMessage(eventType domain.ContainerEventType, containerName string) string {
 	switch eventType {
+	case domain.EventImagePulling:
+		return "Pulling image " + containerName
+	case domain.EventImagePulled:
+		return "Image " + containerName + " pulled successfully"
 	case domain.EventContainerCreated:
 		return "Container " + containerName + " created"
 	case domain.EventContainerStarted:

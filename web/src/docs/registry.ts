@@ -63,9 +63,11 @@ export const containerMetrics: Record<
 
 // --- EVENT TYPES ---
 export const eventTypes: Record<
-  'container_created' | 'container_started' | 'container_stopped' | 'container_restarted' | 'container_died' | 'container_oom' | 'health_unhealthy' | 'health_healthy',
+  'image_pulling' | 'image_pulled' | 'container_created' | 'container_started' | 'container_stopped' | 'container_restarted' | 'container_died' | 'container_oom' | 'health_unhealthy' | 'health_healthy',
   EventDoc
 > = {
+  image_pulling:       { label: 'Pulling',   severity: 'info',    description: 'Docker image is being downloaded from the registry.' },
+  image_pulled:        { label: 'Pulled',    severity: 'success', description: 'Docker image downloaded successfully.' },
   container_created:   { label: 'Created',   severity: 'info',    description: 'Container was built from its Docker image.' },
   container_started:   { label: 'Started',   severity: 'success', description: 'Container began running.' },
   container_stopped:   { label: 'Stopped',   severity: 'info',    description: 'Graceful shutdown completed.' },

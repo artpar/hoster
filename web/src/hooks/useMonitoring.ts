@@ -12,21 +12,23 @@ export const monitoringKeys = {
     [...monitoringKeys.all, 'events', deploymentId, params] as const,
 };
 
-export function useDeploymentHealth(deploymentId: string) {
+export function useDeploymentHealth(deploymentId: string, status?: string) {
+  const isTransitioning = status && ['pending', 'scheduled', 'starting', 'stopping', 'deleting'].includes(status);
   return useQuery({
     queryKey: monitoringKeys.health(deploymentId),
     queryFn: () => monitoringApi.getHealth(deploymentId),
     enabled: !!deploymentId,
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: isTransitioning ? 3000 : 30000,
   });
 }
 
-export function useDeploymentStats(deploymentId: string) {
+export function useDeploymentStats(deploymentId: string, status?: string) {
+  const isTransitioning = status && ['pending', 'scheduled', 'starting', 'stopping', 'deleting'].includes(status);
   return useQuery({
     queryKey: monitoringKeys.stats(deploymentId),
     queryFn: () => monitoringApi.getStats(deploymentId),
     enabled: !!deploymentId,
-    refetchInterval: 10000, // Refresh every 10 seconds
+    refetchInterval: isTransitioning ? 3000 : 10000,
   });
 }
 
