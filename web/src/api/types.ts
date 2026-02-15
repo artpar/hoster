@@ -97,10 +97,19 @@ export interface ResourceRequirements {
 export type Template = JsonApiResource<'templates', TemplateAttributes>;
 
 // Deployment Types
+export interface DeploymentDomain {
+  hostname: string;
+  type: 'auto' | 'custom';
+  ssl_enabled: boolean;
+  verification_status?: string;
+}
+
 export interface DeploymentAttributes {
   name: string;
   status: 'pending' | 'scheduled' | 'starting' | 'running' | 'stopping' | 'stopped' | 'deleting' | 'deleted' | 'failed';
-  domain?: string;
+  domains?: DeploymentDomain[];
+  proxy_port?: number;
+  node_id?: string;
   environment_variables?: Record<string, string>;
   customer_id: string;
   template_id: string;
@@ -110,6 +119,13 @@ export interface DeploymentAttributes {
   stopped_at?: string;
   error_message?: string;
   containers?: ContainerInfo[];
+}
+
+/** Extract the primary (auto) domain hostname from a deployment's domains array. */
+export function getPrimaryDomain(domains?: DeploymentDomain[]): string | undefined {
+  if (!domains || domains.length === 0) return undefined;
+  const auto = domains.find(d => d.type === 'auto');
+  return (auto ?? domains[0]).hostname;
 }
 
 export interface ContainerInfo {

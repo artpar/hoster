@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Layers, ExternalLink } from 'lucide-react';
 import type { Deployment } from '@/api/types';
+import { getPrimaryDomain } from '@/api/types';
 import { StatusBadge } from '@/components/common/StatusBadge';
 
 interface DeploymentCardProps {
@@ -8,6 +9,8 @@ interface DeploymentCardProps {
 }
 
 export function DeploymentCard({ deployment }: DeploymentCardProps) {
+  const primaryDomain = getPrimaryDomain(deployment.attributes.domains);
+
   return (
     <Link
       to={`/deployments/${deployment.id}`}
@@ -22,15 +25,15 @@ export function DeploymentCard({ deployment }: DeploymentCardProps) {
             <h3 className="truncate font-medium">{deployment.attributes.name}</h3>
             <StatusBadge status={deployment.attributes.status} />
           </div>
-          {deployment.attributes.domain && (
+          {primaryDomain && (
             <a
-              href={`https://${deployment.attributes.domain}`}
+              href={`https://${primaryDomain}`}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
               className="mt-1 inline-flex items-center gap-1 text-sm text-primary hover:underline"
             >
-              {deployment.attributes.domain}
+              {primaryDomain}
               <ExternalLink className="h-3 w-3" />
             </a>
           )}

@@ -701,16 +701,25 @@ func domainListHandler(cfg SetupConfig) http.HandlerFunc {
 
 		domains := parseDomainsList(depl["domains"])
 
-		// Add auto-generated domain
-		refID, _ := depl["reference_id"].(string)
-		if cfg.BaseDomain != "" && refID != "" {
-			autoDomain := DomainInfo{
-				Hostname:           refID + ".apps." + cfg.BaseDomain,
-				Type:               "auto",
-				SSLEnabled:         true,
-				VerificationStatus: "verified",
+		// Add auto-generated domain only if none stored (legacy deployments)
+		hasAuto := false
+		for _, d := range domains {
+			if d.Type == "auto" {
+				hasAuto = true
+				break
 			}
-			domains = append([]DomainInfo{autoDomain}, domains...)
+		}
+		if !hasAuto && cfg.BaseDomain != "" {
+			name, _ := depl["name"].(string)
+			if name != "" {
+				autoDomain := DomainInfo{
+					Hostname:           domain.Slugify(name) + "." + cfg.BaseDomain,
+					Type:               "auto",
+					SSLEnabled:         true,
+					VerificationStatus: "verified",
+				}
+				domains = append([]DomainInfo{autoDomain}, domains...)
+			}
 		}
 
 		writeJSON(w, http.StatusOK, domains)
@@ -759,7 +768,9 @@ func domainAddHandler(cfg SetupConfig) http.HandlerFunc {
 			}
 		}
 
-		refID, _ := depl["reference_id"].(string)
+		// Use stored auto domain as CNAME target, or generate from name
+		name, _ := depl["name"].(string)
+		cnameTarget := domain.Slugify(name) + "." + cfg.BaseDomain
 		newDomain := DomainInfo{
 			Hostname:           body.Hostname,
 			Type:               "custom",
@@ -770,7 +781,7 @@ func domainAddHandler(cfg SetupConfig) http.HandlerFunc {
 				{
 					Type:     "CNAME",
 					Name:     body.Hostname,
-					Value:    refID + ".apps." + cfg.BaseDomain,
+					Value:    cnameTarget,
 					Priority: "required",
 				},
 			},
@@ -865,8 +876,8 @@ func domainVerifyHandler(cfg SetupConfig) http.HandlerFunc {
 			return
 		}
 
-		refID, _ := depl["reference_id"].(string)
-		expectedTarget := refID + ".apps." + cfg.BaseDomain
+		name, _ := depl["name"].(string)
+		expectedTarget := domain.Slugify(name) + "." + cfg.BaseDomain
 
 		domains := parseDomainsList(depl["domains"])
 		found := false

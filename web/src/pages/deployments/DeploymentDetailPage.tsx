@@ -21,12 +21,14 @@ import {
   useStopDeployment,
   useDeleteDeployment,
 } from '@/hooks/useDeployments';
+import { useNode } from '@/hooks/useNodes';
 import {
   useDeploymentHealth,
   useDeploymentStats,
   useDeploymentLogs,
   useDeploymentEvents,
 } from '@/hooks/useMonitoring';
+import { getPrimaryDomain } from '@/api/types';
 import { LoadingPage, LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { MetricDefinitions } from '@/components/docs/MetricDefinitions';
@@ -76,6 +78,10 @@ export function DeploymentDetailPage() {
   const stopDeployment = useStopDeployment();
   const deleteDeployment = useDeleteDeployment();
 
+  // Node info — must be called before early returns (React hooks rule)
+  const nodeId = deployment?.attributes?.node_id;
+  const { data: node } = useNode(nodeId ?? '');
+
   if (isLoading) {
     return <LoadingPage />;
   }
@@ -104,6 +110,12 @@ export function DeploymentDetailPage() {
     await deleteDeployment.mutateAsync(deployment.id);
     navigate('/deployments');
   };
+
+  const primaryDomain = getPrimaryDomain(deployment.attributes.domains);
+  const proxyPort = deployment.attributes.proxy_port;
+  const nodeIp = node?.attributes?.ssh_host;
+  const directAccessUrl = nodeIp && proxyPort ? `http://${nodeIp}:${proxyPort}` : undefined;
+  const isRunning = deployment.attributes.status === 'running';
 
   const canStart = ['pending', 'scheduled', 'stopped', 'failed'].includes(deployment.attributes.status);
   const canStop = ['running', 'starting'].includes(deployment.attributes.status);
@@ -146,21 +158,33 @@ export function DeploymentDetailPage() {
                 <StatusBadge status={deployment.attributes.status} />
                 {health && <StatusBadge status={health.status} />}
               </div>
-              {deployment.attributes.domain && (
+              {primaryDomain && (
                 <a
-                  href={`https://${deployment.attributes.domain}`}
+                  href={`https://${primaryDomain}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="mt-2 inline-flex items-center gap-1 text-sm text-primary hover:underline"
                 >
                   <Globe className="h-4 w-4" />
-                  {deployment.attributes.domain}
+                  {primaryDomain}
                   <ExternalLink className="h-3 w-3" />
                 </a>
               )}
             </div>
 
             <div className="flex flex-wrap gap-2">
+              {isRunning && (primaryDomain || directAccessUrl) && (
+                <a
+                  href={primaryDomain ? `https://${primaryDomain}` : directAccessUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
+                    <ExternalLink className="mr-1 h-4 w-4" />
+                    Open App
+                  </Button>
+                </a>
+              )}
               <Button variant="outline" size="sm" onClick={() => refetch()}>
                 <RefreshCw className="h-4 w-4" />
               </Button>
@@ -253,6 +277,75 @@ export function DeploymentDetailPage() {
         {/* Overview Tab */}
         <TabsContent value="overview">
           <div className="grid gap-4 md:grid-cols-2">
+            {/* Access Your Application — shown when deployment has access info */}
+            {(primaryDomain || directAccessUrl) && (
+              <Card className="md:col-span-2">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Globe className="h-5 w-5" />
+                    Access Your Application
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {primaryDomain && (
+                      <div className="flex items-center gap-3 rounded-md border p-3">
+                        <div className="flex-1">
+                          <p className="text-sm text-muted-foreground">Domain</p>
+                          <a
+                            href={`https://${primaryDomain}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                          >
+                            https://{primaryDomain}
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                        {isRunning && (
+                          <a href={`https://${primaryDomain}`} target="_blank" rel="noopener noreferrer">
+                            <Button size="sm" variant="outline">
+                              <ExternalLink className="mr-1 h-4 w-4" />
+                              Open
+                            </Button>
+                          </a>
+                        )}
+                      </div>
+                    )}
+                    {directAccessUrl && (
+                      <div className="flex items-center gap-3 rounded-md border p-3">
+                        <div className="flex-1">
+                          <p className="text-sm text-muted-foreground">Direct Access (IP)</p>
+                          <a
+                            href={directAccessUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                          >
+                            {directAccessUrl}
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                        {isRunning && (
+                          <a href={directAccessUrl} target="_blank" rel="noopener noreferrer">
+                            <Button size="sm" variant="outline">
+                              <ExternalLink className="mr-1 h-4 w-4" />
+                              Open
+                            </Button>
+                          </a>
+                        )}
+                      </div>
+                    )}
+                    {!isRunning && (
+                      <p className="text-sm text-muted-foreground">
+                        Start the deployment to access your application.
+                      </p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Startup Activity — shown during transitions when no containers exist yet */}
             {isTransitioning && containers.length === 0 && (
               <Card className="md:col-span-2">
@@ -412,6 +505,19 @@ export function DeploymentDetailPage() {
                     <div>
                       <p className="text-sm text-muted-foreground">Stopped At</p>
                       <p className="font-medium">{formatDate(deployment.attributes.stopped_at)}</p>
+                    </div>
+                  )}
+                  {node && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Node</p>
+                      <p className="font-medium">{node.attributes.name}</p>
+                      <p className="text-xs text-muted-foreground">{node.attributes.ssh_host}</p>
+                    </div>
+                  )}
+                  {proxyPort && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Port</p>
+                      <p className="font-medium">{proxyPort}</p>
                     </div>
                   )}
                 </div>
