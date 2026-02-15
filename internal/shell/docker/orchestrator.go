@@ -485,7 +485,7 @@ func (o *Orchestrator) buildContainerSpec(deployment *domain.Deployment, svc com
 		// Use ProxyPort for primary service's first exposed port
 		if isPrimaryService && deployment.ProxyPort > 0 && !proxyPortUsed {
 			hostPort = deployment.ProxyPort
-			hostIP = "127.0.0.1" // Bind to localhost only for security
+			hostIP = "0.0.0.0"
 			proxyPortUsed = true
 			o.logger.Debug("binding service port to proxy port",
 				"service", svc.Name,
