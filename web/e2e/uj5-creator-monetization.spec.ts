@@ -1,6 +1,5 @@
-import { test, expect } from '@playwright/test';
-import { apiSignUp, injectAuth } from './fixtures/auth.fixture';
-import { apiCreateTemplate, apiDeleteTemplate, apiPublishTemplate, apiCreateDeployment, apiDeleteDeployment } from './fixtures/api.fixture';
+import { test, expect, chromium } from '@playwright/test';
+import { signUp, logIn } from './fixtures/auth.fixture';
 import { uniqueEmail, uniqueName, uniqueSlug, TEST_PASSWORD, TEST_TEMPLATE_COMPOSE } from './fixtures/test-data';
 
 /**
@@ -9,32 +8,56 @@ import { uniqueEmail, uniqueName, uniqueSlug, TEST_PASSWORD, TEST_TEMPLATE_COMPO
  * Creator creates a draft template, verifies it's hidden from marketplace,
  * publishes it, and verifies it appears.
  *
- * Targets: APIGate (:8082) → Hoster (:8080) — real prod-like stack.
+ * Targets: APIGate (:8082) -> Hoster (:8080) — real prod-like stack.
  */
 
 test.describe('UJ5: Creator Monetization', () => {
   let email: string;
-  let token: string;
   let templateId: string | undefined;
   const templateIds: string[] = [];
 
   test.beforeAll(async () => {
     email = uniqueEmail();
-    const result = await apiSignUp(email, TEST_PASSWORD);
-    token = result.token;
+    const browser = await chromium.launch();
+    const context = await browser.newContext({ baseURL: 'http://localhost:8082' });
+    const page = await context.newPage();
+    try {
+      await signUp(page, email, TEST_PASSWORD);
+    } finally {
+      await browser.close();
+    }
   });
 
   test.afterAll(async () => {
-    // Clean up templates
-    for (const id of templateIds) {
-      await apiDeleteTemplate(token, id);
+    // Clean up templates via browser
+    const browser = await chromium.launch();
+    const context = await browser.newContext({ baseURL: 'http://localhost:8082' });
+    const page = await context.newPage();
+    try {
+      await logIn(page, email, TEST_PASSWORD);
+      for (const id of templateIds) {
+        await page.goto(`/templates/${id}`);
+        await page.waitForLoadState('networkidle');
+        const deleteBtn = page.getByRole('button', { name: /Delete/i });
+        if (await deleteBtn.isVisible().catch(() => false)) {
+          await deleteBtn.click();
+          await page.waitForTimeout(500);
+          const confirmBtn = page.getByRole('button', { name: /Delete/i }).last();
+          if (await confirmBtn.isVisible().catch(() => false)) {
+            await confirmBtn.click();
+            await page.waitForTimeout(1000);
+          }
+        }
+      }
+    } finally {
+      await browser.close();
     }
   });
 
   // --- Happy path ---
 
   test('templates page shows My Templates toggle', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/templates');
     await page.waitForLoadState('networkidle');
     // Authenticated users see the toggle buttons
@@ -46,7 +69,7 @@ test.describe('UJ5: Creator Monetization', () => {
     const name = uniqueName('tmpl');
     const slug = uniqueSlug('tmpl');
 
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/templates/new');
     await page.waitForLoadState('networkidle');
 
@@ -81,7 +104,7 @@ test.describe('UJ5: Creator Monetization', () => {
   });
 
   test('draft NOT visible in marketplace browse', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/templates');
     await page.waitForLoadState('networkidle');
 
@@ -104,19 +127,27 @@ test.describe('UJ5: Creator Monetization', () => {
   test('publish makes template visible in marketplace', async ({ page }) => {
     test.skip(!templateId, 'No template created in prior test');
 
-    // Publish via API
-    await apiPublishTemplate(token, templateId!);
-
-    await injectAuth(page, token);
-    await page.goto('/templates');
+    // Publish via UI — navigate to template detail and click Publish
+    await logIn(page, email, TEST_PASSWORD);
+    await page.goto(`/templates/${templateId}`);
     await page.waitForLoadState('networkidle');
 
-    // Switch to Browse All
+    const publishBtn = page.getByRole('button', { name: /Publish/i });
+    await expect(publishBtn).toBeVisible({ timeout: 5_000 });
+    await publishBtn.click();
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Verify published status
+    await expect(page.locator('span').filter({ hasText: 'Published' })).toBeVisible({ timeout: 10_000 });
+
+    // Verify visible in marketplace browse
+    await page.goto('/templates');
+    await page.waitForLoadState('networkidle');
     await page.getByText('Browse All').click();
     await page.waitForTimeout(1000);
 
-    // The published template should now be in the list
-    // Navigate to the template detail to verify
+    // Navigate back to template detail to confirm
     await page.goto(`/templates/${templateId}`);
     await page.waitForLoadState('networkidle');
     await expect(page.locator('span').filter({ hasText: 'Published' })).toBeVisible({ timeout: 10_000 });
@@ -125,7 +156,7 @@ test.describe('UJ5: Creator Monetization', () => {
   // --- Sad path ---
 
   test('name too short shows validation', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/templates/new');
     await page.waitForLoadState('networkidle');
 
@@ -146,7 +177,7 @@ test.describe('UJ5: Creator Monetization', () => {
   });
 
   test('missing description shows validation', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/templates/new');
     await page.waitForLoadState('networkidle');
 
@@ -166,7 +197,7 @@ test.describe('UJ5: Creator Monetization', () => {
   });
 
   test('invalid version shows validation', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/templates/new');
     await page.waitForLoadState('networkidle');
 
@@ -185,32 +216,40 @@ test.describe('UJ5: Creator Monetization', () => {
   });
 
   test('delete template with deployments shows FK error', async ({ page }) => {
-    // Create a template and deployment via API to set up the FK constraint
+    // Create a template via UI to test the FK constraint error
     const tmplName = uniqueName('fktmpl');
-    const tmplSlug = uniqueSlug('fktmpl');
-    let fkTemplateId: string | undefined;
 
-    try {
-      const tmpl = await apiCreateTemplate(token, {
-        name: tmplName,
-        slug: tmplSlug,
-        description: 'FK constraint test',
-        version: '1.0.0',
-        compose_spec: TEST_TEMPLATE_COMPOSE,
-      });
-      fkTemplateId = tmpl.id;
+    await logIn(page, email, TEST_PASSWORD);
+    await page.goto('/templates/new');
+    await page.waitForLoadState('networkidle');
+
+    await page.getByLabel('Name').fill(tmplName);
+    if (await page.getByLabel('Slug').isVisible()) {
+      await page.getByLabel('Slug').fill(uniqueSlug('fktmpl'));
+    }
+    await page.getByLabel('Description').fill('FK constraint test');
+    await page.getByLabel('Version').fill('1.0.0');
+    await page.locator('#compose').fill(TEST_TEMPLATE_COMPOSE);
+
+    await page.getByRole('button', { name: /Create|Save|Submit/i }).click();
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    // Extract template ID
+    const match = page.url().match(/\/templates\/([^/]+)/);
+    const fkTemplateId = match?.[1];
+    if (fkTemplateId) {
       templateIds.push(fkTemplateId);
 
-      await apiPublishTemplate(token, fkTemplateId);
+      // Publish the template
+      const publishBtn = page.getByRole('button', { name: /Publish/i });
+      if (await publishBtn.isVisible().catch(() => false)) {
+        await publishBtn.click();
+        await page.waitForLoadState('networkidle');
+        await page.waitForTimeout(1000);
+      }
 
-      // Try to create a deployment referencing this template
-      // This may fail if no nodes exist, which is fine — we'll try the delete anyway
-      // The point is to test the FK constraint error in the UI
-      await injectAuth(page, token);
-      await page.goto(`/templates/${fkTemplateId}`);
-      await page.waitForLoadState('networkidle');
-
-      // Look for a delete button
+      // Look for a delete button on the template detail
       const deleteBtn = page.getByRole('button', { name: /Delete/i });
       if (await deleteBtn.isVisible()) {
         await deleteBtn.click();
@@ -223,8 +262,6 @@ test.describe('UJ5: Creator Monetization', () => {
         // If deployments reference it, should see FK error
         // (This test validates the UI handles the error gracefully)
       }
-    } catch {
-      // Setup may fail if no nodes — that's OK, test is about error handling
     }
   });
 });

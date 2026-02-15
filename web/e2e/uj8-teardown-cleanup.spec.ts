@@ -1,8 +1,7 @@
-import { test, expect } from '@playwright/test';
-import { injectAuth } from './fixtures/auth.fixture';
-import { apiCreateDeployment, apiStartDeployment, apiDeleteDeployment, apiStopDeployment, apiListDeployments } from './fixtures/api.fixture';
-import { uniqueSlug, readInfraState, type InfraState } from './fixtures/test-data';
-import { waitForDeploymentStatus } from './helpers/wait';
+import { test, expect, chromium } from '@playwright/test';
+import { logIn } from './fixtures/auth.fixture';
+import { uniqueSlug, readInfraState, TEST_PASSWORD, type InfraState } from './fixtures/test-data';
+import { waitForDeploymentStatusOnPage } from './helpers/wait';
 
 /**
  * UJ8: "I'm done with this deployment"
@@ -18,7 +17,6 @@ import { waitForDeploymentStatus } from './helpers/wait';
  */
 
 test.describe('UJ8: Teardown & Cleanup', () => {
-  let token: string;
   let infra: InfraState;
   let deploymentId: string | undefined;
 
@@ -27,40 +25,108 @@ test.describe('UJ8: Teardown & Cleanup', () => {
     const state = readInfraState();
     if (!state) throw new Error('No infrastructure state — run global setup first');
     infra = state;
-    token = infra.token;
 
-    // Clean up any existing deployments from earlier test suites (plan limit = 1)
-    const existing = await apiListDeployments(token);
-    for (const d of existing) {
-      const status = d.attributes.status as string;
-      if (status === 'running') await apiStopDeployment(token, d.id).catch(() => {});
-      if (status !== 'deleted') {
-        await new Promise(r => setTimeout(r, 2000));
-        await apiDeleteDeployment(token, d.id).catch(() => {});
+    // Use browser to clean up existing deployments and create a new one
+    const browser = await chromium.launch();
+    const context = await browser.newContext({ baseURL: 'http://localhost:8082' });
+    const page = await context.newPage();
+
+    try {
+      await logIn(page, infra.email, TEST_PASSWORD);
+
+      // Clean up any existing deployments (plan limit = 1)
+      await page.goto('/deployments');
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(1000);
+
+      const deplLinks = await page.locator('a[href*="/deployments/depl_"]').all();
+      for (const link of deplLinks) {
+        const href = await link.getAttribute('href');
+        if (!href) continue;
+
+        await page.goto(href);
+        await page.waitForLoadState('networkidle');
+
+        const stopBtn = page.getByRole('button', { name: /Stop/i });
+        if (await stopBtn.isVisible().catch(() => false) && await stopBtn.isEnabled().catch(() => false)) {
+          await stopBtn.click();
+          await page.locator('span').filter({ hasText: /Stopped/ }).waitFor({ timeout: 60_000 }).catch(() => {});
+        }
+
+        const deleteBtn = page.getByRole('button', { name: /Delete/i });
+        if (await deleteBtn.isVisible().catch(() => false)) {
+          await deleteBtn.click();
+          await page.waitForTimeout(500);
+          const confirmBtn = page.getByRole('button', { name: /Delete/i }).last();
+          if (await confirmBtn.isVisible().catch(() => false)) {
+            await confirmBtn.click();
+            await page.waitForTimeout(3000);
+          }
+        }
       }
+
+      // Create a deployment via the deploy dialog
+      await page.goto(`/templates/${infra.templateId}`);
+      await page.waitForLoadState('networkidle');
+      await page.getByText('Deploy Now').click();
+      await page.waitForTimeout(1000);
+
+      const nameInput = page.locator('#name');
+      if (await nameInput.isVisible()) {
+        await nameInput.fill(uniqueSlug('tddepl'));
+      }
+
+      const nodeSelect = page.locator('#node').or(page.getByLabel(/Deploy To|Node/i));
+      if (await nodeSelect.isVisible()) {
+        const options = nodeSelect.locator('option');
+        const count = await options.count();
+        if (count > 1) await nodeSelect.selectOption({ index: 1 });
+      }
+
+      await page.getByRole('button', { name: /^Deploy$|^Creating|^Starting/i }).click();
+      await expect(page).toHaveURL(/\/deployments\//, { timeout: 15_000 });
+
+      const match = page.url().match(/\/deployments\/([^/]+)/);
+      deploymentId = match?.[1];
+
+      // Wait for Running status
+      if (deploymentId) {
+        await waitForDeploymentStatusOnPage(page, deploymentId, 'Running', 180_000);
+      }
+    } finally {
+      await browser.close();
     }
-
-    // Create and start a real deployment on the shared droplet
-    const depl = await apiCreateDeployment(token, {
-      name: uniqueSlug('tddepl'),
-      template_id: infra.templateId,
-      node_id: infra.nodeId,
-    });
-    deploymentId = depl.id;
-
-    // Start the deployment — real containers will run on the DO droplet
-    await apiStartDeployment(token, deploymentId);
-
-    // Wait for deployment to reach "running" (real Docker pull + start, up to 3 min)
-    await waitForDeploymentStatus(token, deploymentId, 'running', 180_000);
   });
 
   test.afterAll(async () => {
-    // Clean up anything left
-    if (deploymentId) {
-      await apiStopDeployment(token, deploymentId).catch(() => {});
-      await new Promise(r => setTimeout(r, 3000));
-      await apiDeleteDeployment(token, deploymentId).catch(() => {});
+    // Best-effort cleanup
+    if (!deploymentId) return;
+    const browser = await chromium.launch();
+    const context = await browser.newContext({ baseURL: 'http://localhost:8082' });
+    const page = await context.newPage();
+    try {
+      await logIn(page, infra.email, TEST_PASSWORD);
+      await page.goto(`/deployments/${deploymentId}`);
+      await page.waitForLoadState('networkidle');
+
+      const stopBtn = page.getByRole('button', { name: /Stop/i });
+      if (await stopBtn.isVisible().catch(() => false)) {
+        await stopBtn.click();
+        await page.locator('span').filter({ hasText: /Stopped/ }).waitFor({ timeout: 60_000 }).catch(() => {});
+      }
+
+      const deleteBtn = page.getByRole('button', { name: /Delete/i });
+      if (await deleteBtn.isVisible().catch(() => false)) {
+        await deleteBtn.click();
+        await page.waitForTimeout(500);
+        const confirmBtn = page.getByRole('button', { name: /Delete/i }).last();
+        if (await confirmBtn.isVisible().catch(() => false)) {
+          await confirmBtn.click();
+          await page.waitForTimeout(2000);
+        }
+      }
+    } finally {
+      await browser.close();
     }
   });
 
@@ -70,7 +136,7 @@ test.describe('UJ8: Teardown & Cleanup', () => {
     test.skip(!deploymentId, 'No deployment');
     test.setTimeout(120_000);
 
-    await injectAuth(page, token);
+    await logIn(page, infra.email, TEST_PASSWORD);
     await page.goto(`/deployments/${deploymentId}`);
     await page.waitForLoadState('networkidle');
 
@@ -92,7 +158,7 @@ test.describe('UJ8: Teardown & Cleanup', () => {
   test('delete stopped deployment with confirmation', async ({ page }) => {
     test.skip(!deploymentId, 'No deployment');
 
-    await injectAuth(page, token);
+    await logIn(page, infra.email, TEST_PASSWORD);
     await page.goto(`/deployments/${deploymentId}`);
     await page.waitForLoadState('networkidle');
 
@@ -119,7 +185,7 @@ test.describe('UJ8: Teardown & Cleanup', () => {
   test('deleted deployment URL returns error', async ({ page }) => {
     test.skip(!deploymentId, 'No deployment');
 
-    await injectAuth(page, token);
+    await logIn(page, infra.email, TEST_PASSWORD);
     await page.goto(`/deployments/${deploymentId}`);
 
     // TanStack Query retries failed requests — wait for error state
@@ -133,7 +199,7 @@ test.describe('UJ8: Teardown & Cleanup', () => {
   });
 
   test('billing reflects reduced cost', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, infra.email, TEST_PASSWORD);
     await page.goto('/billing');
     await page.waitForLoadState('networkidle');
 
@@ -145,21 +211,37 @@ test.describe('UJ8: Teardown & Cleanup', () => {
   // --- Sad path ---
 
   test('delete pending deployment directly', async ({ page }) => {
-    // Create a fresh deployment (previous one deleted, plan slot is free)
-    let testDeplId: string | undefined;
-    try {
-      const depl = await apiCreateDeployment(token, {
-        name: uniqueSlug('directdel'),
-        template_id: infra.templateId,
-        node_id: infra.nodeId,
-      });
-      testDeplId = depl.id;
-    } catch {
+    // Create a fresh deployment via UI
+    await logIn(page, infra.email, TEST_PASSWORD);
+    await page.goto(`/templates/${infra.templateId}`);
+    await page.waitForLoadState('networkidle');
+    await page.getByText('Deploy Now').click();
+    await page.waitForTimeout(1000);
+
+    const nameInput = page.locator('#name');
+    if (await nameInput.isVisible()) {
+      await nameInput.fill(uniqueSlug('directdel'));
+    }
+
+    const nodeSelect = page.locator('#node').or(page.getByLabel(/Deploy To|Node/i));
+    if (await nodeSelect.isVisible()) {
+      const options = nodeSelect.locator('option');
+      const count = await options.count();
+      if (count > 1) await nodeSelect.selectOption({ index: 1 });
+    }
+
+    await page.getByRole('button', { name: /^Deploy$|^Creating|^Starting/i }).click();
+
+    const redirectOk = await page.waitForURL(/\/deployments\//, { timeout: 15_000 }).then(() => true).catch(() => false);
+    if (!redirectOk) {
       test.skip(true, 'Could not create test deployment');
       return;
     }
 
-    await injectAuth(page, token);
+    const match = page.url().match(/\/deployments\/([^/]+)/);
+    const testDeplId = match?.[1];
+    if (!testDeplId) return;
+
     await page.goto(`/deployments/${testDeplId}`);
     await page.waitForLoadState('networkidle');
 
@@ -179,21 +261,37 @@ test.describe('UJ8: Teardown & Cleanup', () => {
   });
 
   test('cancel confirmation does not delete', async ({ page }) => {
-    // Use a fresh deployment for this test
-    let testDeplId: string | undefined;
-    try {
-      const depl = await apiCreateDeployment(token, {
-        name: uniqueSlug('canceltest'),
-        template_id: infra.templateId,
-        node_id: infra.nodeId,
-      });
-      testDeplId = depl.id;
-    } catch {
+    // Create a fresh deployment via UI
+    await logIn(page, infra.email, TEST_PASSWORD);
+    await page.goto(`/templates/${infra.templateId}`);
+    await page.waitForLoadState('networkidle');
+    await page.getByText('Deploy Now').click();
+    await page.waitForTimeout(1000);
+
+    const nameInput = page.locator('#name');
+    if (await nameInput.isVisible()) {
+      await nameInput.fill(uniqueSlug('canceltest'));
+    }
+
+    const nodeSelect = page.locator('#node').or(page.getByLabel(/Deploy To|Node/i));
+    if (await nodeSelect.isVisible()) {
+      const options = nodeSelect.locator('option');
+      const count = await options.count();
+      if (count > 1) await nodeSelect.selectOption({ index: 1 });
+    }
+
+    await page.getByRole('button', { name: /^Deploy$|^Creating|^Starting/i }).click();
+
+    const redirectOk = await page.waitForURL(/\/deployments\//, { timeout: 15_000 }).then(() => true).catch(() => false);
+    if (!redirectOk) {
       test.skip(true, 'Could not create test deployment');
       return;
     }
 
-    await injectAuth(page, token);
+    const match = page.url().match(/\/deployments\/([^/]+)/);
+    const testDeplId = match?.[1];
+    if (!testDeplId) return;
+
     await page.goto(`/deployments/${testDeplId}`);
     await page.waitForLoadState('networkidle');
 
@@ -215,25 +313,53 @@ test.describe('UJ8: Teardown & Cleanup', () => {
       }
     }
 
-    // Clean up
-    if (testDeplId) await apiDeleteDeployment(token, testDeplId).catch(() => {});
+    // Clean up via UI
+    await page.goto(`/deployments/${testDeplId}`);
+    await page.waitForLoadState('networkidle');
+    const cleanupDeleteBtn = page.getByRole('button', { name: /Delete/i });
+    if (await cleanupDeleteBtn.isVisible().catch(() => false)) {
+      await cleanupDeleteBtn.click();
+      await page.waitForTimeout(500);
+      const confirmBtn = page.getByRole('button', { name: /Delete/i }).last();
+      if (await confirmBtn.isVisible().catch(() => false)) {
+        await confirmBtn.click();
+        await page.waitForTimeout(2000);
+      }
+    }
   });
 
   test('refresh during deletion shows current state', async ({ page }) => {
-    let testDeplId: string | undefined;
-    try {
-      const depl = await apiCreateDeployment(token, {
-        name: uniqueSlug('refreshtest'),
-        template_id: infra.templateId,
-        node_id: infra.nodeId,
-      });
-      testDeplId = depl.id;
-    } catch {
+    // Create a fresh deployment via UI
+    await logIn(page, infra.email, TEST_PASSWORD);
+    await page.goto(`/templates/${infra.templateId}`);
+    await page.waitForLoadState('networkidle');
+    await page.getByText('Deploy Now').click();
+    await page.waitForTimeout(1000);
+
+    const nameInput = page.locator('#name');
+    if (await nameInput.isVisible()) {
+      await nameInput.fill(uniqueSlug('refreshtest'));
+    }
+
+    const nodeSelect = page.locator('#node').or(page.getByLabel(/Deploy To|Node/i));
+    if (await nodeSelect.isVisible()) {
+      const options = nodeSelect.locator('option');
+      const count = await options.count();
+      if (count > 1) await nodeSelect.selectOption({ index: 1 });
+    }
+
+    await page.getByRole('button', { name: /^Deploy$|^Creating|^Starting/i }).click();
+
+    const redirectOk = await page.waitForURL(/\/deployments\//, { timeout: 15_000 }).then(() => true).catch(() => false);
+    if (!redirectOk) {
       test.skip(true, 'Could not create test deployment');
       return;
     }
 
-    await injectAuth(page, token);
+    const match = page.url().match(/\/deployments\/([^/]+)/);
+    const testDeplId = match?.[1];
+    if (!testDeplId) return;
+
     await page.goto(`/deployments/${testDeplId}`);
     await page.waitForLoadState('networkidle');
 
@@ -257,7 +383,5 @@ test.describe('UJ8: Teardown & Cleanup', () => {
         expect(hasError || hasStatus || isOnList || url.includes('/deployments/')).toBeTruthy();
       }
     }
-
-    if (testDeplId) await apiDeleteDeployment(token, testDeplId).catch(() => {});
   });
 });

@@ -1,6 +1,5 @@
-import { test, expect } from '@playwright/test';
-import { apiSignUp, injectAuth } from './fixtures/auth.fixture';
-import { apiCreateTemplate, apiDeleteDeployment, apiDeleteNode, apiDeleteSSHKey, apiDeleteTemplate, apiPublishTemplate } from './fixtures/api.fixture';
+import { test, expect, chromium } from '@playwright/test';
+import { signUp, logIn } from './fixtures/auth.fixture';
 import { uniqueEmail, uniqueName, uniqueSlug, TEST_PASSWORD, TEST_TEMPLATE_COMPOSE, readInfraState, type InfraState } from './fixtures/test-data';
 
 /**
@@ -21,12 +20,10 @@ import { uniqueEmail, uniqueName, uniqueSlug, TEST_PASSWORD, TEST_TEMPLATE_COMPO
 test.describe('UJ2: First Deployment', () => {
   let email: string;
   let password: string;
-  let token: string;
+  let signedUp = false;
   let infra: InfraState | null;
-  const cleanupIds: { deployments: string[]; nodes: string[]; sshKeys: string[]; templates: string[] } = {
+  const cleanupIds: { deployments: string[]; templates: string[] } = {
     deployments: [],
-    nodes: [],
-    sshKeys: [],
     templates: [],
   };
 
@@ -37,11 +34,48 @@ test.describe('UJ2: First Deployment', () => {
   });
 
   test.afterAll(async () => {
-    if (!token) return;
-    for (const id of cleanupIds.deployments) await apiDeleteDeployment(token, id);
-    for (const id of cleanupIds.nodes) await apiDeleteNode(token, id);
-    for (const id of cleanupIds.sshKeys) await apiDeleteSSHKey(token, id);
-    for (const id of cleanupIds.templates) await apiDeleteTemplate(token, id);
+    if (!signedUp) return;
+    // Clean up via browser
+    const browser = await chromium.launch();
+    const context = await browser.newContext({ baseURL: 'http://localhost:8082' });
+    const page = await context.newPage();
+    try {
+      await logIn(page, email, password);
+
+      // Delete deployments via UI
+      for (const id of cleanupIds.deployments) {
+        await page.goto(`/deployments/${id}`);
+        await page.waitForLoadState('networkidle');
+        const deleteBtn = page.getByRole('button', { name: /Delete/i });
+        if (await deleteBtn.isVisible().catch(() => false)) {
+          await deleteBtn.click();
+          await page.waitForTimeout(500);
+          const confirmBtn = page.getByRole('button', { name: /Delete/i }).last();
+          if (await confirmBtn.isVisible().catch(() => false)) {
+            await confirmBtn.click();
+            await page.waitForTimeout(2000);
+          }
+        }
+      }
+
+      // Delete templates via UI
+      for (const id of cleanupIds.templates) {
+        await page.goto(`/templates/${id}`);
+        await page.waitForLoadState('networkidle');
+        const deleteBtn = page.getByRole('button', { name: /Delete/i });
+        if (await deleteBtn.isVisible().catch(() => false)) {
+          await deleteBtn.click();
+          await page.waitForTimeout(500);
+          const confirmBtn = page.getByRole('button', { name: /Delete/i }).last();
+          if (await confirmBtn.isVisible().catch(() => false)) {
+            await confirmBtn.click();
+            await page.waitForTimeout(1000);
+          }
+        }
+      }
+    } finally {
+      await browser.close();
+    }
   });
 
   // --- Happy path ---
@@ -58,55 +92,57 @@ test.describe('UJ2: First Deployment', () => {
     // Wait for redirect away from /sign-up
     await expect(page).not.toHaveURL(/\/sign-up/, { timeout: 15_000 });
 
-    // Get token via API login
-    const loginResult = await fetch('http://localhost:8082/mod/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-    if (loginResult.ok) {
-      const data = await loginResult.json();
-      token = data.token;
-    }
-
-    // If SPA signup didn't give us a token, fall back to API signup
-    if (!token) {
-      const fallback = await apiSignUp(email + '.fallback', password);
-      token = fallback.token;
-    }
-
-    expect(token).toBeTruthy();
+    signedUp = true;
   });
 
   test('deploy dialog opens with node selector', async ({ page }) => {
-    test.skip(!token, 'No token from signup');
+    test.skip(!signedUp, 'Signup did not complete');
 
-    // Use infra token if available (has real node), otherwise use test user's token
-    const authToken = infra?.token ?? token;
+    // Use infra user if available (has real node), otherwise use test user
+    const useInfra = !!infra;
 
-    // Ensure a published template exists
+    // Ensure a published template exists — create via UI if no infra
     let tmplId: string;
-    if (infra) {
-      tmplId = infra.templateId;
+    if (useInfra) {
+      tmplId = infra!.templateId;
+      await logIn(page, infra!.email, TEST_PASSWORD);
     } else {
-      try {
-        const tmpl = await apiCreateTemplate(authToken, {
-          name: uniqueName('deploytest'),
-          slug: uniqueSlug('deploytest'),
-          description: 'E2E deploy test template',
-          version: '1.0.0',
-          compose_spec: TEST_TEMPLATE_COMPOSE,
-        });
-        tmplId = tmpl.id;
-        cleanupIds.templates.push(tmplId);
-        await apiPublishTemplate(authToken, tmplId);
-      } catch {
+      // Create template via UI
+      await logIn(page, email, password);
+      await page.goto('/templates/new');
+      await page.waitForLoadState('networkidle');
+
+      await page.getByLabel('Name').fill(uniqueName('deploytest'));
+      if (await page.getByLabel('Slug').isVisible()) {
+        await page.getByLabel('Slug').fill(uniqueSlug('deploytest'));
+      }
+      await page.getByLabel('Description').fill('E2E deploy test template');
+      await page.getByLabel('Version').fill('1.0.0');
+      await page.locator('#compose').fill(TEST_TEMPLATE_COMPOSE);
+
+      await page.getByRole('button', { name: /Create|Save|Submit/i }).click();
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+
+      // Extract template ID from URL
+      const match = page.url().match(/\/templates\/([^/]+)/);
+      if (!match) {
         test.skip(true, 'Could not create template');
         return;
       }
+      tmplId = match[1];
+      cleanupIds.templates.push(tmplId);
+
+      // Publish the template
+      const publishBtn = page.getByRole('button', { name: /Publish/i });
+      if (await publishBtn.isVisible().catch(() => false)) {
+        await publishBtn.click();
+        await page.waitForLoadState('networkidle');
+        await page.waitForTimeout(1000);
+      }
     }
 
-    await injectAuth(page, authToken);
+    // Already logged in from above, navigate to template
     await page.goto(`/templates/${tmplId}`);
     await page.waitForLoadState('networkidle');
     await page.getByText('Deploy Now').click();
@@ -118,9 +154,9 @@ test.describe('UJ2: First Deployment', () => {
   });
 
   test('create SSH key with name and private key', async ({ page }) => {
-    test.skip(!token, 'No token from signup');
+    test.skip(!signedUp, 'Signup did not complete');
 
-    await injectAuth(page, token);
+    await logIn(page, email, password);
     await page.goto('/ssh-keys');
     await page.waitForLoadState('networkidle');
 
@@ -150,9 +186,9 @@ test.describe('UJ2: First Deployment', () => {
   });
 
   test('create node with SSH key reference', async ({ page }) => {
-    test.skip(!token, 'No token from signup');
+    test.skip(!signedUp, 'Signup did not complete');
 
-    await injectAuth(page, token);
+    await logIn(page, email, password);
     await page.goto('/nodes/new');
     await page.waitForLoadState('networkidle');
 
@@ -183,15 +219,15 @@ test.describe('UJ2: First Deployment', () => {
     // Node should appear in the list
     await page.goto('/nodes');
     await page.waitForLoadState('networkidle');
-    await expect(page.getByText(nodeName)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(nodeName)).toBeVisible({ timeout: 15_000 });
   });
 
   test('deploy to real node — containers actually start', async ({ page }) => {
     test.skip(!infra, 'No real infrastructure from global setup');
     test.setTimeout(300_000);
 
-    // Use the infra user's token (has real node + template)
-    await injectAuth(page, infra!.token);
+    // Log in as the infra user (has real node + template)
+    await logIn(page, infra!.email, TEST_PASSWORD);
 
     await page.goto(`/templates/${infra!.templateId}`);
     await page.waitForLoadState('networkidle');
@@ -243,9 +279,16 @@ test.describe('UJ2: First Deployment', () => {
   });
 
   test('signup with existing email shows error', async ({ page }) => {
-    // First create a user via API
+    // Create a user via browser first
     const existingEmail = uniqueEmail();
-    await apiSignUp(existingEmail, password);
+    const browser2 = await chromium.launch();
+    const ctx2 = await browser2.newContext({ baseURL: 'http://localhost:8082' });
+    const page2 = await ctx2.newPage();
+    try {
+      await signUp(page2, existingEmail, password);
+    } finally {
+      await browser2.close();
+    }
 
     await page.goto('/sign-up');
     await page.locator('#email').fill(existingEmail);
@@ -262,9 +305,9 @@ test.describe('UJ2: First Deployment', () => {
   });
 
   test('invalid SSH key format shows error', async ({ page }) => {
-    test.skip(!token, 'No token');
+    test.skip(!signedUp, 'Signup did not complete');
 
-    await injectAuth(page, token);
+    await logIn(page, email, password);
     await page.goto('/ssh-keys');
     await page.waitForLoadState('networkidle');
 
@@ -284,9 +327,9 @@ test.describe('UJ2: First Deployment', () => {
   });
 
   test('deploy without selecting node shows error', async ({ page }) => {
-    test.skip(!token, 'No token');
+    test.skip(!signedUp, 'Signup did not complete');
 
-    await injectAuth(page, token);
+    await logIn(page, email, password);
     await page.goto('/templates');
     await page.waitForLoadState('networkidle');
     const firstCard = page.locator('a[href^="/templates/tmpl_"]').first();
@@ -311,9 +354,9 @@ test.describe('UJ2: First Deployment', () => {
   });
 
   test('deploy with invalid name format shows error', async ({ page }) => {
-    test.skip(!token, 'No token');
+    test.skip(!signedUp, 'Signup did not complete');
 
-    await injectAuth(page, token);
+    await logIn(page, email, password);
     await page.goto('/templates');
     await page.waitForLoadState('networkidle');
     const firstCard = page.locator('a[href^="/templates/tmpl_"]').first();

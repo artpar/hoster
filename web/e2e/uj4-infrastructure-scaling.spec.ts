@@ -1,8 +1,7 @@
-import { test, expect } from '@playwright/test';
-import { apiSignUp, injectAuth } from './fixtures/auth.fixture';
-import { apiCreateCloudCredential, apiDeleteCloudCredential, apiDestroyCloudProvision, apiGetCloudProvision } from './fixtures/api.fixture';
+import { test, expect, chromium } from '@playwright/test';
+import { signUp, logIn } from './fixtures/auth.fixture';
 import { uniqueEmail, uniqueName, TEST_PASSWORD, TEST_DO_API_KEY, readInfraState, type InfraState } from './fixtures/test-data';
-import { waitForProvisionStatus } from './helpers/wait';
+import { waitForProvisionStatusOnPage } from './helpers/wait';
 
 /**
  * UJ4: "I want to scale up my infrastructure"
@@ -17,57 +16,119 @@ import { waitForProvisionStatus } from './helpers/wait';
  */
 
 test.describe('UJ4: Infrastructure Scaling', () => {
-  let token: string;
+  let email: string;
   let infra: InfraState | null;
-  const credentialIds: string[] = [];
-  let uj4ProvisionId: string | undefined;
+  let uj4ProvisionCreated = false;
 
   test.beforeAll(async () => {
-    const email = uniqueEmail();
-    const result = await apiSignUp(email, TEST_PASSWORD);
-    token = result.token;
+    const browser = await chromium.launch();
+    const context = await browser.newContext({ baseURL: 'http://localhost:8082' });
+    const page = await context.newPage();
+    try {
+      email = uniqueEmail();
+      await signUp(page, email, TEST_PASSWORD);
+    } finally {
+      await browser.close();
+    }
     infra = readInfraState();
   });
 
   test.afterAll(async ({}, testInfo) => {
     testInfo.setTimeout(300_000);
 
-    // Destroy any provisioned droplet from test 4
-    if (uj4ProvisionId) {
-      try {
+    const browser = await chromium.launch();
+    const context = await browser.newContext({ baseURL: 'http://localhost:8082' });
+    const page = await context.newPage();
+
+    try {
+      await logIn(page, email, TEST_PASSWORD);
+
+      // Destroy provisions via cloud servers UI
+      if (uj4ProvisionCreated) {
         // Wait for provision to reach a destroyable state (ready or failed)
-        // State machine: only ready → destroying and failed → destroying are valid
-        await waitForProvisionStatus(token, uj4ProvisionId, 'ready', 240_000);
-      } catch {
-        // If it didn't reach "ready", it might be "failed" — that's also destroyable
+        console.log('[UJ4 afterAll] Waiting for provision to reach destroyable state...');
+        const deadline = Date.now() + 240_000;
+        let reachedDestroyable = false;
+        while (Date.now() < deadline) {
+          await page.goto('/nodes/cloud');
+          await page.waitForLoadState('networkidle');
+          await page.waitForTimeout(2000);
+
+          const destroyBtn = page.getByRole('button', { name: /Destroy/i }).first();
+          if (await destroyBtn.isVisible().catch(() => false)) {
+            reachedDestroyable = true;
+            break;
+          }
+
+          await new Promise(r => setTimeout(r, 10_000));
+        }
+
+        if (!reachedDestroyable) {
+          throw new Error('[UJ4 afterAll] Provision never showed a Destroy button — droplet may be leaked!');
+        }
+
+        // Click Destroy on each provision — assert the button exists
+        await page.goto('/nodes/cloud');
+        await page.waitForLoadState('networkidle');
+        const destroyBtns = await page.getByRole('button', { name: /Destroy/i }).all();
+        console.log(`[UJ4 afterAll] Found ${destroyBtns.length} Destroy button(s)`);
+
+        for (const btn of destroyBtns) {
+          await expect(btn).toBeVisible({ timeout: 5_000 });
+          await btn.click();
+          await page.waitForTimeout(500);
+
+          // Assert confirm dialog appears
+          const confirmBtn = page.getByRole('button', { name: /Destroy|Confirm/i }).last();
+          await expect(confirmBtn).toBeVisible({ timeout: 5_000 });
+          await confirmBtn.click();
+          await page.waitForTimeout(3000);
+        }
+
+        // Assert destruction completes — no silent catch
+        console.log('[UJ4 afterAll] Waiting for Destroyed status...');
+        await waitForProvisionStatusOnPage(page, 'Destroyed', 180_000);
+        console.log('[UJ4 afterAll] All provisions destroyed');
       }
-      try {
-        await apiDestroyCloudProvision(token, uj4ProvisionId);
-        await waitForProvisionStatus(token, uj4ProvisionId, 'destroyed', 180_000);
-      } catch (err) {
-        console.warn('UJ4 teardown: failed to destroy provision:', err);
+
+      // Clean up credentials — assert each delete works
+      await page.goto('/nodes/credentials');
+      await page.waitForLoadState('networkidle');
+      const deleteBtns = await page.getByRole('button', { name: /Delete/i }).all();
+      for (const btn of deleteBtns) {
+        await expect(btn).toBeVisible({ timeout: 5_000 });
+        await btn.click();
+        await page.waitForTimeout(500);
+
+        const confirmBtn = page.getByRole('button', { name: /Delete|Confirm/i }).last();
+        await expect(confirmBtn).toBeVisible({ timeout: 5_000 });
+        await confirmBtn.click();
+        await page.waitForTimeout(1000);
+
+        // Reload after each delete
+        await page.goto('/nodes/credentials');
+        await page.waitForLoadState('networkidle');
       }
-    }
-    for (const id of credentialIds) {
-      await apiDeleteCloudCredential(token, id).catch(() => {});
+    } finally {
+      await browser.close();
     }
   });
 
   // --- Happy path ---
 
   test('nodes page has three tabs', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/nodes');
     await page.waitForLoadState('networkidle');
 
-    // Three navigation tabs: Nodes, Cloud Servers, Credentials
+    // Three navigation tabs: Nodes, Provisioning, Credentials
     await expect(page.getByText('Nodes').first()).toBeVisible();
-    await expect(page.getByText('Cloud Servers')).toBeVisible();
+    await expect(page.getByText('Provisioning')).toBeVisible();
     await expect(page.getByText('Credentials')).toBeVisible();
   });
 
   test('add cloud credential for AWS', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/nodes/credentials/new');
     await page.waitForLoadState('networkidle');
 
@@ -94,7 +155,7 @@ test.describe('UJ4: Infrastructure Scaling', () => {
   });
 
   test('add cloud credential for DigitalOcean', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/nodes/credentials/new');
     await page.waitForLoadState('networkidle');
 
@@ -120,15 +181,21 @@ test.describe('UJ4: Infrastructure Scaling', () => {
   test('provision real DO droplet through UI', async ({ page }) => {
     test.setTimeout(300_000);
 
-    // Create a real DO credential with real API key for this test user
-    const cred = await apiCreateCloudCredential(token, {
-      name: uniqueName('doreal'),
-      provider: 'digitalocean',
-      api_key: TEST_DO_API_KEY,
-    });
-    credentialIds.push(cred.id);
+    // Create a real DO credential via UI first
+    await logIn(page, email, TEST_PASSWORD);
+    await page.goto('/nodes/credentials/new');
+    await page.waitForLoadState('networkidle');
 
-    await injectAuth(page, token);
+    const credName = uniqueName('doreal');
+    await page.locator('#cred-name').fill(credName);
+    await page.locator('#cred-provider').selectOption('digitalocean');
+    await page.waitForTimeout(300);
+    await page.locator('#api-token').fill(TEST_DO_API_KEY);
+    await page.getByRole('button', { name: 'Add Credential' }).click();
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Navigate to cloud server creation
     await page.goto('/nodes/cloud/new');
     await page.waitForLoadState('networkidle');
 
@@ -139,8 +206,15 @@ test.describe('UJ4: Infrastructure Scaling', () => {
     const instanceName = uniqueName('uj4node');
     await page.locator('#prov-name').fill(instanceName);
 
-    // Select the real DO credential by its known ID (not by index — other creds exist)
-    await page.locator('#prov-credential').selectOption(cred.id);
+    // Select the real DO credential (the one we just created with the real API key)
+    // It should be the last option in the dropdown
+    const credSelect = page.locator('#prov-credential');
+    const credOptions = credSelect.locator('option');
+    const credCount = await credOptions.count();
+    if (credCount > 1) {
+      // Select the last credential (most recently created = real DO key)
+      await credSelect.selectOption({ index: credCount - 1 });
+    }
 
     // Wait for real regions/sizes to load from DigitalOcean API
     await expect(page.locator('#prov-region')).toBeEnabled({ timeout: 15_000 });
@@ -169,6 +243,7 @@ test.describe('UJ4: Infrastructure Scaling', () => {
 
     // Click "Create Server" — this ACTUALLY provisions a real DO droplet
     await page.getByRole('button', { name: 'Create Server' }).click();
+    uj4ProvisionCreated = true;
 
     // Should redirect to cloud servers list
     await expect(page).toHaveURL(/\/nodes\/cloud/, { timeout: 15_000 });
@@ -204,24 +279,6 @@ test.describe('UJ4: Infrastructure Scaling', () => {
     await page.goto('/nodes');
     await page.waitForLoadState('networkidle');
     await expect(page.getByText(/root@\d+\.\d+\.\d+\.\d+:\d+/)).toBeVisible({ timeout: 10_000 });
-
-    // Track provision ID for cleanup — fetch via page context
-    try {
-      uj4ProvisionId = await page.evaluate(async (tok) => {
-        const res = await fetch('/api/v1/cloud_provisions', {
-          headers: { Accept: 'application/vnd.api+json', Authorization: `Bearer ${tok}` },
-        });
-        if (!res.ok) return undefined;
-        const data = await res.json();
-        const provisions = (data as any).data ?? [];
-        for (const p of provisions) {
-          if (p.attributes?.instance_name?.includes('uj4node')) return p.id;
-        }
-        return undefined;
-      }, token);
-    } catch {
-      // Best effort — teardown will skip if no ID
-    }
   });
 
   // --- Sad path ---
@@ -229,9 +286,17 @@ test.describe('UJ4: Infrastructure Scaling', () => {
   test('empty credentials shows empty state', async ({ page }) => {
     // Create a fresh user with no credentials
     const freshEmail = uniqueEmail();
-    const fresh = await apiSignUp(freshEmail, TEST_PASSWORD);
+    const browser2 = await chromium.launch();
+    const ctx2 = await browser2.newContext({ baseURL: 'http://localhost:8082' });
+    const page2 = await ctx2.newPage();
+    try {
+      await signUp(page2, freshEmail, TEST_PASSWORD);
+    } finally {
+      await browser2.close();
+    }
 
-    await injectAuth(page, fresh.token);
+    // Log in as the fresh user in the test page
+    await logIn(page, freshEmail, TEST_PASSWORD);
     await page.goto('/nodes/credentials');
     await page.waitForLoadState('networkidle');
 
@@ -240,7 +305,7 @@ test.describe('UJ4: Infrastructure Scaling', () => {
   });
 
   test('create credential without required fields', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/nodes/credentials/new');
     await page.waitForLoadState('networkidle');
 
@@ -253,7 +318,7 @@ test.describe('UJ4: Infrastructure Scaling', () => {
   });
 
   test('create cloud server without credential', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/nodes/cloud/new');
     await page.waitForLoadState('networkidle');
 
@@ -269,7 +334,7 @@ test.describe('UJ4: Infrastructure Scaling', () => {
   });
 
   test('region/size selects disabled before credential chosen', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/nodes/cloud/new');
     await page.waitForLoadState('networkidle');
 

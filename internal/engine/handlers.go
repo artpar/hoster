@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/artpar/hoster/internal/core/crypto"
 	"github.com/artpar/hoster/internal/core/domain"
 	"github.com/artpar/hoster/internal/core/proxy"
 	"github.com/artpar/hoster/internal/shell/billing"
 	"github.com/artpar/hoster/internal/shell/docker"
+	"github.com/artpar/hoster/internal/shell/provider"
 )
 
 // RegisterHandlers registers all command handlers on the bus.
@@ -21,6 +23,9 @@ func RegisterHandlers(bus *Bus) {
 	bus.Register("DeleteDeployment", deleteDeployment)
 	bus.Register("DeploymentRunning", deploymentRunning)
 	bus.Register("DeploymentFailed", deploymentFailed)
+
+	// Cloud provision lifecycle
+	bus.Register("DestroyInstance", destroyProvision)
 }
 
 // =============================================================================
@@ -273,6 +278,96 @@ func deploymentFailed(ctx context.Context, deps *Deps, data map[string]any) erro
 	refID, _ := data["reference_id"].(string)
 	errMsg, _ := data["error_message"].(string)
 	deps.Logger.Error("deployment failed", "deployment", refID, "error", errMsg)
+	return nil
+}
+
+// =============================================================================
+// Cloud Provision Handlers
+// =============================================================================
+
+// destroyProvision destroys the cloud instance and transitions to destroyed.
+func destroyProvision(ctx context.Context, deps *Deps, data map[string]any) error {
+	store := deps.Store
+	logger := deps.Logger
+
+	refID := strVal(data["reference_id"])
+	instanceID := strVal(data["provider_instance_id"])
+
+	if instanceID == "" {
+		// No instance was ever created — just transition to destroyed
+		_, _, err := store.Transition(ctx, "cloud_provisions", refID, "destroyed")
+		if err != nil {
+			logger.Error("failed to transition to destroyed", "provision", refID, "error", err)
+		}
+		return nil
+	}
+
+	providerType := strVal(data["provider"])
+
+	// Look up credential by FK integer ID
+	credID := toInt(data["credential_id"])
+	if credID == 0 {
+		logger.Warn("no credential_id on provision, skipping destroy", "provision", refID)
+		store.Transition(ctx, "cloud_provisions", refID, "destroyed")
+		return nil
+	}
+
+	cred, err := store.GetByID(ctx, "cloud_credentials", credID)
+	if err != nil {
+		logger.Error("failed to look up credential", "provision", refID, "credential_id", credID, "error", err)
+		store.Transition(ctx, "cloud_provisions", refID, "destroyed")
+		return nil
+	}
+
+	// Decrypt credentials
+	credEncrypted := cred["credentials"]
+	var credBytes []byte
+	switch v := credEncrypted.(type) {
+	case []byte:
+		credBytes = v
+	case string:
+		credBytes = []byte(v)
+	}
+
+	encryptionKey, _ := deps.Extra["encryption_key"].([]byte)
+	decrypted, err := crypto.Decrypt(credBytes, encryptionKey)
+	if err != nil {
+		logger.Error("failed to decrypt credentials", "provision", refID, "error", err)
+		store.Transition(ctx, "cloud_provisions", refID, "destroyed")
+		return nil
+	}
+
+	prov, err := provider.NewProvider(providerType, decrypted, logger)
+	if err != nil {
+		logger.Error("failed to create provider", "provision", refID, "error", err)
+		store.Transition(ctx, "cloud_provisions", refID, "destroyed")
+		return nil
+	}
+
+	destroyReq := provider.DestroyRequest{
+		ProviderInstanceID: instanceID,
+		InstanceName:       strVal(data["instance_name"]),
+		Region:             strVal(data["region"]),
+	}
+	if err := prov.DestroyInstance(ctx, destroyReq); err != nil {
+		logger.Warn("destroy instance failed, treating as success", "provision", refID, "error", err)
+	}
+
+	// Transition to destroyed
+	_, _, err = store.Transition(ctx, "cloud_provisions", refID, "destroyed")
+	if err != nil {
+		logger.Error("failed to transition to destroyed", "provision", refID, "error", err)
+	}
+
+	// Delete associated node if one was created
+	nodeRefID := strVal(data["node_id"])
+	if nodeRefID != "" {
+		if err := store.Delete(ctx, "nodes", nodeRefID); err != nil {
+			logger.Warn("failed to delete associated node", "provision", refID, "node", nodeRefID, "error", err)
+		}
+	}
+
+	logger.Info("provision destroyed", "provision", refID, "instance_id", instanceID)
 	return nil
 }
 

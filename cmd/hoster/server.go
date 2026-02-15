@@ -110,6 +110,7 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 	}
 	bus.SetExtra("base_domain", cfg.Domain.BaseDomain)
 	bus.SetExtra("config_dir", cfg.Domain.ConfigDir)
+	bus.SetExtra("encryption_key", encryptionKey)
 
 	// Create HTTP handler using the engine
 	handler := engine.Setup(engine.SetupConfig{

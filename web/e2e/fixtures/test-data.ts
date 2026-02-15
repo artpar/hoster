@@ -49,13 +49,8 @@ export const TEST_DO_API_KEY = process.env.TEST_DO_API_KEY || '';
  * Contains real DigitalOcean droplet IDs, node, template, etc.
  */
 export interface InfraState {
-  token: string;
   email: string;
-  nodeId: string;
   templateId: string;
-  provisionId: string;
-  credentialId: string;
-  sshKeyId: string;
   dropletIp: string;
 }
 

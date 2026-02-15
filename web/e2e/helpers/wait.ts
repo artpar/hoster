@@ -1,10 +1,7 @@
 import { type Page, expect } from '@playwright/test';
 
-const BASE = 'http://localhost:8082/api/v1';
-
 /**
- * Poll the page until a status badge containing the expected text appears.
- * Useful for waiting on state transitions (e.g., pending -> running).
+ * Wait until a status badge containing the expected text appears on the current page.
  */
 export async function waitForStatus(
   page: Page,
@@ -15,68 +12,65 @@ export async function waitForStatus(
 }
 
 /**
- * Wait for a deployment status via the API.
- * Polls the deployment endpoint until the status matches or timeout.
+ * Wait for a deployment to reach the target status by polling the deployment detail page.
+ * Navigates to the deployment detail if not already there, then reloads periodically.
  */
-export async function waitForDeploymentStatus(
-  token: string,
+export async function waitForDeploymentStatusOnPage(
+  page: Page,
   deploymentId: string,
   targetStatus: string,
   timeout = 180_000,
-  interval = 3_000,
+  interval = 5_000,
 ): Promise<void> {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
-    const res = await fetch(`${BASE}/deployments/${deploymentId}`, {
-      headers: {
-        Accept: 'application/vnd.api+json',
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const status = data?.data?.attributes?.status;
-      if (status === targetStatus) return;
-      if (status === 'failed') {
+    await page.goto(`/deployments/${deploymentId}`);
+    await page.waitForLoadState('networkidle');
+
+    const badge = page.locator('span').filter({ hasText: new RegExp(targetStatus, 'i') });
+    if (await badge.isVisible().catch(() => false)) return;
+
+    // Bail early on failed
+    if (targetStatus.toLowerCase() !== 'failed') {
+      const failedBadge = page.locator('span').filter({ hasText: /Failed/i });
+      if (await failedBadge.isVisible().catch(() => false)) {
         throw new Error(`Deployment ${deploymentId} entered "failed" state while waiting for "${targetStatus}"`);
       }
     }
-    await new Promise((r) => setTimeout(r, interval));
+
+    await new Promise(r => setTimeout(r, interval));
   }
   throw new Error(`Deployment ${deploymentId} did not reach status "${targetStatus}" within ${timeout}ms`);
 }
 
 /**
- * Wait for a cloud provision to reach the target status via the API.
- * Polls the provision endpoint until the status matches or timeout.
+ * Wait for a cloud provision to reach the target status by polling the cloud servers page.
+ * Looks for the provision by instance name and checks its status badge.
  */
-export async function waitForProvisionStatus(
-  token: string,
-  provisionId: string,
+export async function waitForProvisionStatusOnPage(
+  page: Page,
   targetStatus: string,
   timeout = 300_000,
-  interval = 5_000,
+  interval = 10_000,
 ): Promise<void> {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
-    const res = await fetch(`${BASE}/cloud_provisions/${provisionId}`, {
-      headers: {
-        Accept: 'application/vnd.api+json',
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const status = data?.data?.attributes?.status;
-      const step = data?.data?.attributes?.current_step || '';
-      console.log(`[wait] Provision ${provisionId}: status=${status}, step=${step}`);
-      if (status === targetStatus) return;
-      if (status === 'failed' && targetStatus !== 'failed') {
-        const errMsg = data?.data?.attributes?.error_message || 'unknown';
-        throw new Error(`Provision ${provisionId} entered "failed" state: ${errMsg}`);
+    await page.goto('/nodes/cloud');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const badge = page.locator('span').filter({ hasText: new RegExp(targetStatus, 'i') });
+    if (await badge.isVisible().catch(() => false)) return;
+
+    // Bail early on failed (unless we're waiting for failed)
+    if (targetStatus.toLowerCase() !== 'failed') {
+      const failedBadge = page.locator('span').filter({ hasText: /Failed/i });
+      if (await failedBadge.isVisible().catch(() => false)) {
+        throw new Error(`Provision entered "failed" state while waiting for "${targetStatus}"`);
       }
     }
-    await new Promise((r) => setTimeout(r, interval));
+
+    await new Promise(r => setTimeout(r, interval));
   }
-  throw new Error(`Provision ${provisionId} did not reach status "${targetStatus}" within ${timeout}ms`);
+  throw new Error(`Provision did not reach status "${targetStatus}" within ${timeout}ms`);
 }

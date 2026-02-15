@@ -1,8 +1,7 @@
-import { test, expect } from '@playwright/test';
-import { apiSignUp, injectAuth } from './fixtures/auth.fixture';
-import { apiCreateDeployment, apiStartDeployment, apiDeleteDeployment, apiStopDeployment, apiListDeployments } from './fixtures/api.fixture';
-import { uniqueSlug, TEST_PASSWORD, readInfraState, type InfraState } from './fixtures/test-data';
-import { waitForDeploymentStatus } from './helpers/wait';
+import { test, expect, chromium } from '@playwright/test';
+import { logIn } from './fixtures/auth.fixture';
+import { uniqueSlug, readInfraState, TEST_PASSWORD, type InfraState } from './fixtures/test-data';
+import { waitForDeploymentStatusOnPage } from './helpers/wait';
 
 /**
  * UJ3: "I want to check on my apps"
@@ -17,7 +16,6 @@ import { waitForDeploymentStatus } from './helpers/wait';
  */
 
 test.describe('UJ3: Day-2 Operations', () => {
-  let token: string;
   let infra: InfraState;
   let deploymentId: string | undefined;
 
@@ -26,47 +24,122 @@ test.describe('UJ3: Day-2 Operations', () => {
     const state = readInfraState();
     if (!state) throw new Error('No infrastructure state — run global setup first');
     infra = state;
-    token = infra.token;
 
-    // Clean up any existing deployments from earlier test suites (plan limit = 1)
-    const existing = await apiListDeployments(token);
-    for (const d of existing) {
-      const status = d.attributes.status as string;
-      if (status === 'running') await apiStopDeployment(token, d.id).catch(() => {});
-      if (status !== 'deleted') {
-        await new Promise(r => setTimeout(r, 2000));
-        await apiDeleteDeployment(token, d.id).catch(() => {});
+    // Use browser to clean up existing deployments and create a new one
+    const browser = await chromium.launch();
+    const context = await browser.newContext({ baseURL: 'http://localhost:8082' });
+    const page = await context.newPage();
+
+    try {
+      await logIn(page, infra.email, TEST_PASSWORD);
+
+      // Clean up any existing deployments (plan limit = 1)
+      await page.goto('/deployments');
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(1000);
+
+      const deplLinks = await page.locator('a[href*="/deployments/depl_"]').all();
+      for (const link of deplLinks) {
+        const href = await link.getAttribute('href');
+        if (!href) continue;
+
+        await page.goto(href);
+        await page.waitForLoadState('networkidle');
+
+        // Stop if running
+        const stopBtn = page.getByRole('button', { name: /Stop/i });
+        if (await stopBtn.isVisible().catch(() => false) && await stopBtn.isEnabled().catch(() => false)) {
+          await stopBtn.click();
+          await page.locator('span').filter({ hasText: /Stopped/ }).waitFor({ timeout: 60_000 }).catch(() => {});
+        }
+
+        // Delete
+        const deleteBtn = page.getByRole('button', { name: /Delete/i });
+        if (await deleteBtn.isVisible().catch(() => false)) {
+          await deleteBtn.click();
+          await page.waitForTimeout(500);
+          const confirmBtn = page.getByRole('button', { name: /Delete/i }).last();
+          if (await confirmBtn.isVisible().catch(() => false)) {
+            await confirmBtn.click();
+            await page.waitForTimeout(3000);
+          }
+        }
       }
+
+      // Create a deployment via the deploy dialog from template detail
+      await page.goto(`/templates/${infra.templateId}`);
+      await page.waitForLoadState('networkidle');
+      await page.getByText('Deploy Now').click();
+      await page.waitForTimeout(1000);
+
+      // Fill deploy form
+      const nameInput = page.locator('#name');
+      if (await nameInput.isVisible()) {
+        await nameInput.fill(uniqueSlug('d2depl'));
+      }
+
+      // Select node
+      const nodeSelect = page.locator('#node').or(page.getByLabel(/Deploy To|Node/i));
+      if (await nodeSelect.isVisible()) {
+        const options = nodeSelect.locator('option');
+        const count = await options.count();
+        if (count > 1) await nodeSelect.selectOption({ index: 1 });
+      }
+
+      // Click Deploy
+      await page.getByRole('button', { name: /^Deploy$|^Creating|^Starting/i }).click();
+
+      // Wait for redirect to deployment detail
+      await expect(page).toHaveURL(/\/deployments\//, { timeout: 15_000 });
+      const match = page.url().match(/\/deployments\/([^/]+)/);
+      deploymentId = match?.[1];
+
+      // Wait for Running status via page polling
+      if (deploymentId) {
+        await waitForDeploymentStatusOnPage(page, deploymentId, 'Running', 180_000);
+      }
+    } finally {
+      await browser.close();
     }
-
-    // Create and start a real deployment on the shared droplet
-    const depl = await apiCreateDeployment(token, {
-      name: uniqueSlug('d2depl'),
-      template_id: infra.templateId,
-      node_id: infra.nodeId,
-    });
-    deploymentId = depl.id;
-
-    // Start the deployment — real containers will pull and run on the DO droplet
-    await apiStartDeployment(token, deploymentId);
-
-    // Wait for deployment to reach "running" (real Docker pull + start, up to 3 min)
-    await waitForDeploymentStatus(token, deploymentId, 'running', 180_000);
   });
 
   test.afterAll(async () => {
-    if (deploymentId) {
-      await apiStopDeployment(token, deploymentId).catch(() => {});
-      // Wait a bit for containers to stop before deleting
-      await new Promise(r => setTimeout(r, 5000));
-      await apiDeleteDeployment(token, deploymentId).catch(() => {});
+    if (!deploymentId) return;
+    const browser = await chromium.launch();
+    const context = await browser.newContext({ baseURL: 'http://localhost:8082' });
+    const page = await context.newPage();
+    try {
+      await logIn(page, infra.email, TEST_PASSWORD);
+      await page.goto(`/deployments/${deploymentId}`);
+      await page.waitForLoadState('networkidle');
+
+      // Stop if running
+      const stopBtn = page.getByRole('button', { name: /Stop/i });
+      if (await stopBtn.isVisible().catch(() => false)) {
+        await stopBtn.click();
+        await page.locator('span').filter({ hasText: /Stopped/ }).waitFor({ timeout: 60_000 }).catch(() => {});
+      }
+
+      // Delete
+      const deleteBtn = page.getByRole('button', { name: /Delete/i });
+      if (await deleteBtn.isVisible().catch(() => false)) {
+        await deleteBtn.click();
+        await page.waitForTimeout(500);
+        const confirmBtn = page.getByRole('button', { name: /Delete/i }).last();
+        if (await confirmBtn.isVisible().catch(() => false)) {
+          await confirmBtn.click();
+          await page.waitForTimeout(2000);
+        }
+      }
+    } finally {
+      await browser.close();
     }
   });
 
   // --- Happy path ---
 
   test('authenticated user sees deployments list', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, infra.email, TEST_PASSWORD);
     await page.goto('/deployments');
     await page.waitForLoadState('networkidle');
 
@@ -76,7 +149,7 @@ test.describe('UJ3: Day-2 Operations', () => {
   test('deployments list shows created deployment', async ({ page }) => {
     test.skip(!deploymentId, 'No deployment created');
 
-    await injectAuth(page, token);
+    await logIn(page, infra.email, TEST_PASSWORD);
     await page.goto('/deployments');
     await page.waitForLoadState('networkidle');
 
@@ -88,7 +161,7 @@ test.describe('UJ3: Day-2 Operations', () => {
   test('deployment detail from list', async ({ page }) => {
     test.skip(!deploymentId, 'No deployment created');
 
-    await injectAuth(page, token);
+    await logIn(page, infra.email, TEST_PASSWORD);
     await page.goto('/deployments');
     await page.waitForLoadState('networkidle');
 
@@ -103,7 +176,7 @@ test.describe('UJ3: Day-2 Operations', () => {
   test('deployment detail overview tab shows running status', async ({ page }) => {
     test.skip(!deploymentId, 'No deployment');
 
-    await injectAuth(page, token);
+    await logIn(page, infra.email, TEST_PASSWORD);
     await page.goto(`/deployments/${deploymentId}`);
     await page.waitForLoadState('networkidle');
 
@@ -116,7 +189,7 @@ test.describe('UJ3: Day-2 Operations', () => {
     test.skip(!deploymentId, 'No deployment');
     test.setTimeout(120_000);
 
-    await injectAuth(page, token);
+    await logIn(page, infra.email, TEST_PASSWORD);
     await page.goto(`/deployments/${deploymentId}`);
     await page.waitForLoadState('networkidle');
 
@@ -138,7 +211,7 @@ test.describe('UJ3: Day-2 Operations', () => {
     test.skip(!deploymentId, 'No deployment');
     test.setTimeout(120_000);
 
-    await injectAuth(page, token);
+    await logIn(page, infra.email, TEST_PASSWORD);
     await page.goto(`/deployments/${deploymentId}`);
     await page.waitForLoadState('networkidle');
 
@@ -159,7 +232,7 @@ test.describe('UJ3: Day-2 Operations', () => {
   test('events tab shows real lifecycle events', async ({ page }) => {
     test.skip(!deploymentId, 'No deployment');
 
-    await injectAuth(page, token);
+    await logIn(page, infra.email, TEST_PASSWORD);
     await page.goto(`/deployments/${deploymentId}`);
     await page.waitForLoadState('networkidle');
 
@@ -181,7 +254,7 @@ test.describe('UJ3: Day-2 Operations', () => {
     test.skip(!deploymentId, 'No deployment');
     test.setTimeout(300_000);
 
-    await injectAuth(page, token);
+    await logIn(page, infra.email, TEST_PASSWORD);
     await page.goto(`/deployments/${deploymentId}`);
     await page.waitForLoadState('networkidle');
 
@@ -207,21 +280,40 @@ test.describe('UJ3: Day-2 Operations', () => {
   // --- Sad path ---
 
   test('logs tab for stopped deployment shows waiting message', async ({ page }) => {
-    // Create a deployment but don't start it
+    // Create a deployment via UI but don't start it
     let pendingDeplId: string | undefined;
-    try {
-      const depl = await apiCreateDeployment(token, {
-        name: uniqueSlug('d2pending'),
-        template_id: infra.templateId,
-        node_id: infra.nodeId,
-      });
-      pendingDeplId = depl.id;
-    } catch {
+
+    await logIn(page, infra.email, TEST_PASSWORD);
+
+    // Navigate to template and deploy
+    await page.goto(`/templates/${infra.templateId}`);
+    await page.waitForLoadState('networkidle');
+    await page.getByText('Deploy Now').click();
+    await page.waitForTimeout(1000);
+
+    const nameInput = page.locator('#name');
+    if (await nameInput.isVisible()) {
+      await nameInput.fill(uniqueSlug('d2pending'));
+    }
+
+    const nodeSelect = page.locator('#node').or(page.getByLabel(/Deploy To|Node/i));
+    if (await nodeSelect.isVisible()) {
+      const options = nodeSelect.locator('option');
+      const count = await options.count();
+      if (count > 1) await nodeSelect.selectOption({ index: 1 });
+    }
+
+    await page.getByRole('button', { name: /^Deploy$|^Creating|^Starting/i }).click();
+    await expect(page).toHaveURL(/\/deployments\//, { timeout: 15_000 });
+
+    const match = page.url().match(/\/deployments\/([^/]+)/);
+    pendingDeplId = match?.[1];
+
+    if (!pendingDeplId) {
       test.skip(true, 'Could not create pending deployment');
       return;
     }
 
-    await injectAuth(page, token);
     await page.goto(`/deployments/${pendingDeplId}`);
     await page.waitForLoadState('networkidle');
 
@@ -233,12 +325,23 @@ test.describe('UJ3: Day-2 Operations', () => {
     // Non-running deployment: waiting message or "No logs"
     await expect(page.getByText(/Logs will appear|No logs available/i)).toBeVisible({ timeout: 10_000 });
 
-    // Clean up
-    await apiDeleteDeployment(token, pendingDeplId).catch(() => {});
+    // Clean up via UI
+    await page.goto(`/deployments/${pendingDeplId}`);
+    await page.waitForLoadState('networkidle');
+    const deleteBtn = page.getByRole('button', { name: /Delete/i });
+    if (await deleteBtn.isVisible().catch(() => false)) {
+      await deleteBtn.click();
+      await page.waitForTimeout(500);
+      const confirmBtn = page.getByRole('button', { name: /Delete/i }).last();
+      if (await confirmBtn.isVisible().catch(() => false)) {
+        await confirmBtn.click();
+        await page.waitForTimeout(2000);
+      }
+    }
   });
 
   test('deployment list shows only own deployments', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, infra.email, TEST_PASSWORD);
     await page.goto('/deployments');
     await page.waitForLoadState('networkidle');
 

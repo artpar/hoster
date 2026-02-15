@@ -1,24 +1,30 @@
-import { test, expect } from '@playwright/test';
-import { apiSignUp, injectAuth } from './fixtures/auth.fixture';
+import { test, expect, chromium } from '@playwright/test';
+import { signUp, logIn } from './fixtures/auth.fixture';
 import { uniqueEmail, TEST_PASSWORD } from './fixtures/test-data';
 
 /**
  * UJ1: "I want to try this platform"
  *
- * Real flow through APIGate (:8082) → Hoster (:8080):
- *   - `/` → APIGate portal (entry point for new visitors)
- *   - `/sign-in`, `/sign-up` → Hoster SPA auth pages (served via hoster-front route)
- *   - `/templates` → Hoster SPA marketplace (API requires auth via APIGate)
- *   - `/templates/:id` → Template detail (API requires auth)
+ * Real flow through APIGate (:8082) -> Hoster (:8080):
+ *   - `/` -> APIGate portal (entry point for new visitors)
+ *   - `/sign-in`, `/sign-up` -> Hoster SPA auth pages (served via hoster-front route)
+ *   - `/templates` -> Hoster SPA marketplace (API requires auth via APIGate)
+ *   - `/templates/:id` -> Template detail (API requires auth)
  */
 
 test.describe('UJ1: Discovery', () => {
-  let token: string;
+  let email: string;
 
   test.beforeAll(async () => {
-    const email = uniqueEmail();
-    const result = await apiSignUp(email, TEST_PASSWORD);
-    token = result.token;
+    const browser = await chromium.launch();
+    const context = await browser.newContext({ baseURL: 'http://localhost:8082' });
+    const page = await context.newPage();
+    try {
+      email = uniqueEmail();
+      await signUp(page, email, TEST_PASSWORD);
+    } finally {
+      await browser.close();
+    }
   });
 
   // Template cards link to /templates/tmpl_*, NOT /templates/new (which is the Create button)
@@ -40,7 +46,7 @@ test.describe('UJ1: Discovery', () => {
   });
 
   test('authenticated user can browse templates', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/templates');
     await expect(page.getByRole('heading', { name: 'Templates' })).toBeVisible({ timeout: 10_000 });
     // Category filter pill "All" (exact match to avoid "Browse All")
@@ -50,7 +56,7 @@ test.describe('UJ1: Discovery', () => {
   });
 
   test('marketplace search filters by name', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/templates');
     await expect(page.getByRole('heading', { name: 'Templates' })).toBeVisible({ timeout: 10_000 });
 
@@ -72,7 +78,7 @@ test.describe('UJ1: Discovery', () => {
   });
 
   test('template detail shows all fields', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/templates');
     await expect(page.getByRole('heading', { name: 'Templates' })).toBeVisible({ timeout: 10_000 });
 
@@ -87,7 +93,7 @@ test.describe('UJ1: Discovery', () => {
   });
 
   test('"Deploy Now" opens deploy dialog for authenticated user', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/templates');
     await expect(page.getByRole('heading', { name: 'Templates' })).toBeVisible({ timeout: 10_000 });
 
@@ -111,7 +117,7 @@ test.describe('UJ1: Discovery', () => {
   });
 
   test('invalid template ID shows error', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/templates/nonexistent-template-id-12345');
     await page.waitForTimeout(3000);
     const body = await page.locator('body').textContent();
@@ -119,7 +125,7 @@ test.describe('UJ1: Discovery', () => {
   });
 
   test('template detail accessible on revisit with auth', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/templates');
     await expect(page.getByRole('heading', { name: 'Templates' })).toBeVisible({ timeout: 10_000 });
 

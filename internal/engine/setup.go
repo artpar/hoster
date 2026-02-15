@@ -160,6 +160,19 @@ func Setup(cfg SetupConfig) http.Handler {
 			}
 			data["provider"] = strVal(cred["provider"])
 
+			instanceName := strVal(data["instance_name"])
+			keyName := "cloud-" + instanceName
+
+			// Reuse orphaned SSH key from previous failed provision (restores b880707 fix lost in engine rewrite)
+			existing, err := store.List(ctx, "ssh_keys", []Filter{
+				{Field: "creator_id", Value: authCtx.UserID},
+				{Field: "name", Value: keyName},
+			}, Page{Limit: 1})
+			if err == nil && len(existing) > 0 {
+				data["ssh_key_id"] = strVal(existing[0]["reference_id"])
+				return nil
+			}
+
 			// Auto-generate SSH key pair for the provision
 			privateKeyPEM, publicKey, err := crypto.GenerateSSHKeyPair()
 			if err != nil {
@@ -171,10 +184,9 @@ func Setup(cfg SetupConfig) http.Handler {
 				return fmt.Errorf("compute SSH key fingerprint: %w", err)
 			}
 
-			instanceName := strVal(data["instance_name"])
 			sshKeyRow, err := store.Create(ctx, "ssh_keys", map[string]any{
 				"creator_id":  authCtx.UserID,
-				"name":        "cloud-" + instanceName,
+				"name":        keyName,
 				"private_key": string(privateKeyPEM),
 				"public_key":  publicKey,
 				"fingerprint": fingerprint,

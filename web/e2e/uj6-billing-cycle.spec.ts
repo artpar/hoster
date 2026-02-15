@@ -1,5 +1,5 @@
-import { test, expect } from '@playwright/test';
-import { apiSignUp, injectAuth } from './fixtures/auth.fixture';
+import { test, expect, chromium } from '@playwright/test';
+import { signUp, logIn } from './fixtures/auth.fixture';
 import { uniqueEmail, TEST_PASSWORD } from './fixtures/test-data';
 
 /**
@@ -8,22 +8,28 @@ import { uniqueEmail, TEST_PASSWORD } from './fixtures/test-data';
  * Customer reviews billing summary, invoices, running deployment costs,
  * and payment flow. All tests use real API responses — no mocking.
  *
- * Targets: APIGate (:8082) → Hoster (:8080) — real prod-like stack.
+ * Targets: APIGate (:8082) -> Hoster (:8080) — real prod-like stack.
  */
 
 test.describe('UJ6: Billing Cycle', () => {
-  let token: string;
+  let email: string;
 
   test.beforeAll(async () => {
-    const email = uniqueEmail();
-    const result = await apiSignUp(email, TEST_PASSWORD);
-    token = result.token;
+    const browser = await chromium.launch();
+    const context = await browser.newContext({ baseURL: 'http://localhost:8082' });
+    const page = await context.newPage();
+    try {
+      email = uniqueEmail();
+      await signUp(page, email, TEST_PASSWORD);
+    } finally {
+      await browser.close();
+    }
   });
 
   // --- Happy path ---
 
   test('billing page shows summary cards', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/billing');
     await page.waitForLoadState('networkidle');
 
@@ -37,7 +43,7 @@ test.describe('UJ6: Billing Cycle', () => {
   });
 
   test('running deployments section visible', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/billing');
     await page.waitForLoadState('networkidle');
 
@@ -50,7 +56,7 @@ test.describe('UJ6: Billing Cycle', () => {
   });
 
   test('invoices section visible', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/billing');
     await page.waitForLoadState('networkidle');
 
@@ -64,7 +70,7 @@ test.describe('UJ6: Billing Cycle', () => {
   });
 
   test('usage history section visible', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/billing');
     await page.waitForLoadState('networkidle');
 
@@ -80,7 +86,7 @@ test.describe('UJ6: Billing Cycle', () => {
   // --- Sad path ---
 
   test('new user has no invoices', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/billing');
     await page.waitForLoadState('networkidle');
 
@@ -89,7 +95,7 @@ test.describe('UJ6: Billing Cycle', () => {
   });
 
   test('payment cancelled shows error', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/billing?payment=cancelled');
     await page.waitForLoadState('networkidle');
 
@@ -98,7 +104,7 @@ test.describe('UJ6: Billing Cycle', () => {
   });
 
   test('new user monthly cost is $0', async ({ page }) => {
-    await injectAuth(page, token);
+    await logIn(page, email, TEST_PASSWORD);
     await page.goto('/billing');
     await page.waitForLoadState('networkidle');
 

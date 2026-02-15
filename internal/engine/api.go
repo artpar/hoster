@@ -370,16 +370,16 @@ func deleteHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 			}
 		}
 
-		// If the resource has a state machine with a "deleting" state,
-		// transition to it so command handlers can clean up (e.g., remove containers).
+		// If the resource has a state machine with a "deleting" or "destroying" state,
+		// transition to it so command handlers can clean up (e.g., remove containers, destroy instances).
 		if res.StateMachine != nil {
 			currentState, _ := existing[res.StateMachine.Field].(string)
 			if targets, ok := res.StateMachine.Transitions[currentState]; ok {
 				for _, t := range targets {
-					if t == "deleting" {
-						row, cmd, err := cfg.Store.Transition(ctx, res.Name, id, "deleting")
+					if t == "deleting" || t == "destroying" {
+						row, cmd, err := cfg.Store.Transition(ctx, res.Name, id, t)
 						if err != nil {
-							cfg.Logger.Warn("failed to transition to deleting, falling through to direct delete",
+							cfg.Logger.Warn("failed to transition for delete, falling through to direct delete",
 								"resource", res.Name, "id", id, "error", err)
 						} else if cmd != "" && cfg.Bus != nil {
 							if err := cfg.Bus.Dispatch(ctx, cmd, row); err != nil {

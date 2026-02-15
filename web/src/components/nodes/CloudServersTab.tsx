@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Cloud, Server, ExternalLink } from 'lucide-react';
+import { Plus, Cloud } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCloudProvisions, useDeleteCloudProvision, useRetryProvision } from '@/hooks/useCloudProvisions';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -96,36 +96,16 @@ export function CloudServersTab() {
           {completedProvisions.length > 0 && (
             <div>
               <h3 className="mb-3 text-sm font-medium text-muted-foreground uppercase tracking-wider">Completed</h3>
-              <div className="space-y-2">
-                {completedProvisions.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between rounded-lg border px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <Server className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        <span className="font-medium">{p.attributes.instance_name}</span>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                            {providerLabels[p.attributes.provider] || p.attributes.provider}
-                          </Badge>
-                          <span className="text-xs text-muted-foreground">{p.attributes.region}</span>
-                          {p.attributes.public_ip && (
-                            <span className="text-xs font-mono text-muted-foreground">{p.attributes.public_ip}</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {provisionStatusBadge(p.attributes.status)}
-                      {p.attributes.node_id && (
-                        <Link
-                          to="/nodes"
-                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                        >
-                          View Node <ExternalLink className="h-3 w-3" />
-                        </Link>
-                      )}
-                    </div>
-                  </div>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {completedProvisions.map((provision) => (
+                  <ProvisionCard
+                    key={provision.id}
+                    provision={provision}
+                    onDestroy={(id) => {
+                      const prov = completedProvisions.find((p) => p.id === id);
+                      setDestroyDialog({ open: true, id, name: prov?.attributes.instance_name || '' });
+                    }}
+                  />
                 ))}
               </div>
             </div>
