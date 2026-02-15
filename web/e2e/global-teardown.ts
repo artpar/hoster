@@ -207,7 +207,13 @@ async function globalTeardown() {
     console.warn(`[global-teardown] WARNING: Could not verify droplets (DO API returned ${doResp.status})`);
   } else {
     const doData = await doResp.json() as { droplets: Array<{ id: number; name: string; status: string }> };
-    const leaked = doData.droplets.filter(d => d.name.startsWith('e2e-'));
+    // Match all known E2E test droplet name prefixes.
+    // global-setup uses "e2e-<timestamp>", UJ4 tests use uniqueName('uj4node') → "uj4node-<uid>".
+    // Any droplet matching these patterns was created by our tests and should not exist after teardown.
+    const testPrefixes = ['e2e-', 'uj4node-'];
+    const leaked = doData.droplets.filter(d =>
+      testPrefixes.some(prefix => d.name.startsWith(prefix))
+    );
 
     if (leaked.length > 0) {
       console.error(`[global-teardown] LEAKED DROPLETS FOUND: ${leaked.length}`);

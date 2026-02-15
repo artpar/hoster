@@ -2,224 +2,161 @@
 
 This guide covers running APIGate + Hoster together locally for full production-like end-to-end testing.
 
+For detailed step-by-step setup instructions, see **`specs/local-e2e-setup.md`**.
+
 ## Architecture Overview
 
 ```
-Browser/API Clients
-        |
-        v
-+------------------------------+
-|   APIGate (localhost:8082)   |
-|   - User Portal (/portal)    |
-|   - Auth (login/signup)      |
-|   - API Key Management       |
-+-------------+----------------+
+Browser
+    |
+    v
++-------------------------------+
+|   APIGate (localhost:8082)    |
+|   - JWT Auth                  |
+|   - Billing / Quota           |
+|   - Route-based forwarding    |
++-------------+-----------------+
               | Injects: X-User-ID, X-Plan-ID, X-Plan-Limits
               v
-+------------------------------+
-|   Hoster API (localhost:8080)|
-|   - Templates API            |
-|   - Deployments API          |
-|   - Nodes API                |
-|   - Frontend UI              |
-+-------------+----------------+
++-------------------------------+
+|   Hoster API (localhost:8080) |
+|   - Templates API             |
+|   - Deployments API           |
+|   - Nodes API                 |
+|   - Embedded SPA frontend     |
++-------------+-----------------+
               |
               v
-+------------------------------+
-| App Proxy (localhost:9091)   |
++-------------------------------+
+| App Proxy (localhost:9091)    |
 | *.apps.localhost -> containers|
-+------------------------------+
++-------------------------------+
 ```
 
-## Prerequisites
-
-- Docker and docker-compose
-- Go 1.21+
-- curl and jq (for testing)
-
-## Quick Start
-
-### Option 1: Docker Compose (Recommended)
-
-```bash
-# Start everything
-make local-e2e-setup
-
-# Or manually:
-docker-compose -f deploy/docker-compose.local.yml up -d
-
-# View logs
-make local-e2e-logs
-
-# Stop
-make local-e2e-down
-```
-
-### Option 2: Run from Source
-
-**Terminal 1: Start APIGate**
-```bash
-cd /path/to/apigate
-go run ./cmd/apigate serve
-```
-
-**Terminal 2: Start Hoster**
-```bash
-cd /path/to/hoster
-HOSTER_AUTH_MODE=dev go run ./cmd/hoster
-```
+**ALL access goes through APIGate (localhost:8082).** Never access Hoster (8080) directly.
 
 ## Service URLs
 
-| Service | URL | Purpose |
-|---------|-----|---------|
-| APIGate Portal | http://localhost:8082/portal | User signup, login, API key management |
-| Hoster API | http://localhost:8080/api/v1 | Templates, deployments, nodes |
-| App Proxy | http://localhost:9091 | Deployed app access |
-| Deployed Apps | http://{name}.apps.localhost:9091 | Individual app access |
+| Service | Port | Purpose |
+|---------|------|---------|
+| APIGate | 8082 | Front-facing: JWT auth + billing + routing |
+| Hoster | 8080 | Backend: API + embedded SPA frontend |
+| Vite | 3000 | Dev hot-reload only (NOT for testing) |
+| App Proxy | 9091 | Deployment routing (`*.apps.localhost`) |
 
-## Auth Modes
+## Prerequisites
 
-### Dev Mode (Standalone)
+- Go 1.21+
+- Node.js + npm
+- `gh` CLI installed and authenticated
+- DigitalOcean API key (set `TEST_DO_API_KEY` env var for E2E tests)
 
-Run Hoster without APIGate for quick development:
-
-```bash
-HOSTER_AUTH_MODE=dev go run ./cmd/hoster
-```
-
-- Session-based auth at `/auth/*` endpoints
-- Auto-accepts any email/password
-- Generous default limits (100 deployments, 16 CPU cores)
-
-### Header Mode (Production-like)
-
-Run with APIGate for full auth flow:
+## Quick Start
 
 ```bash
-HOSTER_AUTH_MODE=header go run ./cmd/hoster
+# 1. Build frontend + Hoster binary
+cd /Users/artpar/workspace/code/hoster/web && npm run build
+rm -rf ../internal/engine/webui/dist && cp -r dist ../internal/engine/webui/dist
+cd .. && go build -o /tmp/hoster-e2e-test/hoster ./cmd/hoster
+
+# 2. Download APIGate v0.3.8+
+cd /tmp/hoster-e2e-test
+gh release download v0.3.8 --repo artpar/apigate --pattern 'apigate-darwin-arm64*'
+tar xzf apigate-darwin-arm64.tar.gz && chmod +x apigate-darwin-arm64
+
+# 3. Start Hoster
+/tmp/hoster-e2e-test/start.sh &
+sleep 2
+
+# 4. Start APIGate
+cd /tmp/hoster-e2e-test
+APIGATE_DATABASE_DSN=/tmp/hoster-e2e-test/apigate.db \
+APIGATE_SERVER_PORT=8082 \
+./apigate-darwin-arm64 serve >> apigate.log 2>&1 &
 ```
 
-- Trusts `X-User-ID`, `X-Plan-ID`, `X-Plan-Limits` headers from APIGate
-- Requires APIGate authentication
+On first run, complete the APIGate setup wizard at `http://localhost:8082/setup`. See `specs/local-e2e-setup.md` Steps 5-8 for details.
 
-## E2E Test Flow
+## Auth Flow
 
-### 1. User Registration (APIGate)
+Auth is entirely handled by APIGate. Hoster has NO auth endpoints.
 
-```bash
-curl -X POST http://localhost:8082/portal/api/register \
-  -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com", "password": "password123", "name": "Test User"}'
-```
+1. Frontend shows `/sign-in` and `/sign-up` pages (Hoster-branded)
+2. These pages call APIGate endpoints: `/mod/auth/login`, `/mod/auth/register`
+3. APIGate returns a JWT token
+4. Frontend stores JWT in localStorage, sends as `Authorization: Bearer {token}`
+5. APIGate validates JWT, injects `X-User-ID`, `X-Plan-ID`, `X-Plan-Limits` headers
+6. Hoster reads injected headers via `ResolveUser()` middleware
 
-### 2. Login and Get JWT Token
+## Routes Configuration
 
-```bash
-# Login via APIGate auth endpoint
-TOKEN=$(curl -s -X POST http://localhost:8082/mod/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com", "password": "password123"}' | jq -r '.token')
-```
+| Name | Path Pattern | auth_required | Priority | Purpose |
+|------|-------------|---------------|----------|---------|
+| `hoster-billing` | `/api/v1/deployments*` | 1 (billing) | 55 | Deployment CRUD — billable + metered |
+| `hoster-api` | `/api/*` | 1 (auth) | 50 | All other APIs — auth only, NO metering |
+| `hoster-front` | `/*` | 0 (public) | 10 | SPA frontend — public |
 
-### 3. Create API Key
+All routes upstream to `http://localhost:8080` (Hoster).
 
-```bash
-curl -X POST http://localhost:8082/portal/api/keys \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"name": "my-key"}'
-```
+## Billing Configuration
 
-### 4. Create Template (via APIGate)
+Hoster reports usage events to APIGate's metering endpoint:
 
-```bash
-curl -X POST http://localhost:8082/api/v1/templates \
-  -H "Authorization: Bearer ak_xxx" \
-  -H "Content-Type: application/vnd.api+json" \
-  -d '{
-    "data": {
-      "type": "templates",
-      "attributes": {
-        "name": "My App",
-        "version": "1.0.0",
-        "compose_spec": "version: \"3.8\"\nservices:\n  web:\n    image: nginx:alpine\n    ports:\n      - \"80:80\""
-      }
-    }
-  }'
-```
-
-### 5. Deploy and Access
-
-```bash
-# Create deployment
-curl -X POST http://localhost:8082/api/v1/deployments \
-  -H "Authorization: Bearer ak_xxx" \
-  -H "Content-Type: application/vnd.api+json" \
-  -d '{"data": {"type": "deployments", "attributes": {"template_id": "tmpl_xxx"}}}'
-
-# Start deployment
-curl -X POST http://localhost:8082/api/v1/deployments/{id}/start \
-  -H "Authorization: Bearer ak_xxx"
-
-# Access deployed app
-curl --resolve "my-app-xxx.apps.localhost:9091:127.0.0.1" \
-  http://my-app-xxx.apps.localhost:9091/
-```
-
-## DNS Configuration
-
-For subdomain routing, add entries to `/etc/hosts`:
-
-```
-127.0.0.1 apps.localhost
-127.0.0.1 my-app.apps.localhost
-```
-
-Or use `nip.io` for automatic DNS:
-```bash
-HOSTER_APP_PROXY_BASE_DOMAIN=apps.127.0.0.1.nip.io
-```
+- **API Key**: Create in APIGate admin (`/admin` → Keys). Set as `HOSTER_BILLING_API_KEY` in `start.sh`.
+- **Meter Path**: APIGate v0.3.8+ supports configurable meter path via `routes.meter_base_path` setting. Set to `/_internal/meter` to avoid conflict with the `hoster-api` route at `/api/*`.
+- **Hoster default**: Billing client uses `/_internal/meter` as default path.
 
 ## Header Contract
 
-When running with APIGate, these headers are injected:
+When running with APIGate, these headers are injected on `auth_required=1` routes:
 
-| Header | Source | Description |
-|--------|--------|-------------|
-| `X-User-ID` | `userID` | Authenticated user's UUID |
-| `X-Plan-ID` | `planID` | User's subscription plan |
-| `X-Plan-Limits` | `planLimits` | JSON with resource limits |
-| `X-Key-ID` | `keyID` | API key identifier |
+| Header | Description |
+|--------|-------------|
+| `X-User-ID` | Authenticated user's UUID |
+| `X-Plan-ID` | User's subscription plan |
+| `X-Plan-Limits` | JSON with resource limits |
+| `X-Key-ID` | API key identifier |
+
+On `auth_required=0` routes, APIGate **strips** the Authorization header — no auth context is forwarded.
+
+## Environment Variables (Hoster)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HOSTER_DATA_DIR` | `./data` | Base directory for DB and configs |
+| `HOSTER_NODES_ENCRYPTION_KEY` | — | 32-byte key for AES-256-GCM SSH key encryption |
+| `HOSTER_BILLING_API_KEY` | — | APIGate API key for metering requests |
+| `HOSTER_PROXY_PORT` | `9091` | App proxy listen port |
+| `HOSTER_PROXY_BASE_DOMAIN` | — | Base domain for app routing |
+| `HOSTER_DOMAIN_BASE_DOMAIN` | — | Base domain for auto-generated deployment domains |
+
+## Running E2E Tests
+
+```bash
+# From web/ directory (never from repo root)
+cd /Users/artpar/workspace/code/hoster/web
+
+export TEST_DO_API_KEY='dop_v1_your_key_here'
+
+# Run all tests (~10-15 min, provisions real DO droplets)
+npx playwright test
+
+# Run a single journey
+npx playwright test e2e/uj1-discovery.spec.ts
+
+# View test report
+npx playwright show-report
+```
+
+Tests require Hoster + APIGate running and configured. See `specs/local-e2e-setup.md` for full details.
 
 ## Troubleshooting
 
-### Port Already in Use
-
-```bash
-# Find process using port
-lsof -i :8080
-
-# Kill it
-kill -9 <PID>
-```
-
-### App Proxy Not Routing
-
-1. Check deployment has a domain assigned
-2. Ensure `/etc/hosts` has the subdomain entry
-3. Verify app proxy is running: `curl localhost:9091/health`
-
-### Plan Limit Errors
-
-In dev mode, limits come from the session. In header mode, limits come from `X-Plan-Limits` header. Ensure the auth mode matches your setup.
-
-## Running Tests
-
-```bash
-# Full E2E test suite
-make local-e2e-test
-
-# Or manually
-./scripts/test-local-e2e.sh
-```
+| Problem | Solution |
+|---------|----------|
+| Stale frontend at :8082 | Rebuild: `cd web && npm run build`, copy dist, rebuild Hoster binary, restart |
+| Auth not working on API calls | Ensure `hoster-api` route exists with `auth_required=1` |
+| "Monthly request quota exceeded" | `hoster-api` metering expression is `1` — must be `0` |
+| Billing 401 | Set `HOSTER_BILLING_API_KEY` in `start.sh` |
+| Billing 404 on meter endpoint | Set `routes.meter_base_path` to `/_internal/meter` in APIGate settings |
+| Port already in use | `lsof -i :PORT -t \| xargs kill` |

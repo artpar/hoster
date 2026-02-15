@@ -26,6 +26,7 @@ type Client interface {
 type APIGateClient struct {
 	baseURL    string
 	serviceKey string
+	meterPath  string
 	httpClient *http.Client
 	logger     *slog.Logger
 }
@@ -36,6 +37,8 @@ type Config struct {
 	BaseURL string
 	// ServiceKey is the API key for authenticating with APIGate.
 	ServiceKey string
+	// MeterPath is the metering endpoint path (default "/_internal/meter").
+	MeterPath string
 	// Timeout is the HTTP client timeout.
 	Timeout time.Duration
 }
@@ -60,9 +63,15 @@ func NewAPIGateClient(cfg Config, logger *slog.Logger) *APIGateClient {
 		timeout = 30 * time.Second
 	}
 
+	meterPath := cfg.MeterPath
+	if meterPath == "" {
+		meterPath = "/_internal/meter"
+	}
+
 	return &APIGateClient{
 		baseURL:    cfg.BaseURL,
 		serviceKey: cfg.ServiceKey,
+		meterPath:  meterPath,
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
@@ -151,7 +160,7 @@ func (c *APIGateClient) MeterUsageBatch(ctx context.Context, events []domain.Met
 		return fmt.Errorf("marshal meter request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/meter", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+c.meterPath, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}

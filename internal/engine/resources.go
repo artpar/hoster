@@ -214,9 +214,9 @@ func CloudProvisionResource() Resource {
 			Field:   "status",
 			Initial: "pending",
 			Transitions: map[string][]string{
-				"pending":     {"creating", "failed"},
-				"creating":    {"configuring", "failed"},
-				"configuring": {"ready", "failed"},
+				"pending":     {"creating", "failed", "destroying"},
+				"creating":    {"configuring", "failed", "destroying"},
+				"configuring": {"ready", "failed", "destroying"},
 				"ready":       {"destroying"},
 				"failed":      {"pending", "destroying"},
 				"destroying":  {"destroyed", "failed"},

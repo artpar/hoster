@@ -44,6 +44,8 @@ Everything lives in `/tmp/hoster-e2e-test/`:
 
 **CRITICAL**: `hoster-api` metering expression MUST be `0`. If set to `1` (default), every API call counts against the plan quota and you'll hit "Monthly request quota exceeded" quickly.
 
+**NOTE**: The `hoster-api` route MUST exist for auth enforcement on API paths. Without it, API calls fall through to `hoster-front` (auth_required=0) which strips the Authorization header.
+
 ### Auth Behavior by Route Type
 
 - **auth_required=1**: APIGate validates JWT, injects `X-User-ID`/`X-Plan-ID`/`X-Plan-Limits` headers. On billing routes (metering expr > 0), also runs quota check and records usage.
@@ -64,8 +66,8 @@ Everything lives in `/tmp/hoster-e2e-test/`:
 mkdir -p /tmp/hoster-e2e-test
 cd /tmp/hoster-e2e-test
 
-# Download latest APIGate release (currently v0.3.7)
-gh release download v0.3.7 --repo artpar/apigate --pattern 'apigate-darwin-arm64*'
+# Download latest APIGate release (currently v0.3.8)
+gh release download v0.3.8 --repo artpar/apigate --pattern 'apigate-darwin-arm64*'
 # If downloaded as tar.gz:
 tar xzf apigate-darwin-arm64.tar.gz
 chmod +x apigate-darwin-arm64
@@ -99,6 +101,7 @@ cat > /tmp/hoster-e2e-test/start.sh << 'EOF'
 #!/bin/bash
 export HOSTER_DATA_DIR=/tmp/hoster-e2e-test
 export HOSTER_NODES_ENCRYPTION_KEY='e2e-test-encryption-key-32bytes!'
+export HOSTER_BILLING_API_KEY='<your-apigate-api-key>'
 cd /tmp/hoster-e2e-test
 exec ./hoster >> hoster.log 2>&1
 EOF
@@ -106,6 +109,8 @@ chmod +x /tmp/hoster-e2e-test/start.sh
 ```
 
 **Note**: The encryption key is exactly 32 bytes (required for AES-256-GCM). Using `env VAR=val ./binary &` in some shells causes the env var to not propagate to the background process — hence the script.
+
+**Note**: `HOSTER_BILLING_API_KEY` is set after Step 7 (Create Billing API Key) below. Leave it as a placeholder on first run and update after creating the key.
 
 ### Step 4: Start Services
 
@@ -183,6 +188,27 @@ The setup wizard creates a default `/*` route. You need to add two more routes a
 **CRITICAL**: The `hoster-api` metering expression MUST be `0`. If set to `1` (the default for auth_required=1 routes), every single API call (list templates, get deployments, check stats, etc.) counts against the plan's monthly request quota. With a 100000 limit, you'll hit "Monthly request quota exceeded" within minutes of testing.
 
 Only `hoster-billing` should meter (expression: `1`) — this counts deployment create/start/stop/delete operations against the plan quota.
+
+### Step 7: Create Billing API Key
+
+Hoster's billing reporter sends usage events to APIGate's metering endpoint. It authenticates with an API key.
+
+1. Go to `http://localhost:8082/admin` → Keys section
+2. Create a new API key for the admin user
+3. Copy the key (e.g., `ak_6aa3f08c...`)
+4. Update `/tmp/hoster-e2e-test/start.sh` — set `HOSTER_BILLING_API_KEY` to the key value
+5. Restart Hoster to pick up the key
+
+### Step 8: Configure Meter Path (APIGate v0.3.8+)
+
+APIGate's metering endpoint is configurable via the `routes.meter_base_path` setting. The default is `/api/v1/meter`, but this can conflict with the `hoster-api` route (which catches `/api/*`). Change it to `/_internal/meter`:
+
+1. Go to `http://localhost:8082/admin` → Settings
+2. Find or add `routes.meter_base_path`
+3. Set value to `/_internal/meter`
+4. Restart APIGate
+
+Hoster's billing client defaults to `/_internal/meter` as of v0.3.49+.
 
 ## Running Playwright E2E Tests
 
@@ -366,6 +392,8 @@ The Handler Routes Configuration in APIGate Settings only affects API endpoints,
 | `bind: address already in use` | Kill old process: `lsof -i :PORT -t \| xargs kill` |
 | Monitoring data empty | JWT must be valid. Monitoring routes go through `hoster-api` (auth_required=1). |
 | Port 9091 conflict | Kill old App Proxy: `lsof -i :9091 -t \| xargs kill` |
+| Billing 401 `missing_api_key` | `HOSTER_BILLING_API_KEY` not set in `start.sh`. Create an API key in APIGate admin → Keys, then add it to `start.sh` and restart Hoster. |
+| Billing 404 on meter endpoint | The `hoster-api` route (`/api/*`) is shadowing APIGate's built-in metering endpoint. Set `routes.meter_base_path` to `/_internal/meter` in APIGate settings (Step 8). Requires APIGate v0.3.8+. |
 | Hoster doesn't start in background | Use `start.sh` script instead of inline env vars. Background processes may not inherit env vars. |
 | Encryption key "must be exactly 32 bytes" | The key `e2e-test-encryption-key-32bytes!` is exactly 32 bytes. If using inline env vars with `&`, use the start.sh script instead. |
 | Playwright picks up wrong version | Always run from `cd web && npx playwright test`, NOT from the repo root. |

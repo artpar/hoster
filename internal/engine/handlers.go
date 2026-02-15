@@ -307,16 +307,12 @@ func destroyProvision(ctx context.Context, deps *Deps, data map[string]any) erro
 	// Look up credential by FK integer ID
 	credID := toInt(data["credential_id"])
 	if credID == 0 {
-		logger.Warn("no credential_id on provision, skipping destroy", "provision", refID)
-		store.Transition(ctx, "cloud_provisions", refID, "destroyed")
-		return nil
+		return failProvision(ctx, store, refID, "no credential_id on provision, cannot destroy cloud resource")
 	}
 
 	cred, err := store.GetByID(ctx, "cloud_credentials", credID)
 	if err != nil {
-		logger.Error("failed to look up credential", "provision", refID, "credential_id", credID, "error", err)
-		store.Transition(ctx, "cloud_provisions", refID, "destroyed")
-		return nil
+		return failProvision(ctx, store, refID, fmt.Sprintf("failed to look up credential %d: %v", credID, err))
 	}
 
 	// Decrypt credentials
@@ -332,16 +328,12 @@ func destroyProvision(ctx context.Context, deps *Deps, data map[string]any) erro
 	encryptionKey, _ := deps.Extra["encryption_key"].([]byte)
 	decrypted, err := crypto.Decrypt(credBytes, encryptionKey)
 	if err != nil {
-		logger.Error("failed to decrypt credentials", "provision", refID, "error", err)
-		store.Transition(ctx, "cloud_provisions", refID, "destroyed")
-		return nil
+		return failProvision(ctx, store, refID, fmt.Sprintf("failed to decrypt credentials: %v", err))
 	}
 
 	prov, err := provider.NewProvider(providerType, decrypted, logger)
 	if err != nil {
-		logger.Error("failed to create provider", "provision", refID, "error", err)
-		store.Transition(ctx, "cloud_provisions", refID, "destroyed")
-		return nil
+		return failProvision(ctx, store, refID, fmt.Sprintf("failed to create provider: %v", err))
 	}
 
 	destroyReq := provider.DestroyRequest{
@@ -350,10 +342,10 @@ func destroyProvision(ctx context.Context, deps *Deps, data map[string]any) erro
 		Region:             strVal(data["region"]),
 	}
 	if err := prov.DestroyInstance(ctx, destroyReq); err != nil {
-		logger.Warn("destroy instance failed, treating as success", "provision", refID, "error", err)
+		return failProvision(ctx, store, refID, fmt.Sprintf("destroy instance failed: %v", err))
 	}
 
-	// Transition to destroyed
+	// Transition to destroyed — only reached when the cloud API call succeeded
 	_, _, err = store.Transition(ctx, "cloud_provisions", refID, "destroyed")
 	if err != nil {
 		logger.Error("failed to transition to destroyed", "provision", refID, "error", err)
@@ -380,6 +372,14 @@ func failDeployment(ctx context.Context, store *Store, refID, reason string) err
 		"error_message": reason,
 	})
 	store.Transition(ctx, "deployments", refID, "failed")
+	return fmt.Errorf("%s: %s", refID, reason)
+}
+
+func failProvision(ctx context.Context, store *Store, refID, reason string) error {
+	store.Update(ctx, "cloud_provisions", refID, map[string]any{
+		"error_message": reason,
+	})
+	store.Transition(ctx, "cloud_provisions", refID, "failed")
 	return fmt.Errorf("%s: %s", refID, reason)
 }
 

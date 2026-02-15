@@ -39,7 +39,7 @@ func TestAPIGateClient_MeterUsage_Success(t *testing.T) {
 	var receivedRequest jsonAPIRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/v1/meter", r.URL.Path)
+		assert.Equal(t, "/_internal/meter", r.URL.Path)
 		assert.Equal(t, "application/vnd.api+json", r.Header.Get("Content-Type"))
 		assert.Equal(t, "test-service-key", r.Header.Get("X-API-Key"))
 

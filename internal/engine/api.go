@@ -372,6 +372,7 @@ func deleteHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 
 		// If the resource has a state machine with a "deleting" or "destroying" state,
 		// transition to it so command handlers can clean up (e.g., remove containers, destroy instances).
+		handlerDispatched := false
 		if res.StateMachine != nil {
 			currentState, _ := existing[res.StateMachine.Field].(string)
 			if targets, ok := res.StateMachine.Transitions[currentState]; ok {
@@ -382,6 +383,7 @@ func deleteHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 							cfg.Logger.Warn("failed to transition for delete, falling through to direct delete",
 								"resource", res.Name, "id", id, "error", err)
 						} else if cmd != "" && cfg.Bus != nil {
+							handlerDispatched = true
 							if err := cfg.Bus.Dispatch(ctx, cmd, row); err != nil {
 								cfg.Logger.Error("command dispatch failed during delete",
 									"resource", res.Name, "command", cmd, "error", err)
@@ -389,6 +391,25 @@ func deleteHandler(cfg APIConfig, res *Resource) http.HandlerFunc {
 						}
 						break
 					}
+				}
+			}
+		}
+
+		// If a destroy/delete handler ran, check the resulting state.
+		// If it transitioned to "failed" (e.g., cloud API call failed), do NOT delete the DB record —
+		// the cloud resource may still exist and the user needs to retry.
+		if handlerDispatched && res.StateMachine != nil {
+			updated, err := cfg.Store.Get(ctx, res.Name, id)
+			if err == nil {
+				newState, _ := updated[res.StateMachine.Field].(string)
+				if newState == "failed" {
+					errMsg, _ := updated["error_message"].(string)
+					detail := "destroy failed — cloud resource may still exist. Check error and retry."
+					if errMsg != "" {
+						detail = "destroy failed: " + errMsg
+					}
+					writeError(w, http.StatusConflict, detail)
+					return
 				}
 			}
 		}
