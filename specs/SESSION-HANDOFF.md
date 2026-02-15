@@ -6,15 +6,16 @@
 
 ## CURRENT STATE (February 15, 2026)
 
-### Status: v0.3.46 RELEASED — Cloud provision destroy fix + E2E leak detection
+### Status: v0.3.47 RELEASED — Deployment access UX + Domains tab fix
 
-**Latest Release:** v0.3.46 — CI passed, release workflow triggered, deploying to production.
+**Latest Release:** v0.3.47 — Deployment detail page now shows access URLs, Domains tab data loading fixed.
 
 **What's Working:**
 - Full deployment lifecycle on real cloud infrastructure (DigitalOcean)
 - Generic engine: schema-driven CRUD for all entities
 - Cloud provisioning: credential → provision → droplet → node → deploy → destroy
-- 8 Playwright E2E user journeys (65 tests) against real infrastructure
+- **Deployment access info**: domain URL + direct IP:port shown on detail page
+- **Domains tab**: lists auto + custom domains with DNS instructions
 - Billing via APIGate metering (Stripe Checkout integration)
 - 12 marketplace templates (6 infra + 6 web-UI apps)
 - Production at https://emptychair.dev
@@ -44,68 +45,64 @@ cd web && npx playwright test e2e/uj1-discovery.spec.ts
 
 ---
 
-## LAST SESSION (February 15, 2026) — Session 9
+## LAST SESSION (February 15, 2026) — Session 10
 
 ### What Was Done
 
-1. **Fixed cloud provision destroy flow** (`internal/engine/api.go`)
-   - `deleteHandler` hardcoded `"deleting"` in `Transition()` call
-   - Cloud provisions use `ready → destroying` (not `ready → deleting`)
-   - Fix: use matched target state variable `t` instead of hardcoded string
-   - This caused leaked DO droplets — DB row deleted but actual droplet left alive
+1. **Fixed deployment access URL display** (`web/src/api/types.ts`, `DeploymentDetailPage.tsx`, `DeploymentCard.tsx`)
+   - `DeploymentAttributes.domain` (singular string) was always undefined — API returns `domains` (JSON array)
+   - Added `DeploymentDomain` type and `getPrimaryDomain()` helper
+   - Deployment card and detail page now correctly parse `domains[]` array
 
-2. **Added DestroyInstance command handler** (`internal/engine/handlers.go`)
-   - Decrypts cloud credential, creates provider, calls `DestroyInstance()`
-   - Transitions provision to `destroyed`, deletes associated node
-   - Registered on `Bus.Register("DestroyInstance", destroyProvision)`
+2. **Fixed Domains tab data loading** (`web/src/api/domains.ts`)
+   - Backend domains endpoints return plain JSON arrays, not JSON:API wrapped `{data: [...]}`
+   - `domainsApi` used `apiClient` which expected JSON:API format, then accessed `.data` → `undefined`
+   - Replaced with `domainFetch()` that handles raw JSON responses correctly
 
-3. **Passed encryption key to command bus** (`cmd/hoster/server.go`)
-   - `bus.SetExtra("encryption_key", encryptionKey)` — needed for credential decryption in destroy handler
+3. **Added "Access Your Application" card** to deployment Overview tab
+   - Shows primary domain URL as clickable link with "Open" button
+   - Shows direct IP:port access (node SSH host + proxy port) as fallback
+   - Fetches node info via `useNode()` hook
 
-4. **SSH key reuse for re-provisioning** (`internal/engine/setup.go`)
-   - BeforeCreate hook checks for existing SSH key with matching name before generating new one
-   - Restores b880707 fix lost in engine rewrite
+4. **Added "Open App" button** in deployment header action bar (shown when running + has domain)
 
-5. **DO API leak detection in E2E teardown** (`web/e2e/global-teardown.ts`)
-   - After UI-driven cleanup, queries DO API for any droplets with `e2e-` prefix
-   - If found: force-destroys them AND throws error to surface the bug
-   - No more silent leaks — every leaked droplet fails the test
+5. **Shows node/port in Deployment Info** section on Overview tab
 
-6. **E2E test suite rewritten** — all 8 user journeys now use browser UI instead of direct API calls. Deleted `web/e2e/fixtures/api.fixture.ts`.
+6. **Fixed domain generation inconsistency** (`internal/engine/setup.go`)
+   - `domainListHandler` used `refID + ".apps." + baseDomain` — wrong format, caused double `.apps.` nesting
+   - `domainAddHandler` CNAME target used same wrong format
+   - `domainVerifyHandler` expected target used same wrong format
+   - All three now use `domain.Slugify(name) + "." + baseDomain` matching `scheduleDeployment`
+   - Auto domain only generated on-the-fly if none stored (legacy fallback)
 
-7. **Removed hardcoded DO API key** from `test-data.ts` (GitHub push protection caught it). Now env-only via `TEST_DO_API_KEY`.
-
-8. **Updated docs** — `specs/local-e2e-setup.md` updated for leak detection and env-only API key.
+7. **Fixed production env var names** (`deploy/local/emptychair.env`, gitignored)
+   - `HOSTER_APP_PROXY_*` → `HOSTER_PROXY_*` (Viper key path is `proxy.*`)
+   - Added `HOSTER_DOMAIN_BASE_DOMAIN=apps.emptychair.dev` (was missing)
 
 ### Files Changed
-- `internal/engine/api.go` — Fix: use `t` instead of hardcoded `"deleting"` in Transition
-- `internal/engine/handlers.go` — New: `destroyProvision` command handler
-- `internal/engine/setup.go` — SSH key reuse for re-provisioning
-- `cmd/hoster/server.go` — Pass encryption key to command bus
-- `web/e2e/global-teardown.ts` — DO API leak detection + force-destroy
-- `web/e2e/global-setup.ts` — Rewritten to use browser UI
-- `web/e2e/fixtures/api.fixture.ts` — DELETED (no more direct API calls)
-- `web/e2e/fixtures/auth.fixture.ts` — Simplified
-- `web/e2e/fixtures/test-data.ts` — Removed hardcoded DO API key
-- `web/e2e/uj1-uj8` — All 8 user journeys rewritten for browser UI
-- `web/src/components/nodes/CloudServersTab.tsx` — Cleanup
-- `specs/local-e2e-setup.md` — Updated for leak detection
+- `web/src/api/types.ts` — `DeploymentDomain` type, `getPrimaryDomain()`, updated `DeploymentAttributes`
+- `web/src/api/domains.ts` — `domainFetch()` replaces broken `apiClient` usage
+- `web/src/components/deployments/DeploymentCard.tsx` — Uses `getPrimaryDomain(domains)`
+- `web/src/pages/deployments/DeploymentDetailPage.tsx` — Access card, Open button, node info
+- `internal/engine/setup.go` — Fix domain list/add/verify hostname generation
+- `deploy/local/emptychair.env` — Fix env var names (gitignored)
 
 ### Verified
 - `go vet ./...` — clean
 - `go build ./...` — clean
 - CI test suite — all pass (proxy test is env-specific, passes on CI)
-- UJ1 E2E: 9/9 tests pass, teardown verified 0 leaked droplets on DO
-- v0.3.46 tagged, release workflow running
+- v0.3.47 tagged, release workflow running
 
 ---
 
 ## IMMEDIATE NEXT STEPS
 
-1. **Verify v0.3.46 release** deployed to production
-2. **Run remaining E2E journeys** (UJ2-UJ8) to validate full suite
-3. **Production E2E testing** — all user journeys on https://emptychair.dev
-4. **Stripe live mode** — production billing flow testing
+1. **Verify v0.3.47 release** deployed to production
+2. **Update production env** — fix `HOSTER_DOMAIN_BASE_DOMAIN` and `HOSTER_PROXY_*` vars on server
+3. **Test on prod** — verify Matomo deployment shows access URL after env fix + restart
+4. **Run remaining E2E journeys** (UJ2-UJ8) to validate full suite
+5. **Production E2E testing** — all user journeys on https://emptychair.dev
+6. **Stripe live mode** — production billing flow testing
 
 ---
 

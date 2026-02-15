@@ -65,6 +65,15 @@
   - [x] E2E test suite rewritten to use browser UI (deleted api.fixture.ts)
   - [x] DO API key moved to env-only (`TEST_DO_API_KEY`) — no hardcoded fallback
 
+- [x] **Deployment Access UX + Domains Tab Fix (v0.3.47, February 15, 2026)**
+  - [x] Fixed `DeploymentAttributes` type: `domains[]` array replaces broken singular `domain?` string
+  - [x] Fixed Domains tab: backend returns plain JSON but frontend expected JSON:API wrapped response
+  - [x] Added "Access Your Application" card on deployment Overview tab (domain URL + direct IP:port)
+  - [x] Added "Open App" button in deployment header when running
+  - [x] Shows node name/IP and proxy port in Deployment Info section
+  - [x] Fixed domain generation inconsistency: list/add/verify handlers use `domain.Slugify(name)` matching scheduleDeployment
+  - [x] Fixed production env var names: `HOSTER_PROXY_*` (not `HOSTER_APP_PROXY_*`), added `HOSTER_DOMAIN_BASE_DOMAIN`
+
 ## IN PROGRESS
 
 - [ ] Production E2E testing of billing flow
