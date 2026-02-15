@@ -78,6 +78,11 @@
   - [x] Changed `hostIP` from `127.0.0.1` to `0.0.0.0` in `internal/shell/docker/orchestrator.go`
   - [x] Deployed apps on remote nodes now accessible via public IP:port
 
+- [x] **Deployment Restart Race Condition Fix (v0.3.49, February 15, 2026)**
+  - [x] Fixed race between goroutine command dispatch and `stripFields()` mutating shared row map
+  - [x] `maps.Clone(row)` before passing to goroutine in start and stop action handlers
+  - [x] Stopped deployments can now restart without "template not found: templates id=0" error
+
 ## IN PROGRESS
 
 - [ ] Production E2E testing of billing flow

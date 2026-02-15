@@ -6,9 +6,9 @@
 
 ## CURRENT STATE (February 15, 2026)
 
-### Status: v0.3.48 RELEASED — Fix container port binding on remote nodes
+### Status: v0.3.49 RELEASED — Fix deployment restart race condition
 
-**Latest Release:** v0.3.48 — Container ports bound to 0.0.0.0 instead of 127.0.0.1 so deployed apps are accessible via public IP on cloud nodes.
+**Latest Release:** v0.3.49 — Fixed race condition where `stripFields()` mutated the row map shared with the goroutine dispatching start/stop commands, causing `template_id` to become a string instead of an integer. Deployments restarted from stopped/failed state would fail with "template not found: templates id=0".
 
 **What's Working:**
 - Full deployment lifecycle on real cloud infrastructure (DigitalOcean)
@@ -45,34 +45,35 @@ cd web && npx playwright test e2e/uj1-discovery.spec.ts
 
 ---
 
-## LAST SESSION (February 15, 2026) — Session 11
+## LAST SESSION (February 15, 2026) — Session 12
 
 ### What Was Done
 
-1. **Fixed container port binding on remote nodes** (`internal/shell/docker/orchestrator.go`)
-   - Container port was bound to `127.0.0.1` (localhost only) — deployed apps unreachable via public IP
-   - Changed to `0.0.0.0` so ports listen on all interfaces
-   - Existing deployments on prod need restart (stop + start) for new binding to take effect
+1. **Fixed deployment restart race condition** (`internal/engine/setup.go`)
+   - `Transition()` returns `row` with integer FK values (e.g., `template_id = 3`)
+   - Command dispatch was in a goroutine capturing `row` by reference
+   - `stripFields()` called immediately after mutated `row` in-place, converting `template_id` from int to reference_id string
+   - Goroutine's `startDeployment` handler then read `template_id` as a string → `toInt()` returned 0 → "template not found"
+   - Fix: `maps.Clone(row)` before passing to goroutine in both start and stop handlers
 
 ### Files Changed
-- `internal/shell/docker/orchestrator.go` — `hostIP = "0.0.0.0"` (was `"127.0.0.1"`)
+- `internal/engine/setup.go` — Added `"maps"` import, clone row before goroutine dispatch in start handler (line ~327) and stop handler (line ~378)
 
 ### Verified
 - `go vet ./...` — clean
 - `go build ./...` — clean
 - CI test suite — all pass (proxy test is env-specific, passes on CI)
-- v0.3.48 tagged, release workflow triggered
+- v0.3.49 tagged, release workflow triggered
 
 ---
 
 ## IMMEDIATE NEXT STEPS
 
-1. **Verify v0.3.48 release** deployed to production
-2. **Restart Matomo deployment** on prod (stop + start) so new port binding takes effect
-3. **Test access** — verify `http://{node_ip}:{proxy_port}` now loads for Matomo
-4. **Run remaining E2E journeys** (UJ2-UJ8) to validate full suite
-5. **Production E2E testing** — all user journeys on https://emptychair.dev
-6. **Stripe live mode** — production billing flow testing
+1. **Verify v0.3.49 release** deployed to production
+2. **Test deployment restart** on prod — stop a running deployment, then start it; should transition to running (not failed)
+3. **Run remaining E2E journeys** (UJ2-UJ8) to validate full suite
+4. **Production E2E testing** — all user journeys on https://emptychair.dev
+5. **Stripe live mode** — production billing flow testing
 
 ---
 
