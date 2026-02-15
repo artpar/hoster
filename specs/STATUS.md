@@ -74,6 +74,10 @@
   - [x] Fixed domain generation inconsistency: list/add/verify handlers use `domain.Slugify(name)` matching scheduleDeployment
   - [x] Fixed production env var names: `HOSTER_PROXY_*` (not `HOSTER_APP_PROXY_*`), added `HOSTER_DOMAIN_BASE_DOMAIN`
 
+- [x] **Container Port Binding Fix (v0.3.48, February 15, 2026)**
+  - [x] Changed `hostIP` from `127.0.0.1` to `0.0.0.0` in `internal/shell/docker/orchestrator.go`
+  - [x] Deployed apps on remote nodes now accessible via public IP:port
+
 ## IN PROGRESS
 
 - [ ] Production E2E testing of billing flow

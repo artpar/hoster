@@ -6,9 +6,9 @@
 
 ## CURRENT STATE (February 15, 2026)
 
-### Status: v0.3.47 RELEASED — Deployment access UX + Domains tab fix
+### Status: v0.3.48 RELEASED — Fix container port binding on remote nodes
 
-**Latest Release:** v0.3.47 — Deployment detail page now shows access URLs, Domains tab data loading fixed.
+**Latest Release:** v0.3.48 — Container ports bound to 0.0.0.0 instead of 127.0.0.1 so deployed apps are accessible via public IP on cloud nodes.
 
 **What's Working:**
 - Full deployment lifecycle on real cloud infrastructure (DigitalOcean)
@@ -45,61 +45,31 @@ cd web && npx playwright test e2e/uj1-discovery.spec.ts
 
 ---
 
-## LAST SESSION (February 15, 2026) — Session 10
+## LAST SESSION (February 15, 2026) — Session 11
 
 ### What Was Done
 
-1. **Fixed deployment access URL display** (`web/src/api/types.ts`, `DeploymentDetailPage.tsx`, `DeploymentCard.tsx`)
-   - `DeploymentAttributes.domain` (singular string) was always undefined — API returns `domains` (JSON array)
-   - Added `DeploymentDomain` type and `getPrimaryDomain()` helper
-   - Deployment card and detail page now correctly parse `domains[]` array
-
-2. **Fixed Domains tab data loading** (`web/src/api/domains.ts`)
-   - Backend domains endpoints return plain JSON arrays, not JSON:API wrapped `{data: [...]}`
-   - `domainsApi` used `apiClient` which expected JSON:API format, then accessed `.data` → `undefined`
-   - Replaced with `domainFetch()` that handles raw JSON responses correctly
-
-3. **Added "Access Your Application" card** to deployment Overview tab
-   - Shows primary domain URL as clickable link with "Open" button
-   - Shows direct IP:port access (node SSH host + proxy port) as fallback
-   - Fetches node info via `useNode()` hook
-
-4. **Added "Open App" button** in deployment header action bar (shown when running + has domain)
-
-5. **Shows node/port in Deployment Info** section on Overview tab
-
-6. **Fixed domain generation inconsistency** (`internal/engine/setup.go`)
-   - `domainListHandler` used `refID + ".apps." + baseDomain` — wrong format, caused double `.apps.` nesting
-   - `domainAddHandler` CNAME target used same wrong format
-   - `domainVerifyHandler` expected target used same wrong format
-   - All three now use `domain.Slugify(name) + "." + baseDomain` matching `scheduleDeployment`
-   - Auto domain only generated on-the-fly if none stored (legacy fallback)
-
-7. **Fixed production env var names** (`deploy/local/emptychair.env`, gitignored)
-   - `HOSTER_APP_PROXY_*` → `HOSTER_PROXY_*` (Viper key path is `proxy.*`)
-   - Added `HOSTER_DOMAIN_BASE_DOMAIN=apps.emptychair.dev` (was missing)
+1. **Fixed container port binding on remote nodes** (`internal/shell/docker/orchestrator.go`)
+   - Container port was bound to `127.0.0.1` (localhost only) — deployed apps unreachable via public IP
+   - Changed to `0.0.0.0` so ports listen on all interfaces
+   - Existing deployments on prod need restart (stop + start) for new binding to take effect
 
 ### Files Changed
-- `web/src/api/types.ts` — `DeploymentDomain` type, `getPrimaryDomain()`, updated `DeploymentAttributes`
-- `web/src/api/domains.ts` — `domainFetch()` replaces broken `apiClient` usage
-- `web/src/components/deployments/DeploymentCard.tsx` — Uses `getPrimaryDomain(domains)`
-- `web/src/pages/deployments/DeploymentDetailPage.tsx` — Access card, Open button, node info
-- `internal/engine/setup.go` — Fix domain list/add/verify hostname generation
-- `deploy/local/emptychair.env` — Fix env var names (gitignored)
+- `internal/shell/docker/orchestrator.go` — `hostIP = "0.0.0.0"` (was `"127.0.0.1"`)
 
 ### Verified
 - `go vet ./...` — clean
 - `go build ./...` — clean
 - CI test suite — all pass (proxy test is env-specific, passes on CI)
-- v0.3.47 tagged, release workflow running
+- v0.3.48 tagged, release workflow triggered
 
 ---
 
 ## IMMEDIATE NEXT STEPS
 
-1. **Verify v0.3.47 release** deployed to production
-2. **Update production env** — fix `HOSTER_DOMAIN_BASE_DOMAIN` and `HOSTER_PROXY_*` vars on server
-3. **Test on prod** — verify Matomo deployment shows access URL after env fix + restart
+1. **Verify v0.3.48 release** deployed to production
+2. **Restart Matomo deployment** on prod (stop + start) so new port binding takes effect
+3. **Test access** — verify `http://{node_ip}:{proxy_port}` now loads for Matomo
 4. **Run remaining E2E journeys** (UJ2-UJ8) to validate full suite
 5. **Production E2E testing** — all user journeys on https://emptychair.dev
 6. **Stripe live mode** — production billing flow testing
