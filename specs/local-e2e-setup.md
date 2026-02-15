@@ -56,7 +56,7 @@ Everything lives in `/tmp/hoster-e2e-test/`:
 - Go installed
 - Node.js + npm installed
 - `gh` CLI installed and authenticated
-- DigitalOcean API key (set as `TEST_DO_API_KEY` environment variable before running tests)
+- DigitalOcean API key (MUST set `TEST_DO_API_KEY` environment variable — no hardcoded fallback)
 
 ### Step 1: Download APIGate Binary
 
@@ -197,7 +197,7 @@ Global Teardown (destroys DO droplet)
 ```
 
 - **Global setup** (`web/e2e/global-setup.ts`): Signs up a test user, creates a cloud credential with a real DigitalOcean API key, provisions a real droplet (sfo3, s-1vcpu-1gb), creates and publishes a test template (nginx:alpine), writes state to `web/e2e/.e2e-infra.json`
-- **Global teardown** (`web/e2e/global-teardown.ts`): Destroys the droplet, deletes deployments/template/credential, removes state file
+- **Global teardown** (`web/e2e/global-teardown.ts`): Destroys the droplet via UI, deletes deployments/template/credential, then **verifies 0 leaked droplets via DO API** (force-destroys any found and fails the test)
 - **Tests share one droplet**: All 8 user journeys share the same DO droplet to minimize cost (~$0.005 per run)
 - **UJ4 additionally provisions its own second droplet** to test the cloud provisioning UI flow
 
@@ -370,7 +370,7 @@ The Handler Routes Configuration in APIGate Settings only affects API endpoints,
 | Encryption key "must be exactly 32 bytes" | The key `e2e-test-encryption-key-32bytes!` is exactly 32 bytes. If using inline env vars with `&`, use the start.sh script instead. |
 | Playwright picks up wrong version | Always run from `cd web && npx playwright test`, NOT from the repo root. |
 | E2E tests fail with "No infrastructure state" | Global setup didn't run or failed. Check that Hoster+APIGate are running, then run tests from `web/` directory. |
-| Orphaned DO droplets after test failure | Check DigitalOcean console manually. Global teardown should destroy them, but if tests crash mid-run, droplets may be left. |
+| Orphaned DO droplets after test failure | Teardown now auto-detects leaked droplets via DO API and force-destroys them. If tests crash before teardown runs, check `TEST_DO_API_KEY` env var is set and run teardown manually or check DO console. |
 
 ## Reset Everything
 
