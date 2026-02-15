@@ -56,10 +56,19 @@
   - [x] Cloud provision retry action handler (failed → pending/destroying)
   - [x] All regressions E2E verified through Chrome DevTools on local prod setup
 
+- [x] **Cloud Provision Destroy + E2E Leak Detection (v0.3.46, February 15, 2026)**
+  - [x] Fixed `deleteHandler` hardcoded `"deleting"` → uses matched target state (`t`)
+  - [x] `DestroyInstance` command handler: decrypt credential, call provider, transition to destroyed
+  - [x] Encryption key passed to command bus for credential decryption in handlers
+  - [x] SSH key reuse for re-provisioning (restores b880707 fix lost in engine rewrite)
+  - [x] E2E teardown verifies 0 leaked droplets via DO API — force-destroys any found + fails test
+  - [x] E2E test suite rewritten to use browser UI (deleted api.fixture.ts)
+  - [x] DO API key moved to env-only (`TEST_DO_API_KEY`) — no hardcoded fallback
+
 ## IN PROGRESS
 
-- [ ] Fix CI npm/rollup issues - see specs/SESSION-HANDOFF.md
 - [ ] Production E2E testing of billing flow
+- [ ] Run full E2E suite (UJ2-UJ8) after v0.3.46
 
 ## MVP STATUS: COMPLETE + ENGINE REWRITE + BILLING
 
