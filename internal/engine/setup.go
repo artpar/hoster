@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"math/big"
 	"net"
 	"net/http"
@@ -324,9 +325,10 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 		// Long-running commands (like StartDeployment) would otherwise block the
 		// response and risk context cancellation when the client disconnects.
 		if cmd != "" && cfg.Bus != nil {
+			cmdRow := maps.Clone(row)
 			go func() {
 				bgCtx := context.Background()
-				if err := cfg.Bus.Dispatch(bgCtx, cmd, row); err != nil {
+				if err := cfg.Bus.Dispatch(bgCtx, cmd, cmdRow); err != nil {
 					cfg.Logger.Error("command dispatch failed", "command", cmd, "error", err)
 				}
 			}()
@@ -375,9 +377,10 @@ func buildActionHandlers(cfg SetupConfig) map[string]http.HandlerFunc {
 		}
 
 		if cmd != "" && cfg.Bus != nil {
+			cmdRow := maps.Clone(row)
 			go func() {
 				bgCtx := context.Background()
-				if err := cfg.Bus.Dispatch(bgCtx, cmd, row); err != nil {
+				if err := cfg.Bus.Dispatch(bgCtx, cmd, cmdRow); err != nil {
 					cfg.Logger.Error("command dispatch failed", "command", cmd, "error", err)
 				}
 			}()
