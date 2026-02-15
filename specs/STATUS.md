@@ -83,6 +83,15 @@
   - [x] `maps.Clone(row)` before passing to goroutine in start and stop action handlers
   - [x] Stopped deployments can now restart without "template not found: templates id=0" error
 
+- [x] **Billing Meter Path + Cloud Destroy Error Handling (v0.3.50, February 15, 2026)**
+  - [x] Billing client: configurable meter path, default `/_internal/meter` (avoids `/api/*` route shadowing)
+  - [x] Cloud provision destroy: fails to "failed" state on errors instead of silently marking "destroyed"
+  - [x] Delete handler: returns 409 if destroy dispatch results in "failed" state (prevents orphaned cloud resources)
+  - [x] Cloud provisions state machine: allow destroying from pending/creating/configuring states
+  - [x] E2E teardown: detect leaked droplets matching all test prefixes
+  - [x] Docs: updated `specs/local-e2e-setup.md` for APIGate v0.3.8, billing config, meter path steps
+  - [x] Docs: rewrote stale `docs/local-e2e-development.md` to match current architecture
+
 ## IN PROGRESS
 
 - [ ] Production E2E testing of billing flow
