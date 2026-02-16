@@ -29,24 +29,30 @@ test.describe('UJ5: Creator Monetization', () => {
   });
 
   test.afterAll(async () => {
-    // Clean up templates via browser
+    // Clean up templates via My Templates list (Delete button is on TemplateCard, not detail page)
     const browser = await chromium.launch();
     const context = await browser.newContext({ baseURL: 'http://localhost:8082' });
     const page = await context.newPage();
     try {
       await logIn(page, email, TEST_PASSWORD);
-      for (const id of templateIds) {
-        await page.goto(`/templates/${id}`);
-        await page.waitForLoadState('networkidle');
-        const deleteBtn = page.getByRole('button', { name: /Delete/i });
-        if (await deleteBtn.isVisible().catch(() => false)) {
-          await deleteBtn.click();
-          await page.waitForTimeout(500);
-          const confirmBtn = page.getByRole('button', { name: /Delete/i }).last();
-          if (await confirmBtn.isVisible().catch(() => false)) {
-            await confirmBtn.click();
-            await page.waitForTimeout(1000);
-          }
+      await page.goto('/templates');
+      await page.waitForLoadState('networkidle');
+      await page.getByText('My Templates').click();
+      await page.waitForTimeout(1000);
+
+      // Delete all own templates one at a time
+      let attempts = 0;
+      while (attempts < 10) {
+        const deleteBtn = page.getByRole('button', { name: /Delete/i }).first();
+        if (!(await deleteBtn.isVisible().catch(() => false))) break;
+        attempts++;
+        await deleteBtn.click();
+        await page.waitForTimeout(500);
+        const dialog = page.locator('[role="alertdialog"], [role="dialog"], .fixed.inset-0.z-50');
+        const confirmBtn = dialog.getByRole('button', { name: /Delete|Confirm/i });
+        if (await confirmBtn.isVisible().catch(() => false)) {
+          await confirmBtn.click();
+          await page.waitForTimeout(1000);
         }
       }
     } finally {
@@ -127,10 +133,14 @@ test.describe('UJ5: Creator Monetization', () => {
   test('publish makes template visible in marketplace', async ({ page }) => {
     test.skip(!templateId, 'No template created in prior test');
 
-    // Publish via UI — navigate to template detail and click Publish
+    // Publish via UI — Publish button is on the TemplateCard in the list, not on the detail page
     await logIn(page, email, TEST_PASSWORD);
-    await page.goto(`/templates/${templateId}`);
+    await page.goto('/templates');
     await page.waitForLoadState('networkidle');
+
+    // Switch to My Templates to see our draft with owner actions
+    await page.getByText('My Templates').click();
+    await page.waitForTimeout(1000);
 
     const publishBtn = page.getByRole('button', { name: /Publish/i });
     await expect(publishBtn).toBeVisible({ timeout: 5_000 });
@@ -138,16 +148,7 @@ test.describe('UJ5: Creator Monetization', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    // Verify published status
-    await expect(page.locator('span').filter({ hasText: 'Published' })).toBeVisible({ timeout: 10_000 });
-
-    // Verify visible in marketplace browse
-    await page.goto('/templates');
-    await page.waitForLoadState('networkidle');
-    await page.getByText('Browse All').click();
-    await page.waitForTimeout(1000);
-
-    // Navigate back to template detail to confirm
+    // Navigate to template detail to confirm published status
     await page.goto(`/templates/${templateId}`);
     await page.waitForLoadState('networkidle');
     await expect(page.locator('span').filter({ hasText: 'Published' })).toBeVisible({ timeout: 10_000 });
@@ -241,7 +242,11 @@ test.describe('UJ5: Creator Monetization', () => {
     if (fkTemplateId) {
       templateIds.push(fkTemplateId);
 
-      // Publish the template
+      // Publish the template — Publish button is on TemplateCard in list view
+      await page.goto('/templates');
+      await page.waitForLoadState('networkidle');
+      await page.getByText('My Templates').click();
+      await page.waitForTimeout(1000);
       const publishBtn = page.getByRole('button', { name: /Publish/i });
       if (await publishBtn.isVisible().catch(() => false)) {
         await publishBtn.click();
@@ -249,13 +254,20 @@ test.describe('UJ5: Creator Monetization', () => {
         await page.waitForTimeout(1000);
       }
 
-      // Look for a delete button on the template detail
-      const deleteBtn = page.getByRole('button', { name: /Delete/i });
+      // Navigate back to My Templates for delete action
+      await page.goto('/templates');
+      await page.waitForLoadState('networkidle');
+      await page.getByText('My Templates').click();
+      await page.waitForTimeout(1000);
+      // Look for a delete button on the template card (may be multiple templates)
+      const deleteBtn = page.getByRole('button', { name: /Delete/i }).first();
       if (await deleteBtn.isVisible()) {
         await deleteBtn.click();
-        // If there's a confirmation dialog, confirm
-        const confirmBtn = page.getByRole('button', { name: /Delete/i }).last();
-        if (await confirmBtn.isVisible()) {
+        await page.waitForTimeout(500);
+        // Click confirm inside the dialog (scoped to avoid overlay interception)
+        const dialog = page.locator('[role="alertdialog"], [role="dialog"], .fixed.inset-0.z-50');
+        const confirmBtn = dialog.getByRole('button', { name: /Delete|Confirm/i });
+        if (await confirmBtn.isVisible().catch(() => false)) {
           await confirmBtn.click();
         }
         await page.waitForTimeout(1000);

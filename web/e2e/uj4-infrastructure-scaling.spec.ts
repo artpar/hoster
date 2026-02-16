@@ -34,7 +34,7 @@ test.describe('UJ4: Infrastructure Scaling', () => {
   });
 
   test.afterAll(async ({}, testInfo) => {
-    testInfo.setTimeout(300_000);
+    testInfo.setTimeout(480_000);
 
     const browser = await chromium.launch();
     const context = await browser.newContext({ baseURL: 'http://localhost:8082' });
@@ -179,7 +179,7 @@ test.describe('UJ4: Infrastructure Scaling', () => {
   });
 
   test('provision real DO droplet through UI', async ({ page }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(420_000);
 
     // Create a real DO credential via UI first
     await logIn(page, email, TEST_PASSWORD);
@@ -206,15 +206,9 @@ test.describe('UJ4: Infrastructure Scaling', () => {
     const instanceName = uniqueName('uj4node');
     await page.locator('#prov-name').fill(instanceName);
 
-    // Select the real DO credential (the one we just created with the real API key)
-    // It should be the last option in the dropdown
+    // Select the real DO credential by name (earlier tests created other credentials)
     const credSelect = page.locator('#prov-credential');
-    const credOptions = credSelect.locator('option');
-    const credCount = await credOptions.count();
-    if (credCount > 1) {
-      // Select the last credential (most recently created = real DO key)
-      await credSelect.selectOption({ index: credCount - 1 });
-    }
+    await credSelect.selectOption({ label: `${credName} (digitalocean)` });
 
     // Wait for real regions/sizes to load from DigitalOcean API
     await expect(page.locator('#prov-region')).toBeEnabled({ timeout: 15_000 });
@@ -251,7 +245,7 @@ test.describe('UJ4: Infrastructure Scaling', () => {
     // The cloud servers tab filters out "ready" provisions, so poll the Nodes tab
     // for the auto-created NodeCard — distinguishable from ProvisionCard by SSH info.
     // NodeCard shows "root@<ip>:22"; ProvisionCard does not.
-    const deadline = Date.now() + 300_000;
+    const deadline = Date.now() + 360_000;
     while (Date.now() < deadline) {
       await page.goto('/nodes');
       await page.waitForLoadState('networkidle');

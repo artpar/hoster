@@ -35,6 +35,17 @@ async function globalSetup() {
   const context = await browser.newContext({ baseURL: BASE });
   const page = await context.newPage();
 
+  // Log all API responses for debugging
+  page.on('response', async (response) => {
+    const url = response.url();
+    if (url.includes('/api/')) {
+      const status = response.status();
+      let body = '';
+      try { body = await response.text(); } catch {}
+      console.log(`[api] ${response.request().method()} ${url} → ${status} ${body.substring(0, 300)}`);
+    }
+  });
+
   try {
     // 1. Sign up test user via UI
     const email = uniqueEmail();
@@ -57,6 +68,16 @@ async function globalSetup() {
     await page.waitForTimeout(300);
     await page.locator('#api-token').fill(TEST_DO_API_KEY);
     await page.getByRole('button', { name: 'Add Credential' }).click();
+
+    // Wait a moment for the API call to complete
+    await page.waitForTimeout(3000);
+
+    // Check for form error before asserting redirect
+    const errorBox = page.locator('.bg-destructive\\/10');
+    if (await errorBox.isVisible().catch(() => false)) {
+      const errorText = await errorBox.textContent();
+      console.error(`[global-setup] Credential form error: ${errorText}`);
+    }
 
     // Wait for redirect to credentials list
     await expect(page).toHaveURL(/\/nodes\/credentials$/, { timeout: 10_000 });

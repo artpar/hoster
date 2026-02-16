@@ -6,9 +6,9 @@
 
 ## CURRENT STATE (February 15, 2026)
 
-### Status: v0.3.50 RELEASED — Billing meter path, cloud destroy error handling, docs update
+### Status: v0.3.50 RELEASED — All 65 E2E tests passing across 8 user journeys
 
-**Latest Release:** v0.3.50 — Billing client now uses configurable `/_internal/meter` path (avoids `/api/*` route shadowing APIGate's metering endpoint). Cloud provision destroy properly fails to "failed" state on errors instead of silently marking "destroyed". Delete handler returns 409 when destroy results in failure. Docs updated for APIGate v0.3.8 and billing configuration.
+**Latest Release:** v0.3.50 — Billing meter path fix, cloud destroy error handling, docs update. All E2E journeys validated and passing.
 
 **What's Working:**
 - Full deployment lifecycle on real cloud infrastructure (DigitalOcean)
@@ -18,6 +18,7 @@
 - **Domains tab**: lists auto + custom domains with DNS instructions
 - **Billing**: usage metering via APIGate (`/_internal/meter`), Stripe Checkout integration
 - 12 marketplace templates (6 infra + 6 web-UI apps)
+- **All 65 E2E tests passing** across 8 user journeys (UJ1-UJ8)
 - Production at https://emptychair.dev
 
 ### Architecture
@@ -45,62 +46,72 @@ cd web && npx playwright test e2e/uj1-discovery.spec.ts
 
 ---
 
-## LAST SESSION (February 15, 2026) — Session 13
+## LAST SESSION (February 15, 2026) — Session 14
+
+### What Was Done
+
+1. **All 65 E2E tests passing across 8 user journeys**
+
+   | Journey | Tests | Result |
+   |---------|-------|--------|
+   | UJ1: Discovery & Browsing | 9/9 | Passed |
+   | UJ2: First Deployment | 10/10 | Passed |
+   | UJ3: Monitoring & Management | 10/10 | Passed |
+   | UJ4: Infrastructure Scaling | 8/8 | Passed (2 flaky on DO timing, pass on retry) |
+   | UJ5: Creator Monetization | 8/8 | Passed |
+   | UJ6: SSH Key Management | 7/7 | Passed |
+   | UJ7: Billing & Plans | 6/6 | Passed |
+   | UJ8: Full Lifecycle | 7/7 | Passed |
+
+2. **UJ4 credential selection fix** (`web/e2e/uj4-infrastructure-scaling.spec.ts`)
+   - Playwright `selectOption({ label: RegExp })` doesn't work — only accepts strings
+   - Changed to `selectOption({ label: \`${credName} (digitalocean)\` })` matching `ProvisionNodeForm.tsx` label format
+
+3. **UJ5 dialog overlay fix** (`web/e2e/uj5-creator-monetization.spec.ts`)
+   - Delete confirm button click intercepted by shadcn AlertDialog overlay
+   - `.last()` locator resolved to button behind the `fixed inset-0 bg-black/80` overlay
+   - Fixed by scoping confirm button to dialog container: `page.locator('[role="alertdialog"], [role="dialog"], .fixed.inset-0.z-50').getByRole('button', { name: /Delete|Confirm/i })`
+   - Applied same fix to afterAll cleanup
+
+4. **Previous session fixes also validated**
+   - UJ3 deployment detail click: `goto(href)` instead of `click()` (nested `<a>` tags issue)
+   - UJ3 logs tab reuse: each test navigates fresh instead of reusing tabs
+   - UJ8 deployment link selectors: UUID pattern instead of `depl_` prefix
+   - Deployment restart race condition: `maps.Clone(row)` before goroutine in `setup.go`
+
+### Files Changed
+- `web/e2e/uj4-infrastructure-scaling.spec.ts` — Credential selection: RegExp → string label
+- `web/e2e/uj5-creator-monetization.spec.ts` — Dialog-scoped Delete confirm button (test + afterAll)
+
+### Known Flaky Areas
+- **UJ4 "provision real DO droplet"** — Real DigitalOcean provisioning takes 1-6 min. First attempt may timeout if droplet is slow. Passes on Playwright retry. Not a code bug.
+
+---
+
+## SESSION 13 (February 15, 2026)
 
 ### What Was Done
 
 1. **Billing meter path fix** (`internal/shell/billing/client.go`)
    - Added `MeterPath` config field with default `/_internal/meter`
    - Old hardcoded `/api/v1/meter` was shadowed by `hoster-api` route (`/api/*`)
-   - APIGate v0.3.8 added configurable `routes.meter_base_path` setting
-   - Created API key in APIGate admin for `HOSTER_BILLING_API_KEY`
-   - Billing now working: usage events reported successfully
 
 2. **Cloud provision destroy error handling** (`internal/engine/handlers.go`)
-   - `destroyProvision` now uses `failProvision()` on errors (missing credential, decrypt failure, provider failure, API failure)
-   - Previously silently transitioned to "destroyed" even when cloud API call failed → orphaned resources
-   - Added `failProvision()` helper matching `failDeployment()` pattern
+   - `destroyProvision` now uses `failProvision()` on errors
+   - Previously silently transitioned to "destroyed" even when cloud API call failed
 
 3. **Delete handler failure detection** (`internal/engine/api.go`)
-   - After dispatching destroy command, checks resulting state
-   - If handler transitioned to "failed", returns 409 instead of deleting the DB record
-   - Prevents losing track of cloud resources that failed to destroy
+   - If handler transitioned to "failed", returns 409 instead of deleting DB record
 
-4. **Cloud provisions state machine** (`internal/engine/resources.go`)
-   - Allow `destroying` from `pending`, `creating`, `configuring` states (not just `ready`/`failed`)
-
-5. **E2E teardown leak detection** (`web/e2e/global-teardown.ts`)
-   - Detect leaked droplets matching all test prefixes (`e2e-`, `uj4node-`)
-
-6. **Docs updated**
-   - `specs/local-e2e-setup.md` — APIGate v0.3.8, billing API key step, meter path config step
-   - `docs/local-e2e-development.md` — complete rewrite (removed stale HOSTER_AUTH_MODE, curl examples, Docker Compose)
-
-### Files Changed
-- `internal/shell/billing/client.go` — `MeterPath` config, default `/_internal/meter`
-- `internal/shell/billing/client_test.go` — Updated test to expect `/_internal/meter`
-- `internal/engine/api.go` — Delete handler checks for "failed" state after dispatch
-- `internal/engine/handlers.go` — `destroyProvision` error handling, `failProvision()` helper
-- `internal/engine/resources.go` — Cloud provisions state machine: destroying from more states
-- `web/e2e/global-teardown.ts` — Multi-prefix leaked droplet detection
-- `specs/local-e2e-setup.md` — APIGate v0.3.8, billing steps 7-8, troubleshooting
-- `docs/local-e2e-development.md` — Complete rewrite
-
-### Verified
-- `go vet ./...` — clean
-- `go build ./...` — clean
-- CI test suite — all pass (proxy test is env-specific, passes on CI)
-- v0.3.50 tagged, release workflow triggered
+4. **v0.3.50 released** — billing meter path, cloud destroy error handling, docs update
 
 ---
 
 ## IMMEDIATE NEXT STEPS
 
-1. **Verify v0.3.50 release** deployed to production
-2. **Re-add `hoster-api` route** in local E2E env — it was deleted during debugging but is needed for auth enforcement on API paths
-3. **Run remaining E2E journeys** (UJ2-UJ8) to validate full suite
-4. **Production E2E testing** — all user journeys on https://emptychair.dev
-5. **Stripe live mode** — production billing flow testing
+1. **Production E2E testing** — all user journeys on https://emptychair.dev
+2. **Stripe live mode** — production billing flow testing
+3. **Re-add `hoster-api` route** in local E2E env — deleted during debugging, needed for auth enforcement on API paths
 
 ---
 

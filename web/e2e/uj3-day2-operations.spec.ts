@@ -30,6 +30,19 @@ test.describe('UJ3: Day-2 Operations', () => {
     const context = await browser.newContext({ baseURL: 'http://localhost:8082' });
     const page = await context.newPage();
 
+    // Log API responses for debugging
+    page.on('response', async (response) => {
+      const url = response.url();
+      if (url.includes('/api/')) {
+        const status = response.status();
+        let body = '';
+        try { body = await response.text(); } catch {}
+        if (status >= 400 || url.includes('deployments')) {
+          console.log(`[UJ3 api] ${response.request().method()} ${url} → ${status} ${body.substring(0, 500)}`);
+        }
+      }
+    });
+
     try {
       await logIn(page, infra.email, TEST_PASSWORD);
 
@@ -38,7 +51,7 @@ test.describe('UJ3: Day-2 Operations', () => {
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(1000);
 
-      const deplLinks = await page.locator('a[href*="/deployments/depl_"]').all();
+      const deplLinks = await page.locator('a[href^="/deployments/"]').all();
       for (const link of deplLinks) {
         const href = await link.getAttribute('href');
         if (!href) continue;
@@ -86,8 +99,24 @@ test.describe('UJ3: Day-2 Operations', () => {
         if (count > 1) await nodeSelect.selectOption({ index: 1 });
       }
 
+      // Debug: check deploy button state
+      const deployBtn = page.getByRole('button', { name: /^Deploy$|^Creating|^Starting/i });
+      const isDisabled = await deployBtn.isDisabled();
+      console.log(`[UJ3 debug] Deploy button disabled: ${isDisabled}`);
+      const dialogContent = await page.locator('[role="dialog"]').textContent().catch(() => 'no dialog');
+      console.log(`[UJ3 debug] Dialog content preview: ${dialogContent?.substring(0, 300)}`);
+
       // Click Deploy
-      await page.getByRole('button', { name: /^Deploy$|^Creating|^Starting/i }).click();
+      await deployBtn.click();
+      await page.waitForTimeout(3000);
+
+      // Check for form error
+      const errorBox = page.locator('.bg-destructive\\/10');
+      if (await errorBox.isVisible().catch(() => false)) {
+        const errorText = await errorBox.textContent();
+        console.error(`[UJ3 debug] Deploy form error: ${errorText}`);
+      }
+      await page.screenshot({ path: '/tmp/uj3-before-redirect.png' });
 
       // Wait for redirect to deployment detail
       await expect(page).toHaveURL(/\/deployments\//, { timeout: 15_000 });
@@ -165,9 +194,13 @@ test.describe('UJ3: Day-2 Operations', () => {
     await page.goto('/deployments');
     await page.waitForLoadState('networkidle');
 
-    // Click on the deployment
+    // Click on the deployment card — get href and navigate
+    // (Clicking the card center can hit the inner domain link which has stopPropagation)
     const deplLink = page.locator(`a[href*="/deployments/"]`).first();
-    await deplLink.click();
+    await expect(deplLink).toBeVisible({ timeout: 10_000 });
+    const href = await deplLink.getAttribute('href');
+    expect(href).toBeTruthy();
+    await page.goto(href!);
     await expect(page).toHaveURL(/\/deployments\/[^/]+/);
     // Should see deployment heading
     await expect(page.getByRole('heading').first()).toBeVisible();
@@ -280,64 +313,28 @@ test.describe('UJ3: Day-2 Operations', () => {
   // --- Sad path ---
 
   test('logs tab for stopped deployment shows waiting message', async ({ page }) => {
-    // Create a deployment via UI but don't start it
-    let pendingDeplId: string | undefined;
+    test.skip(!deploymentId, 'No deployment');
+    test.setTimeout(120_000);
 
     await logIn(page, infra.email, TEST_PASSWORD);
-
-    // Navigate to template and deploy
-    await page.goto(`/templates/${infra.templateId}`);
-    await page.waitForLoadState('networkidle');
-    await page.getByText('Deploy Now').click();
-    await page.waitForTimeout(1000);
-
-    const nameInput = page.locator('#name');
-    if (await nameInput.isVisible()) {
-      await nameInput.fill(uniqueSlug('d2pending'));
-    }
-
-    const nodeSelect = page.locator('#node').or(page.getByLabel(/Deploy To|Node/i));
-    if (await nodeSelect.isVisible()) {
-      const options = nodeSelect.locator('option');
-      const count = await options.count();
-      if (count > 1) await nodeSelect.selectOption({ index: 1 });
-    }
-
-    await page.getByRole('button', { name: /^Deploy$|^Creating|^Starting/i }).click();
-    await expect(page).toHaveURL(/\/deployments\//, { timeout: 15_000 });
-
-    const match = page.url().match(/\/deployments\/([^/]+)/);
-    pendingDeplId = match?.[1];
-
-    if (!pendingDeplId) {
-      test.skip(true, 'Could not create pending deployment');
-      return;
-    }
-
-    await page.goto(`/deployments/${pendingDeplId}`);
+    await page.goto(`/deployments/${deploymentId}`);
     await page.waitForLoadState('networkidle');
 
+    // Stop the deployment if it's running (previous test may have left it running)
+    const stopBtn = page.getByRole('button', { name: /Stop/i });
+    if (await stopBtn.isVisible().catch(() => false) && await stopBtn.isEnabled().catch(() => false)) {
+      await stopBtn.click();
+      await expect(page.locator('span').filter({ hasText: /Stopped/ })).toBeVisible({ timeout: 60_000 });
+    }
+
+    // Now check the logs tab for the stopped deployment
     const logsTab = page.getByRole('tab', { name: /Logs/i });
     await logsTab.click();
     await page.waitForTimeout(2000);
 
     await expect(page.getByText('Container Logs')).toBeVisible();
-    // Non-running deployment: waiting message or "No logs"
+    // Stopped deployment: waiting message or "No logs"
     await expect(page.getByText(/Logs will appear|No logs available/i)).toBeVisible({ timeout: 10_000 });
-
-    // Clean up via UI
-    await page.goto(`/deployments/${pendingDeplId}`);
-    await page.waitForLoadState('networkidle');
-    const deleteBtn = page.getByRole('button', { name: /Delete/i });
-    if (await deleteBtn.isVisible().catch(() => false)) {
-      await deleteBtn.click();
-      await page.waitForTimeout(500);
-      const confirmBtn = page.getByRole('button', { name: /Delete/i }).last();
-      if (await confirmBtn.isVisible().catch(() => false)) {
-        await confirmBtn.click();
-        await page.waitForTimeout(2000);
-      }
-    }
   });
 
   test('deployment list shows only own deployments', async ({ page }) => {

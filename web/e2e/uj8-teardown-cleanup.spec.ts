@@ -39,7 +39,7 @@ test.describe('UJ8: Teardown & Cleanup', () => {
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(1000);
 
-      const deplLinks = await page.locator('a[href*="/deployments/depl_"]').all();
+      const deplLinks = await page.locator('a[href^="/deployments/"]').all();
       for (const link of deplLinks) {
         const href = await link.getAttribute('href');
         if (!href) continue;
