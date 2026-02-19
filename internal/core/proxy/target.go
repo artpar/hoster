@@ -13,6 +13,9 @@ type ProxyTarget struct {
 	// NodeID is the node where the container runs ("" or "local" for local node)
 	NodeID string
 
+	// NodeIP is the IP address of the remote node (empty for local)
+	NodeIP string
+
 	// Port is the host port the container is bound to
 	Port int
 
@@ -35,7 +38,11 @@ func (t ProxyTarget) IsLocal() bool {
 }
 
 // LocalAddress returns the target address for local containers.
-// For remote containers, use NodePool to get tunneled address.
 func (t ProxyTarget) LocalAddress() string {
 	return fmt.Sprintf("127.0.0.1:%d", t.Port)
+}
+
+// RemoteAddress returns the target address for remote containers.
+func (t ProxyTarget) RemoteAddress() string {
+	return fmt.Sprintf("%s:%d", t.NodeIP, t.Port)
 }

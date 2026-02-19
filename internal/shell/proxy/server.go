@@ -25,6 +25,7 @@ import (
 type ProxyStore interface {
 	GetDeploymentByDomain(ctx context.Context, hostname string) (*domain.Deployment, error)
 	CountRoutableDeployments(ctx context.Context) (int, error)
+	GetNodeSSHHost(ctx context.Context, nodeRefID string) (string, error)
 }
 
 //go:embed templates/*.html
@@ -189,13 +190,25 @@ func (s *Server) resolveTarget(ctx context.Context, slug, hostname string) (prox
 		}
 	}
 
-	return proxy.ProxyTarget{
+	target := proxy.ProxyTarget{
 		DeploymentID: deployment.ReferenceID,
 		NodeID:       deployment.NodeID,
 		Port:         deployment.ProxyPort,
 		Status:       string(deployment.Status),
 		CustomerID:   fmt.Sprintf("%d", deployment.CustomerID),
-	}, nil
+	}
+
+	// Look up node IP for remote deployments
+	if !target.IsLocal() && deployment.NodeID != "" {
+		sshHost, err := s.store.GetNodeSSHHost(ctx, deployment.NodeID)
+		if err != nil {
+			s.logger.Error("failed to get node SSH host", "node_id", deployment.NodeID, "error", err)
+			return proxy.ProxyTarget{}, proxy.NewUnavailableError(hostname)
+		}
+		target.NodeIP = sshHost
+	}
+
+	return target, nil
 }
 
 func (s *Server) getUpstreamURL(ctx context.Context, target proxy.ProxyTarget) (*url.URL, error) {
@@ -203,9 +216,7 @@ func (s *Server) getUpstreamURL(ctx context.Context, target proxy.ProxyTarget) (
 		return url.Parse("http://" + target.LocalAddress())
 	}
 
-	// For remote nodes, we would use SSH tunneling via NodePool
-	// For now, only support local deployments
-	return nil, errors.New("remote node proxying not implemented")
+	return url.Parse("http://" + target.RemoteAddress())
 }
 
 func (s *Server) proxyRequest(w http.ResponseWriter, r *http.Request, upstream *url.URL, target proxy.ProxyTarget) {

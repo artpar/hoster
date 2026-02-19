@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/artpar/hoster/internal/core/domain"
@@ -16,6 +17,7 @@ import (
 // mockProxyStore implements ProxyStore for testing.
 type mockProxyStore struct {
 	deployments map[string]*domain.Deployment // keyed by hostname
+	nodeHosts   map[string]string             // node reference_id → ssh_host
 }
 
 func (m *mockProxyStore) GetDeploymentByDomain(ctx context.Context, hostname string) (*domain.Deployment, error) {
@@ -34,6 +36,14 @@ func (m *mockProxyStore) CountRoutableDeployments(ctx context.Context) (int, err
 		}
 	}
 	return count, nil
+}
+
+func (m *mockProxyStore) GetNodeSSHHost(ctx context.Context, nodeRefID string) (string, error) {
+	host, ok := m.nodeHosts[nodeRefID]
+	if !ok {
+		return "", fmt.Errorf("node %s: %w", nodeRefID, engine.ErrNotFound)
+	}
+	return host, nil
 }
 
 func TestServer_ServeHTTP_Health(t *testing.T) {
@@ -186,6 +196,83 @@ func TestServer_ServeHTTP_RunningDeployment(t *testing.T) {
 
 	// Since the proxy port (30001) doesn't actually have a server,
 	// we expect a 503 unavailable error
+	assert.Equal(t, 503, rec.Code)
+	assert.Contains(t, rec.Body.String(), "Unavailable")
+}
+
+func TestServer_ServeHTTP_RemoteNode(t *testing.T) {
+	// Start a test backend to simulate the remote node
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("Hello from remote node"))
+	}))
+	defer backend.Close()
+
+	// Extract host and port from backend URL
+	backendURL := backend.URL // e.g., "http://127.0.0.1:PORT"
+	parts := strings.SplitN(strings.TrimPrefix(backendURL, "http://"), ":", 2)
+	backendHost := parts[0]
+	backendPort := 0
+	fmt.Sscanf(parts[1], "%d", &backendPort)
+
+	ms := &mockProxyStore{
+		deployments: map[string]*domain.Deployment{
+			"remote-app.apps.test.io": {
+				ReferenceID: "depl_remote",
+				NodeID:      "node_abc123",
+				ProxyPort:   backendPort,
+				Status:      domain.StatusRunning,
+				CustomerID:  1,
+			},
+		},
+		nodeHosts: map[string]string{
+			"node_abc123": backendHost,
+		},
+	}
+
+	cfg := Config{
+		BaseDomain: "apps.test.io",
+	}
+
+	server, err := NewServer(cfg, ms, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "http://remote-app.apps.test.io/", nil)
+	rec := httptest.NewRecorder()
+
+	server.ServeHTTP(rec, req)
+
+	assert.Equal(t, 200, rec.Code)
+	assert.Equal(t, "Hello from remote node", rec.Body.String())
+}
+
+func TestServer_ServeHTTP_RemoteNodeNotFound(t *testing.T) {
+	ms := &mockProxyStore{
+		deployments: map[string]*domain.Deployment{
+			"orphan-app.apps.test.io": {
+				ReferenceID: "depl_orphan",
+				NodeID:      "node_missing",
+				ProxyPort:   30001,
+				Status:      domain.StatusRunning,
+				CustomerID:  1,
+			},
+		},
+		nodeHosts: map[string]string{},
+	}
+
+	cfg := Config{
+		BaseDomain: "apps.test.io",
+	}
+
+	server, err := NewServer(cfg, ms, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "http://orphan-app.apps.test.io/", nil)
+	rec := httptest.NewRecorder()
+
+	server.ServeHTTP(rec, req)
+
+	// Node not found should result in unavailable error
 	assert.Equal(t, 503, rec.Code)
 	assert.Contains(t, rec.Body.String(), "Unavailable")
 }

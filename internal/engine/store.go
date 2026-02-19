@@ -677,6 +677,19 @@ func (s *Store) GetDeploymentByDomain(ctx context.Context, hostname string) (*do
 	return mapToDeployment(result), nil
 }
 
+// GetNodeSSHHost returns the ssh_host for a node by reference_id.
+func (s *Store) GetNodeSSHHost(ctx context.Context, nodeRefID string) (string, error) {
+	var sshHost string
+	err := s.db.GetContext(ctx, &sshHost, "SELECT ssh_host FROM nodes WHERE reference_id = ?", nodeRefID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("node %s: %w", nodeRefID, ErrNotFound)
+		}
+		return "", fmt.Errorf("get node ssh_host: %w", err)
+	}
+	return sshHost, nil
+}
+
 // CountRoutableDeployments counts deployments that are running with a proxy port assigned.
 func (s *Store) CountRoutableDeployments(ctx context.Context) (int, error) {
 	var count int

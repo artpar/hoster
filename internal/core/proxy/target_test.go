@@ -89,3 +89,23 @@ func TestProxyTarget_LocalAddress(t *testing.T) {
 		})
 	}
 }
+
+func TestProxyTarget_RemoteAddress(t *testing.T) {
+	tests := []struct {
+		name   string
+		nodeIP string
+		port   int
+		want   string
+	}{
+		{"standard remote", "24.199.126.77", 30001, "24.199.126.77:30001"},
+		{"different port", "10.0.0.5", 8080, "10.0.0.5:8080"},
+		{"hostname", "worker.example.com", 30002, "worker.example.com:30002"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := ProxyTarget{NodeIP: tt.nodeIP, Port: tt.port}
+			assert.Equal(t, tt.want, target.RemoteAddress())
+		})
+	}
+}
