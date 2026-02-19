@@ -4,14 +4,15 @@
 
 ---
 
-## CURRENT STATE (February 16, 2026)
+## CURRENT STATE (February 19, 2026)
 
-### Status: v0.3.51 RELEASED — E2E test reliability, all 65 tests passing
+### Status: v0.3.52 RELEASED — Remote node proxying for app proxy
 
-**Latest Release:** v0.3.51 — E2E test reliability fixes across UJ3/UJ4/UJ5/UJ8. All 65 tests across 8 user journeys passing with real DigitalOcean infrastructure.
+**Latest Release:** v0.3.52 — App proxy now routes traffic to containers running on remote cloud nodes (DO/AWS/Hetzner). Previously returned "remote node proxying not implemented" for all non-local deployments.
 
 **What's Working:**
 - Full deployment lifecycle on real cloud infrastructure (DigitalOcean)
+- **App proxy routes to remote nodes** — resolves node IP, proxies HTTP to remote container port
 - Generic engine: schema-driven CRUD for all entities
 - Cloud provisioning: credential → provision → droplet → node → deploy → destroy
 - **Deployment access info**: domain URL + direct IP:port shown on detail page
@@ -20,6 +21,10 @@
 - 12 marketplace templates (6 infra + 6 web-UI apps)
 - **All 65 E2E tests passing** across 8 user journeys (UJ1-UJ8)
 - Production at https://emptychair.dev
+
+**Remaining for app proxy in production:**
+- TLS cert on emptychair.dev needs renewal with `*.apps.emptychair.dev` wildcard
+- Current cert is `CN=emptychair.dev` only — `*.apps.emptychair.dev` gets TLS handshake failure
 
 ### Architecture
 
@@ -46,7 +51,27 @@ cd web && npx playwright test e2e/uj1-discovery.spec.ts
 
 ---
 
-## LAST SESSION (February 15, 2026) — Session 14
+## LAST SESSION (February 19, 2026) — Session 15
+
+### What Was Done
+
+1. **Remote node proxying for app proxy** (`internal/shell/proxy/server.go`, `internal/core/proxy/target.go`, `internal/engine/store.go`)
+   - Added `NodeIP` field and `RemoteAddress()` method to `ProxyTarget`
+   - Added `GetNodeSSHHost()` to `ProxyStore` interface + engine `Store` implementation
+   - `resolveTarget()` looks up node SSH host for remote deployments
+   - `getUpstreamURL()` routes to `http://{nodeIP}:{port}` instead of erroring
+   - Tests: remote proxy routing test (httptest backend), node-not-found error test
+
+### Files Changed
+- `internal/core/proxy/target.go` — `NodeIP` field, `RemoteAddress()` method
+- `internal/core/proxy/target_test.go` — `RemoteAddress` tests
+- `internal/shell/proxy/server.go` — `GetNodeSSHHost` interface, remote routing in `resolveTarget` + `getUpstreamURL`
+- `internal/shell/proxy/server_test.go` — Mock `GetNodeSSHHost`, remote node tests
+- `internal/engine/store.go` — `GetNodeSSHHost` implementation
+
+---
+
+## SESSION 14 (February 15, 2026)
 
 ### What Was Done
 
@@ -109,9 +134,10 @@ cd web && npx playwright test e2e/uj1-discovery.spec.ts
 
 ## IMMEDIATE NEXT STEPS
 
-1. **Production E2E testing** — all user journeys on https://emptychair.dev
-2. **Stripe live mode** — production billing flow testing
-3. **Re-add `hoster-api` route** in local E2E env — deleted during debugging, needed for auth enforcement on API paths
+1. **Production TLS cert** — renew with `*.apps.emptychair.dev` wildcard (`certbot --manual --preferred-challenges dns`)
+2. **Verify app proxy in production** — `ghost-blog.apps.emptychair.dev` should route to remote node after cert + deploy
+3. **Production E2E testing** — all user journeys on https://emptychair.dev
+4. **Stripe live mode** — production billing flow testing
 
 ---
 

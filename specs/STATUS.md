@@ -92,8 +92,17 @@
   - [x] Docs: updated `specs/local-e2e-setup.md` for APIGate v0.3.8, billing config, meter path steps
   - [x] Docs: rewrote stale `docs/local-e2e-development.md` to match current architecture
 
+- [x] **Remote Node Proxying for App Proxy (v0.3.52, February 19, 2026)**
+  - [x] App proxy routes traffic to containers on remote cloud nodes (DO/AWS/Hetzner)
+  - [x] `ProxyTarget.NodeIP` + `RemoteAddress()` for remote container addressing
+  - [x] `GetNodeSSHHost()` in ProxyStore interface + engine Store implementation
+  - [x] `resolveTarget()` looks up node IP for non-local deployments
+  - [x] `getUpstreamURL()` replaced "not implemented" error with actual remote routing
+  - [x] Tests: remote node proxy test (with httptest backend), node-not-found error test
+
 ## IN PROGRESS
 
+- [ ] Production TLS cert: renew with `*.apps.emptychair.dev` wildcard for app proxy
 - [ ] Production E2E testing of billing flow
 - [ ] Run full E2E suite (UJ2-UJ8) after v0.3.46
 
@@ -140,6 +149,7 @@ The core deployment loop is fully functional via the generic engine:
 
 ## What's Next
 
+- Production TLS cert: renew with `*.apps.emptychair.dev` wildcard for app proxy routing
 - Production E2E testing of full billing flow (Stripe live mode)
 - Stripe webhook integration for async payment confirmation
 - Plan upgrade flow (Free → Pro via Stripe Checkout)
