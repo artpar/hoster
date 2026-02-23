@@ -100,11 +100,17 @@
   - [x] `getUpstreamURL()` replaced "not implemented" error with actual remote routing
   - [x] Tests: remote node proxy test (with httptest backend), node-not-found error test
 
+- [x] **Production TLS + nginx Setup (February 20, 2026)**
+  - [x] Wildcard cert: `emptychair.dev` + `*.emptychair.dev` + `*.apps.emptychair.dev` via certbot-dns-route53
+  - [x] nginx as TLS terminator on :80/:443, routing by hostname
+  - [x] APIGate moved to :8082 HTTP-only (was :443 with single-domain ACME)
+  - [x] Ghost blog verified: `https://ghost-blog.apps.emptychair.dev/` → 200 OK via remote node proxy
+
 ## IN PROGRESS
 
-- [ ] Production TLS cert: renew with `*.apps.emptychair.dev` wildcard for app proxy
+- [ ] **BUG: Docker container network aliases** — orchestrator doesn't set service-name aliases when connecting containers to deployment network. Multi-service templates (e.g., Ghost+MariaDB) fail because services can't resolve each other by compose service name.
+- [ ] **BUG: UFW firewall on provisioned nodes** — provisioner doesn't open app ports (30000-39999). New droplets block proxy traffic until manually fixed.
 - [ ] Production E2E testing of billing flow
-- [ ] Run full E2E suite (UJ2-UJ8) after v0.3.46
 
 ## MVP STATUS: COMPLETE + ENGINE REWRITE + BILLING
 

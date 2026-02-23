@@ -409,15 +409,15 @@ The engine serves a minimal SPA shell at `/` (non-API paths). The full React fro
 
 ## Production Deployment (emptychair.dev)
 
-**Services:** APIGate (80/443, TLS + auth + routing) → Hoster (8080, API) + App Proxy (9091, `*.apps.emptychair.dev`)
+**Services:** nginx (80/443, TLS termination) → APIGate (8082, auth + routing) → Hoster (8080, API) + App Proxy (9091, `*.apps.emptychair.dev`)
+
+**TLS:** Wildcard cert via certbot + dns-route53: `emptychair.dev`, `*.emptychair.dev`, `*.apps.emptychair.dev`
 
 **Management:** `cd deploy/local && make status|logs|restart|deploy-release`
 
 **CI/CD:** `ci.yml` (push to main/PRs), `release.yml` (version tags → GitHub release)
 **Build:** `cd web && npm install && npm run build` → copy dist → `go build ./cmd/hoster`
-**Deploy:** `cd deploy/local && make deploy-release VERSION=v0.2.0`
-
-**Known issue:** CI failing with `@rollup/rollup-linux-x64-gnu` — see `specs/SESSION-HANDOFF.md`
+**Deploy:** `cd deploy/local && make deploy-release VERSION=v0.3.52`
 
 ---
 
