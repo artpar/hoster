@@ -106,9 +106,14 @@
   - [x] APIGate moved to :8082 HTTP-only (was :443 with single-domain ACME)
   - [x] Ghost blog verified: `https://ghost-blog.apps.emptychair.dev/` → 200 OK via remote node proxy
 
+- [x] **Docker Container Network Aliases Fix (v0.3.53, February 23, 2026)**
+  - [x] Added `NetworkAliases` field to `ContainerSpec` (`internal/shell/docker/types.go`)
+  - [x] `CreateContainer` populates `EndpointSettings.Aliases` from spec (`internal/shell/docker/client.go`)
+  - [x] `buildContainerSpec` sets compose service name as network alias (`internal/shell/docker/orchestrator.go`)
+  - [x] Multi-service templates (e.g., Ghost+MariaDB) now resolve each other by service name automatically
+
 ## IN PROGRESS
 
-- [ ] **BUG: Docker container network aliases** — orchestrator doesn't set service-name aliases when connecting containers to deployment network. Multi-service templates (e.g., Ghost+MariaDB) fail because services can't resolve each other by compose service name.
 - [ ] **BUG: UFW firewall on provisioned nodes** — provisioner doesn't open app ports (30000-39999). New droplets block proxy traffic until manually fixed.
 - [ ] Production E2E testing of billing flow
 

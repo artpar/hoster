@@ -4,14 +4,15 @@
 
 ---
 
-## CURRENT STATE (February 20, 2026)
+## CURRENT STATE (February 23, 2026)
 
-### Status: v0.3.52 DEPLOYED — Remote node proxying + production TLS + nginx
+### Status: v0.3.53 RELEASED — Docker network aliases fix for multi-service templates
 
-**Latest Release:** v0.3.52 — App proxy routes traffic to containers on remote cloud nodes. Production fully verified: `ghost-blog.apps.emptychair.dev` serves Ghost blog from DO droplet at 24.199.126.77.
+**Latest Release:** v0.3.53 — Containers on the deployment network now get their compose service name as a network alias, enabling inter-service DNS resolution. Multi-service templates (e.g., Ghost+MariaDB) work automatically without manual intervention.
 
 **What's Working:**
 - Full deployment lifecycle on real cloud infrastructure (DigitalOcean)
+- **Multi-service template DNS** — containers resolve each other by compose service name (e.g., `db`)
 - **App proxy routes to remote nodes** — resolves node IP, proxies HTTP to remote container port
 - **Production app proxy verified** — `https://ghost-blog.apps.emptychair.dev/` → 200 OK
 - **Wildcard TLS cert** — `emptychair.dev`, `*.emptychair.dev`, `*.apps.emptychair.dev`
@@ -54,7 +55,27 @@ cd web && npx playwright test e2e/uj1-discovery.spec.ts
 
 ---
 
-## LAST SESSION (February 20, 2026) — Session 15
+## LAST SESSION (February 23, 2026) — Session 16
+
+### What Was Done
+
+1. **Docker container network aliases fix** (`internal/shell/docker/types.go`, `client.go`, `orchestrator.go`)
+   - Added `NetworkAliases map[string][]string` to `ContainerSpec`
+   - `CreateContainer` populates `EndpointSettings.Aliases` from spec
+   - `buildContainerSpec` sets compose service name as alias on deployment network
+   - Multi-service templates (Ghost+MariaDB) now resolve each other by service name automatically
+   - Previously required manual `docker network connect --alias` fix on production
+
+2. **v0.3.53 released**
+
+### Files Changed
+- `internal/shell/docker/types.go` — `NetworkAliases` field on `ContainerSpec`
+- `internal/shell/docker/client.go` — Populate `EndpointSettings.Aliases` in `CreateContainer`
+- `internal/shell/docker/orchestrator.go` — Set `svc.Name` as network alias in `buildContainerSpec`
+
+---
+
+## SESSION 15 (February 20, 2026)
 
 ### What Was Done
 
@@ -158,10 +179,9 @@ cd web && npx playwright test e2e/uj1-discovery.spec.ts
 
 ## IMMEDIATE NEXT STEPS
 
-1. **FIX: Docker container network aliases** — orchestrator creates containers on deployment network but doesn't set service-name aliases. Ghost couldn't resolve `db` because MariaDB had no `db` alias. This must be fixed in `internal/shell/docker/orchestrator.go` so all multi-service templates work automatically.
-2. **FIX: UFW firewall on provisioned nodes** — provisioner doesn't open app ports (30000-39999). New droplets block proxy traffic until manually opened. Add `ufw allow 30000:39999/tcp` to node provisioning.
-3. **Production E2E testing** — all user journeys on https://emptychair.dev
-4. **Stripe live mode** — production billing flow testing
+1. **FIX: UFW firewall on provisioned nodes** — provisioner doesn't open app ports (30000-39999). New droplets block proxy traffic until manually opened. Needs a new minion command or raw SSH command in `stepFinalize()` (`internal/engine/workers.go`) after minion deployment.
+2. **Production E2E testing** — all user journeys on https://emptychair.dev
+3. **Stripe live mode** — production billing flow testing
 
 ---
 
