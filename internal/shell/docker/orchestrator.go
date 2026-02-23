@@ -466,7 +466,8 @@ func (o *Orchestrator) buildContainerSpec(deployment *domain.Deployment, svc com
 			LabelTemplate:   deployment.TemplateRefID,
 			LabelService:    svc.Name,
 		},
-		Networks: []string{networkName},
+		Networks:       []string{networkName},
+		NetworkAliases: map[string][]string{networkName: {svc.Name}},
 	}
 
 	// Merge environment: service env + deployment variables

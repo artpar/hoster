@@ -20,8 +20,9 @@ type ContainerSpec struct {
 	Labels        map[string]string
 	Ports         []PortBinding
 	Volumes       []VolumeMount
-	Networks      []string
-	WorkingDir    string
+	Networks        []string
+	NetworkAliases  map[string][]string // network name → aliases (e.g., service name for DNS)
+	WorkingDir      string
 	User          string
 	RestartPolicy RestartPolicy
 	Resources     ResourceLimits

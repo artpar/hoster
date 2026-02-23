@@ -197,7 +197,11 @@ func (d *DockerClient) CreateContainer(spec ContainerSpec) (string, error) {
 			EndpointsConfig: map[string]*network.EndpointSettings{},
 		}
 		for _, n := range spec.Networks {
-			networkConfig.EndpointsConfig[n] = &network.EndpointSettings{}
+			ep := &network.EndpointSettings{}
+			if aliases, ok := spec.NetworkAliases[n]; ok {
+				ep.Aliases = aliases
+			}
+			networkConfig.EndpointsConfig[n] = ep
 		}
 	}
 
